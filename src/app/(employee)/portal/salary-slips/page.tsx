@@ -18,13 +18,11 @@ import { cn } from "@/lib/utils";
 import { formatInr, formatMonthLabel } from "@/lib/format";
 import { monthStartEnd } from "@/lib/attendance-period";
 import {
-  autoGeneratePayrollMonth,
   formatPayDays,
   isPayrollMonthReleased,
   payrollMonthOptions,
   setupAsOf,
 } from "@/lib/payroll";
-import { ensureAutoSalarySlips, loadPayslipsForMonth } from "@/lib/salary-slip-generate";
 
 const statusTone: Record<string, string> = {
   DRAFT: "bg-muted text-muted-foreground border-transparent",
@@ -38,12 +36,9 @@ export default async function MySalarySlipsPage() {
   const ctx = await getCurrentEmployeeContext();
   if (!ctx) return null;
 
-  await ensureAutoSalarySlips(ctx.employeeId);
-
   const supabase = await createClient();
   const months = payrollMonthOptions(12).filter((period) => isPayrollMonthReleased(period));
-  const released = autoGeneratePayrollMonth();
-  const [{ data: slips }, { data: records }, { data: employee }, liveRows] = await Promise.all([
+  const [{ data: slips }, { data: records }, { data: employee }] = await Promise.all([
     supabase
       .from("salary_slips")
       .select("id, period_month, period_year, net_amount, gross_amount, status, deductions")
@@ -56,11 +51,6 @@ export default async function MySalarySlipsPage() {
       .eq("employee_id", ctx.employeeId)
       .order("effective_from", { ascending: false }),
     supabase.from("employees").select("salary").eq("id", ctx.employeeId).maybeSingle(),
-    loadPayslipsForMonth({
-      month: released,
-      employeeIds: [ctx.employeeId],
-      persist: false,
-    }),
   ]);
 
   const stored = new Map(
@@ -69,22 +59,20 @@ export default async function MySalarySlipsPage() {
       slip,
     ])
   );
-  const live = liveRows[0] ?? null;
 
   const rows = months.map((period) => {
     const setup = setupAsOf(records ?? [], ctx.employeeId, monthStartEnd(period).end, employee?.salary);
     const saved = stored.get(period);
-    const computed = period === released ? live : null;
-    const attendance = readAttendance(saved?.deductions, computed);
-    const gross = computed?.gross ?? saved?.gross_amount ?? setup?.gross ?? null;
+    const attendance = readAttendance(saved?.deductions);
+    const gross = saved?.gross_amount ?? setup?.gross ?? null;
     return {
       period,
       officeDays: attendance.officeDays,
       leaveDays: attendance.leaveDays,
       lopDays: attendance.lopDays,
-      net: computed?.net ?? saved?.net_amount ?? gross,
+      net: saved?.net_amount ?? gross,
       status: saved?.status ?? (setup ? "FINALIZED" : "MISSING"),
-      canDownload: Boolean(setup || computed || saved),
+      canDownload: Boolean(saved || setup),
     };
   });
   const visible = rows.filter((row) => row.canDownload);
@@ -171,24 +159,7 @@ export default async function MySalarySlipsPage() {
   );
 }
 
-function readAttendance(
-  deductions: unknown,
-  computed: {
-    attendance: {
-      officeDays: number;
-      paidLeaveDays: number;
-      unpaidLeaveDays: number;
-      lopDays: number;
-    };
-  } | null
-) {
-  if (computed) {
-    return {
-      officeDays: computed.attendance.officeDays,
-      leaveDays: computed.attendance.paidLeaveDays + computed.attendance.unpaidLeaveDays,
-      lopDays: computed.attendance.lopDays,
-    };
-  }
+function readAttendance(deductions: unknown) {
   if (!deductions || typeof deductions !== "object" || Array.isArray(deductions)) {
     return { officeDays: null, leaveDays: null, lopDays: null };
   }

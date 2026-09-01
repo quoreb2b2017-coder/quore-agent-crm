@@ -33,10 +33,18 @@ export async function loadPayslipsForMonth(options: {
   const supabase = await createClient();
   const { start, end } = monthStartEnd(options.month);
   const [year, monthNumber] = options.month.split("-").map(Number);
-  const adminIds = new Set(await superAdminEmployeeIds(supabase));
+  const adminIds = new Set(await superAdminEmployeeIds());
+
+  const { data: people } = await supabase.from("employees").select(EMPLOYEE_COLUMNS).in("id", ids);
+  const employeeRows = people ?? [];
+  const departmentIds = Array.from(
+    new Set(employeeRows.map((row) => row.department_id).filter(Boolean))
+  ) as string[];
+  const designationIds = Array.from(
+    new Set(employeeRows.map((row) => row.designation_id).filter(Boolean))
+  ) as string[];
 
   const [
-    { data: people },
     { data: records },
     { data: departments },
     { data: designations },
@@ -44,15 +52,18 @@ export async function loadPayslipsForMonth(options: {
     { data: leaves },
     { data: leaveTypes },
   ] = await Promise.all([
-    supabase.from("employees").select(EMPLOYEE_COLUMNS).in("id", ids),
     supabase
       .from("salary_records")
       .select("employee_id, effective_from, base_salary, pay_frequency, components, created_at")
       .in("employee_id", ids)
       .order("effective_from", { ascending: false })
       .order("created_at", { ascending: false }),
-    supabase.from("departments").select("id, name"),
-    supabase.from("designations").select("id, title"),
+    departmentIds.length > 0
+      ? supabase.from("departments").select("id, name").in("id", departmentIds)
+      : Promise.resolve({ data: [] as { id: string; name: string }[] }),
+    designationIds.length > 0
+      ? supabase.from("designations").select("id, title").in("id", designationIds)
+      : Promise.resolve({ data: [] as { id: string; title: string }[] }),
     supabase
       .from("attendance")
       .select("employee_id, attendance_date, status")
@@ -90,7 +101,7 @@ export async function loadPayslipsForMonth(options: {
   }
 
   const slips: ComputedPayslip[] = [];
-  for (const employee of people ?? []) {
+  for (const employee of employeeRows) {
     if (adminIds.has(employee.id)) continue;
     const setup = setupAsOf(records ?? [], employee.id, end, employee.salary);
     if (!setup) continue;
@@ -120,36 +131,38 @@ export async function loadPayslipsForMonth(options: {
     const paid = new Set(
       (existing ?? []).filter((row) => row.status === "PAID").map((row) => row.employee_id)
     );
-
-    for (const slip of slips) {
-      if (paid.has(slip.employeeId)) continue;
-      await supabase.from("salary_slips").upsert(
-        {
-          employee_id: slip.employeeId,
-          period_year: year,
-          period_month: monthNumber,
-          gross_amount: slip.gross,
-          net_amount: slip.net,
-          deductions: {
-            total: slip.totalDeductions,
-            earnings: slip.earnings,
-            lines: slip.deductions,
-            lopDays: slip.attendance.lopDays,
-            paidDays: slip.attendance.paidDays,
-            officeDays: slip.attendance.officeDays,
-            paidLeaveDays: slip.attendance.paidLeaveDays,
-            unpaidLeaveDays: slip.attendance.unpaidLeaveDays,
-            absentDays: slip.attendance.absentDays,
-            weekOffDays: slip.attendance.weekOffDays,
-            payDate: slip.payDate,
-            packageGross: slip.packageGross,
-          },
-          status: "FINALIZED",
-          generated_at: new Date().toISOString(),
-          generated_by: options.generatedBy ?? null,
+    const generatedAt = new Date().toISOString();
+    const rows = slips
+      .filter((slip) => !paid.has(slip.employeeId))
+      .map((slip) => ({
+        employee_id: slip.employeeId,
+        period_year: year,
+        period_month: monthNumber,
+        gross_amount: slip.gross,
+        net_amount: slip.net,
+        deductions: {
+          total: slip.totalDeductions,
+          earnings: slip.earnings,
+          lines: slip.deductions,
+          lopDays: slip.attendance.lopDays,
+          paidDays: slip.attendance.paidDays,
+          officeDays: slip.attendance.officeDays,
+          paidLeaveDays: slip.attendance.paidLeaveDays,
+          unpaidLeaveDays: slip.attendance.unpaidLeaveDays,
+          absentDays: slip.attendance.absentDays,
+          weekOffDays: slip.attendance.weekOffDays,
+          payDate: slip.payDate,
+          packageGross: slip.packageGross,
         },
-        { onConflict: "employee_id,period_year,period_month" }
-      );
+        status: "FINALIZED" as const,
+        generated_at: generatedAt,
+        generated_by: options.generatedBy ?? null,
+      }));
+
+    if (rows.length > 0) {
+      await supabase
+        .from("salary_slips")
+        .upsert(rows, { onConflict: "employee_id,period_year,period_month" });
     }
   }
 
@@ -203,9 +216,25 @@ export async function ensureAutoSalarySlips(generatedBy?: string | null) {
   try {
     const month = autoGeneratePayrollMonth();
     const people = await listWatchableEmployees();
+    const employeeIds = people.map((person) => person.id);
+    if (employeeIds.length === 0) return [];
+
+    const supabase = await createClient();
+    const [year, monthNumber] = month.split("-").map(Number);
+    const { count } = await supabase
+      .from("salary_slips")
+      .select("employee_id", { count: "exact", head: true })
+      .eq("period_year", year)
+      .eq("period_month", monthNumber)
+      .in("employee_id", employeeIds);
+
+    if (count != null && count >= employeeIds.length) {
+      return [];
+    }
+
     return await loadPayslipsForMonth({
       month,
-      employeeIds: people.map((person) => person.id),
+      employeeIds,
       generatedBy,
       persist: true,
     });

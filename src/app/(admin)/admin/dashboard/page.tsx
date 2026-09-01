@@ -14,8 +14,6 @@ import { ClockWidget } from "@/components/attendance/clock-widget";
 import { isUuid } from "@/lib/attendance-period";
 import { EmployeeWatchSelect } from "./employee-watch-select";
 import { TeamTodayReport } from "./team-today-report";
-import { ensureAutoSalarySlips } from "@/lib/salary-slip-generate";
-
 export default async function AdminDashboardPage({
   searchParams,
 }: {
@@ -57,7 +55,6 @@ export default async function AdminDashboardPage({
     listWatchableEmployees(),
     requestedId ? getMySessionState(requestedId) : Promise.resolve(null),
     requestedId ? Promise.resolve([]) : getTodayTeamReport(),
-    ensureAutoSalarySlips(ctx.employeeId),
   ]);
 
   const selected = employees.find((employee) => employee.id === requestedId) ?? null;

@@ -19,6 +19,7 @@ import { cn } from "@/lib/utils";
 import { requireViewer } from "@/lib/permissions/server";
 import { formatInr, formatMonthLabel, initials } from "@/lib/format";
 import { monthStartEnd } from "@/lib/attendance-period";
+import type { Json } from "@/types/supabase";
 import {
   formatPayDays,
   isPayrollMonthReleased,
@@ -27,7 +28,6 @@ import {
   setupAsOf,
 } from "@/lib/payroll";
 import { listWatchableEmployees } from "@/lib/queries/admin-dashboard";
-import { ensureAutoSalarySlips, loadPayslipsForMonth } from "@/lib/salary-slip-generate";
 import { SalarySlipFilters } from "./salary-slip-filters";
 
 const statusTone: Record<string, string> = {
@@ -65,8 +65,6 @@ export default async function AdminSalarySlipsPage({
   const requestedEmployee = Array.isArray(params.employee) ? params.employee[0] : params.employee;
   const supabase = await createClient();
 
-  await ensureAutoSalarySlips(ctx.employeeId);
-
   if (!seesAll) {
     const months = payrollMonthOptions(12).filter(
       (period) => isPayrollMonthReleased(period)
@@ -85,12 +83,6 @@ export default async function AdminSalarySlipsPage({
         .order("effective_from", { ascending: false }),
       supabase.from("employees").select("salary").eq("id", ctx.employeeId).maybeSingle(),
     ]);
-    const live = await loadPayslipsForMonth({
-      month: months[0] ?? month,
-      employeeIds: [ctx.employeeId],
-      persist: false,
-    });
-    const liveByPeriod = new Map(live.map((slip) => [slip.month, slip]));
     const stored = new Map(
       (slips ?? []).map((slip) => [
         `${slip.period_year}-${String(slip.period_month).padStart(2, "0")}`,
@@ -101,9 +93,8 @@ export default async function AdminSalarySlipsPage({
       .map((period) => {
         const setup = setupAsOf(records ?? [], ctx.employeeId, monthStartEnd(period).end, employee?.salary);
         const saved = stored.get(period);
-        const computed = liveByPeriod.get(period);
-        const attendance = readAttendance(saved?.deductions, computed);
-        const gross = computed?.gross ?? saved?.gross_amount ?? setup?.gross ?? null;
+        const attendance = readAttendance(saved?.deductions, null);
+        const gross = saved?.gross_amount ?? setup?.gross ?? null;
         return {
           id: saved?.id ?? `${ctx.employeeId}-${period}`,
           employeeId: ctx.employeeId,
@@ -115,9 +106,9 @@ export default async function AdminSalarySlipsPage({
           lopDays: attendance.lopDays,
           paidDays: attendance.paidDays,
           gross,
-          net: computed?.net ?? saved?.net_amount ?? gross,
+          net: saved?.net_amount ?? gross,
           status: saved?.status ?? (setup && isPayrollMonthReleased(period) ? "COMPUTED" : setup ? "COMPUTED" : "MISSING"),
-          canDownload: Boolean(setup),
+          canDownload: Boolean(saved || setup),
         };
       })
       .filter((row) => row.canDownload || stored.has(row.period));
@@ -137,7 +128,7 @@ export default async function AdminSalarySlipsPage({
   const watchableIds = watchable.map((employee) => employee.id);
   const [year, monthNumber] = month.split("-").map(Number);
 
-  const [{ data: employees }, { data: slips }] = await Promise.all([
+  const [{ data: employees }, { data: slips }, { data: records }] = await Promise.all([
     watchableIds.length
       ? supabase
           .from("employees")
@@ -152,6 +143,23 @@ export default async function AdminSalarySlipsPage({
       .select("id, employee_id, gross_amount, net_amount, status, deductions")
       .eq("period_year", year)
       .eq("period_month", monthNumber),
+    watchableIds.length
+      ? supabase
+          .from("salary_records")
+          .select("employee_id, effective_from, base_salary, pay_frequency, components, created_at")
+          .in("employee_id", watchableIds)
+          .order("effective_from", { ascending: false })
+          .order("created_at", { ascending: false })
+      : Promise.resolve({
+          data: [] as {
+            employee_id: string;
+            effective_from: string;
+            base_salary: number;
+            pay_frequency: string;
+            components: Json;
+            created_at: string;
+          }[],
+        }),
   ]);
 
   const options = (employees ?? []).map((employee) => ({
@@ -167,26 +175,13 @@ export default async function AdminSalarySlipsPage({
     ? (employees ?? []).filter((employee) => employee.id === employeeId)
     : (employees ?? []);
 
-  const computed = await loadPayslipsForMonth({
-    month,
-    employeeIds: people.map((person) => person.id),
-    persist: isPayrollMonthReleased(month),
-    generatedBy: ctx.employeeId,
-  });
-  const computedById = new Map(computed.map((slip) => [slip.employeeId, slip]));
   const slipByEmployee = new Map((slips ?? []).map((slip) => [slip.employee_id, slip]));
+  const { end } = monthStartEnd(month);
 
   const rows: SlipRow[] = people.map((employee) => {
-    const live = computedById.get(employee.id);
     const stored = slipByEmployee.get(employee.id);
-    const attendance = live
-      ? {
-          officeDays: live.attendance.officeDays,
-          leaveDays: live.attendance.paidLeaveDays + live.attendance.unpaidLeaveDays,
-          lopDays: live.attendance.lopDays,
-          paidDays: live.attendance.paidDays,
-        }
-      : readAttendance(stored?.deductions, null);
+    const setup = setupAsOf(records ?? [], employee.id, end, employee.salary);
+    const attendance = readAttendance(stored?.deductions, null);
     return {
       id: stored?.id ?? `${employee.id}-${month}`,
       employeeId: employee.id,
@@ -197,10 +192,10 @@ export default async function AdminSalarySlipsPage({
       leaveDays: attendance.leaveDays,
       lopDays: attendance.lopDays,
       paidDays: attendance.paidDays,
-      gross: live?.gross ?? stored?.gross_amount ?? null,
-      net: live?.net ?? stored?.net_amount ?? null,
-      status: stored?.status ?? (live ? (isPayrollMonthReleased(month) ? "FINALIZED" : "COMPUTED") : "MISSING"),
-      canDownload: Boolean(live),
+      gross: stored?.gross_amount ?? setup?.gross ?? null,
+      net: stored?.net_amount ?? null,
+      status: stored?.status ?? (setup ? (isPayrollMonthReleased(month) ? "FINALIZED" : "COMPUTED") : "MISSING"),
+      canDownload: Boolean(stored || setup),
     };
   });
 

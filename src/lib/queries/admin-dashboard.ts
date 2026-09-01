@@ -1,11 +1,11 @@
+import { cache } from "react";
 import { createDataClient as createClient } from "@/lib/supabase/data";
 import { todayIso } from "@/lib/format";
 import { SUPER_ADMIN_ROLE } from "@/lib/permissions/roles";
 import { weekendOrRecordedStatus } from "@/lib/attendance-weekend";
 
-export async function superAdminEmployeeIds(
-  supabase: Awaited<ReturnType<typeof createClient>>
-): Promise<string[]> {
+const loadSuperAdminEmployeeIds = cache(async (): Promise<string[]> => {
+  const supabase = await createClient();
   const { data: role } = await supabase
     .from("roles")
     .select("id")
@@ -17,6 +17,12 @@ export async function superAdminEmployeeIds(
     .select("employee_id")
     .eq("role_id", role.id);
   return Array.from(new Set((rows ?? []).map((row) => row.employee_id)));
+});
+
+export async function superAdminEmployeeIds(
+  _supabase?: Awaited<ReturnType<typeof createClient>>
+): Promise<string[]> {
+  return loadSuperAdminEmployeeIds();
 }
 
 export function excludeIds(ids: string[]) {

@@ -21,17 +21,20 @@ async function loadEmployeeContextFromDb(
 
   if (!employee) return null;
 
-  const [{ data: assignment }, { data: roles }] = await Promise.all([
-    service
-      .from("employee_roles")
-      .select("role_id")
-      .eq("employee_id", employee.id)
-      .eq("is_primary", true)
-      .maybeSingle(),
-    service.from("roles").select("id, role_key, display_name"),
-  ]);
+  const { data: assignment } = await service
+    .from("employee_roles")
+    .select("role_id, roles(role_key, display_name)")
+    .eq("employee_id", employee.id)
+    .eq("is_primary", true)
+    .maybeSingle();
 
-  const role = roles?.find((row) => row.id === assignment?.role_id);
+  const roleRow = assignment?.roles;
+  const role =
+    roleRow && !Array.isArray(roleRow)
+      ? roleRow
+      : Array.isArray(roleRow)
+        ? roleRow[0]
+        : null;
   if (!assignment || !role) return null;
 
   let permissions: string[] = [];
