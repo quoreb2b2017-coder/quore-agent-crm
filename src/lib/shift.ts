@@ -12,17 +12,16 @@ export const TEA_BREAK_MINUTES = 30;
 export const LUNCH_BREAK_MINUTES = 45;
 export const TEA_BREAK_SECONDS = TEA_BREAK_MINUTES * 60;
 export const LUNCH_BREAK_SECONDS = LUNCH_BREAK_MINUTES * 60;
-export const MAX_TEA_BREAKS = 2;
-export const MAX_LUNCH_BREAKS = 1;
-export const TEA_BREAK_BUDGET_SECONDS = MAX_TEA_BREAKS * TEA_BREAK_SECONDS;
-export const LUNCH_BREAK_BUDGET_SECONDS = MAX_LUNCH_BREAKS * LUNCH_BREAK_SECONDS;
+/** Total tea time per shift (shared across multiple tea breaks). */
+export const TEA_BREAK_BUDGET_SECONDS = TEA_BREAK_SECONDS;
+export const LUNCH_BREAK_BUDGET_SECONDS = LUNCH_BREAK_SECONDS;
 export const BREAK_TOTAL_SECONDS = TEA_BREAK_BUDGET_SECONDS + LUNCH_BREAK_BUDGET_SECONDS;
 export const PRODUCTIVE_SECONDS = SHIFT_WORKING_SECONDS - BREAK_TOTAL_SECONDS;
 
 export const SHIFT_WORKING_LABEL = "9 hrs";
-export const PRODUCTIVE_HOURS_LABEL = "7 hrs 15 min";
-export const BREAK_BUDGET_LABEL = "1 hr 45 min";
-export const BREAK_POLICY_LABEL = `Tea ${TEA_BREAK_MINUTES} min × 2 · Lunch ${LUNCH_BREAK_MINUTES} min`;
+export const PRODUCTIVE_HOURS_LABEL = "7 hrs 45 min";
+export const BREAK_BUDGET_LABEL = "1 hr 15 min";
+export const BREAK_POLICY_LABEL = `Tea ${TEA_BREAK_MINUTES} min · Lunch ${LUNCH_BREAK_MINUTES} min`;
 
 export type PolicyBreakType = "TEA" | "LUNCH";
 
@@ -66,8 +65,10 @@ export function shiftCountdown(date = new Date()): { open: boolean; minutesRemai
   return { open, minutesRemaining: INDIA_LOGIN_MINUTES - minutes };
 }
 
-export function allottedBreakSeconds(breakType: string): number {
-  return breakType === "LUNCH" ? LUNCH_BREAK_SECONDS : TEA_BREAK_SECONDS;
+export function allottedBreakSeconds(breakType: string, remainingSeconds?: number): number {
+  const perType = breakType === "LUNCH" ? LUNCH_BREAK_SECONDS : TEA_BREAK_SECONDS;
+  if (remainingSeconds == null) return perType;
+  return Math.min(perType, Math.max(0, remainingSeconds));
 }
 
 export function breakBudgetSeconds(breakType: string): number {

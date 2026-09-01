@@ -24,7 +24,7 @@ import { shiftWindowLabel } from "@/lib/format";
 import { createClient } from "@/lib/supabase/client";
 
 const HIGHLIGHTS = [
-  { icon: Clock, text: "Sign in and attendance is marked. US hours follow India 6:30 PM – 3:30 AM IST · tea 30 min × 2 · lunch 45 min" },
+  { icon: Clock, text: "Sign in and attendance is marked. US hours follow India 6:30 PM – 3:30 AM IST · tea 30 min · lunch 45 min" },
   { icon: Radio, text: "See live status across your team in real time" },
   { icon: Wallet, text: "Access salary slips, leave, and tasks in one place" },
 ];

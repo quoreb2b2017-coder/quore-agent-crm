@@ -321,7 +321,7 @@ export async function endBreak(): Promise<Result> {
 
   const { data: openBreak } = await supabase
     .from("breaks")
-    .select("id, started_at, session_id")
+    .select("id, started_at, session_id, break_type")
     .eq("employee_id", ctx.employeeId)
     .is("ended_at", null)
     .maybeSingle();
@@ -329,10 +329,34 @@ export async function endBreak(): Promise<Result> {
   if (!openBreak) return {};
 
   const now = new Date();
-  const durationSeconds = Math.max(
+  let durationSeconds = Math.max(
     0,
     Math.floor((now.getTime() - new Date(openBreak.started_at).getTime()) / 1000)
   );
+
+  const shiftDate = shiftDateIso(new Date(openBreak.started_at));
+  const { start, end } = shiftAccountingWindowUtc(shiftDate);
+  const { data: shiftBreaks } = await supabase
+    .from("breaks")
+    .select("id, break_type, started_at, ended_at, duration_seconds")
+    .eq("employee_id", ctx.employeeId)
+    .gte("started_at", start.toISOString())
+    .lt("started_at", end.toISOString());
+
+  let closedTea = 0;
+  let closedLunch = 0;
+  for (const row of shiftBreaks ?? []) {
+    if (row.id === openBreak.id || row.ended_at == null) continue;
+    const seconds = breakDurationSeconds(row);
+    if (isLunchBreak(row.break_type)) closedLunch += seconds;
+    else closedTea += seconds;
+  }
+
+  const budget = isLunchBreak(openBreak.break_type)
+    ? LUNCH_BREAK_BUDGET_SECONDS
+    : TEA_BREAK_BUDGET_SECONDS;
+  const closedUsed = isLunchBreak(openBreak.break_type) ? closedLunch : closedTea;
+  durationSeconds = Math.min(durationSeconds, Math.max(0, budget - closedUsed));
 
   const { error } = await supabase
     .from("breaks")
@@ -341,7 +365,6 @@ export async function endBreak(): Promise<Result> {
   if (error) return { error: error.message };
 
   try {
-    const shiftDate = shiftDateIso(new Date(openBreak.started_at));
     const attendance = await ensureAttendanceRow(supabase, ctx.employeeId, shiftDate);
     if (!BLOCKED_CLOCK_STATUSES.has(attendance.status)) {
       await supabase
