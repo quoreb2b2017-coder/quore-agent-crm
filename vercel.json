@@ -1,0 +1,8 @@
+{
+  "crons": [
+    {
+      "path": "/api/cron/salary-slips",
+      "schedule": "30 4 10 * *"
+    }
+  ]
+}
