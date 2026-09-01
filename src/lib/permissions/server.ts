@@ -1,10 +1,31 @@
 import { cache } from "react";
 import { redirect } from "next/navigation";
-import { getAuthUser } from "@/lib/supabase/server";
+import { createClient } from "@/lib/supabase/server";
 import { createServiceClient } from "@/lib/supabase/service";
+import { readWorktrackJwtClaims } from "@/lib/auth/jwt-claims";
 import type { EmployeeContext } from "./types";
-import { isStaffOrAdmin, isSuperAdmin, staffHasPermission } from "./roles";
+import { isStaffOrAdmin, isStaffRole, isSuperAdmin, staffHasPermission, staffDepartmentLabel } from "./roles";
 export { isAdminLike, isSuperAdmin } from "./roles";
+
+const getSession = cache(async () => {
+  const supabase = await createClient();
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+  return session;
+});
+
+async function roleDisplayNameForKey(roleKey: string, service: ReturnType<typeof createServiceClient>) {
+  if (isStaffRole(roleKey)) {
+    return staffDepartmentLabel(roleKey);
+  }
+  const { data: role } = await service
+    .from("roles")
+    .select("display_name")
+    .eq("role_key", roleKey)
+    .maybeSingle();
+  return role?.display_name ?? roleKey;
+}
 
 async function loadEmployeeContextFromDb(
   userId: string
@@ -74,8 +95,35 @@ async function loadEmployeeContextFromDb(
  */
 export const getCurrentEmployeeContext = cache(
   async (): Promise<EmployeeContext | null> => {
-    const user = await getAuthUser();
+    const session = await getSession();
+    const user = session?.user;
     if (!user) return null;
+
+    const claims = readWorktrackJwtClaims(session.access_token);
+    if (claims.employeeId && claims.roleKey) {
+      const service = createServiceClient();
+      const { data: employee } = await service
+        .from("employees")
+        .select(
+          "id, employee_code, full_name, email, profile_image_path, employment_status"
+        )
+        .eq("id", claims.employeeId)
+        .maybeSingle();
+
+      if (employee) {
+        return {
+          employeeId: employee.id,
+          employeeCode: employee.employee_code,
+          fullName: employee.full_name,
+          email: employee.email,
+          profileImagePath: employee.profile_image_path,
+          employmentStatus: claims.employmentStatus ?? employee.employment_status,
+          roleKey: claims.roleKey,
+          roleDisplayName: await roleDisplayNameForKey(claims.roleKey, service),
+          permissions: claims.permissions ?? [],
+        };
+      }
+    }
 
     return loadEmployeeContextFromDb(user.id);
   }

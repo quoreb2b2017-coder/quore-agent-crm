@@ -1,6 +1,6 @@
 import { getCurrentEmployeeContext } from "@/lib/permissions/server";
-import { getMySessionState } from "@/lib/queries/employee-status";
-import { getCommonDashboardData, getCampaignsDashboardData } from "@/lib/queries/employee-dashboard";
+import { getEmployeeDashboardBundle } from "@/lib/queries/employee-status";
+import { getCampaignsDashboardData } from "@/lib/queries/employee-dashboard";
 import { StaffDashboard } from "@/components/dashboards/staff-dashboard";
 import { greetingForNow, INDIA_TIME_ZONE } from "@/lib/format";
 
@@ -8,10 +8,7 @@ export default async function EmployeeDashboardPage() {
   const ctx = await getCurrentEmployeeContext();
   if (!ctx) return null;
 
-  const [sessionState, commonData] = await Promise.all([
-    getMySessionState(ctx.employeeId),
-    getCommonDashboardData(ctx.employeeId),
-  ]);
+  const { sessionState, commonData } = await getEmployeeDashboardBundle(ctx.employeeId);
 
   const marketingData =
     ctx.roleKey === "EMAIL_MARKETING" ? await getCampaignsDashboardData(ctx.employeeId) : null;

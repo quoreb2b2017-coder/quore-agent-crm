@@ -14,13 +14,16 @@ export function ChatUnreadButton({ href }: { href: string }) {
   }, []);
 
   useEffect(() => {
-    void load();
+    const timer = window.setTimeout(() => {
+      void load();
+    }, 900);
     function onUnread() {
       setUnread((count) => count + 1);
     }
     window.addEventListener("worktrack:chat-unread", onUnread);
     window.addEventListener("worktrack:chat-read-self", load);
     return () => {
+      window.clearTimeout(timer);
       window.removeEventListener("worktrack:chat-unread", onUnread);
       window.removeEventListener("worktrack:chat-read-self", load);
     };

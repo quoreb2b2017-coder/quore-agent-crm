@@ -104,6 +104,88 @@ export type AdminDashboardStats = {
   totalIdleHours: number;
 };
 
+export async function getAdminDashboardData(): Promise<{
+  stats: AdminDashboardStats;
+  employees: { id: string; full_name: string; employee_code: string }[];
+  teamReport: TeamTodayRow[];
+}> {
+  const supabase = await createClient();
+  const today = todayIso();
+  const adminIds = await superAdminEmployeeIds();
+  const skip = excludeIds(adminIds);
+  const adminSet = new Set(adminIds);
+
+  let employeesQuery = supabase
+    .from("employees")
+    .select("id, full_name, employee_code")
+    .neq("employment_status", "TERMINATED")
+    .order("full_name");
+  if (skip) employeesQuery = employeesQuery.not("id", "in", skip);
+
+  let activeCountQuery = supabase
+    .from("employees")
+    .select("id", { count: "exact", head: true })
+    .eq("employment_status", "ACTIVE");
+  if (skip) activeCountQuery = activeCountQuery.not("id", "in", skip);
+
+  const [
+    { data: employees },
+    { count: totalEmployees },
+    { data: activeSessions },
+    { data: openBreaks },
+    { data: attendanceToday },
+  ] = await Promise.all([
+    employeesQuery,
+    activeCountQuery,
+    supabase.from("employee_sessions").select("id, employee_id").eq("status", "ACTIVE"),
+    supabase.from("breaks").select("session_id").is("ended_at", null),
+    supabase
+      .from("attendance")
+      .select("employee_id, status, total_active_seconds, total_break_seconds, total_idle_seconds")
+      .eq("attendance_date", today),
+  ]);
+
+  const staff = employees ?? [];
+  const openBreakSessionIds = new Set((openBreaks ?? []).map((b) => b.session_id));
+  const sessions = (activeSessions ?? []).filter((s) => !adminSet.has(s.employee_id));
+  const onBreakEmployees = sessions.filter((s) => openBreakSessionIds.has(s.id)).length;
+  const onlineEmployees = sessions.length - onBreakEmployees;
+
+  const attendance = (attendanceToday ?? []).filter((row) => !adminSet.has(row.employee_id));
+  const totalWorkingSeconds = attendance.reduce((sum, a) => sum + a.total_active_seconds, 0);
+  const totalBreakSeconds = attendance.reduce((sum, a) => sum + a.total_break_seconds, 0);
+  const totalIdleSeconds = attendance.reduce((sum, a) => sum + a.total_idle_seconds, 0);
+  const total = totalEmployees ?? 0;
+
+  const stats: AdminDashboardStats = {
+    totalEmployees: total,
+    onlineEmployees,
+    onBreakEmployees,
+    offlineEmployees: Math.max(total - onlineEmployees - onBreakEmployees, 0),
+    idleEmployees: 0,
+    todaysAttendance: attendance.filter((a) => a.status === "PRESENT").length,
+    lateEmployees: 0,
+    totalWorkingHours: Math.round((totalWorkingSeconds / 3600) * 10) / 10,
+    totalBreakHours: Math.round((totalBreakSeconds / 3600) * 10) / 10,
+    totalIdleHours: Math.round((totalIdleSeconds / 3600) * 10) / 10,
+  };
+
+  const attendanceByEmployee = new Map((attendanceToday ?? []).map((row) => [row.employee_id, row]));
+  const teamReport: TeamTodayRow[] = staff.map((person) => {
+    const row = attendanceByEmployee.get(person.id);
+    return {
+      id: person.id,
+      fullName: person.full_name,
+      employeeCode: person.employee_code,
+      status: weekendOrRecordedStatus(today, row?.status),
+      activeSeconds: row?.total_active_seconds ?? 0,
+      breakSeconds: row?.total_break_seconds ?? 0,
+    };
+  });
+
+  return { stats, employees: staff, teamReport };
+}
+
 export async function getAdminDashboardStats(): Promise<AdminDashboardStats> {
   const supabase = await createClient();
   const today = todayIso();

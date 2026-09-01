@@ -187,7 +187,7 @@ export async function clockIn(): Promise<Result> {
   }
 
   try {
-    await notifySuperAdmins({
+    void notifySuperAdmins({
       type: "EMPLOYEE_LOGIN",
       title: `${ctx.fullName} logged in`,
       body: `${ctx.fullName} (${ctx.employeeCode}) signed in and clocked in.`,

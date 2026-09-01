@@ -1,6 +1,7 @@
 import { createDataClient as createClient } from "@/lib/supabase/data";
 import { isWeekendIso, shiftDateIso, todayIso } from "@/lib/format";
 import { breakDurationSeconds, isLunchBreak, shiftAccountingWindowUtc } from "@/lib/shift";
+import type { CommonDashboardData } from "@/lib/queries/employee-dashboard";
 
 export type MySessionState = {
   isClockedIn: boolean;
@@ -13,6 +14,102 @@ export type MySessionState = {
   onLeave: boolean;
   weekOff: boolean;
 };
+
+export type EmployeeDashboardBundle = {
+  sessionState: MySessionState;
+  commonData: CommonDashboardData;
+};
+
+export async function getEmployeeDashboardBundle(employeeId: string): Promise<EmployeeDashboardBundle> {
+  const supabase = await createClient();
+  const today = todayIso();
+
+  const [{ data: session }, { data: attendance }, { data: tasks }] = await Promise.all([
+    supabase
+      .from("employee_sessions")
+      .select("id, started_at")
+      .eq("employee_id", employeeId)
+      .eq("status", "ACTIVE")
+      .maybeSingle(),
+    supabase
+      .from("attendance")
+      .select("status, total_active_seconds, total_break_seconds, total_idle_seconds")
+      .eq("employee_id", employeeId)
+      .eq("attendance_date", today)
+      .maybeSingle(),
+    supabase.from("tasks").select("status").eq("assigned_to", employeeId),
+  ]);
+
+  const shiftDate = session ? shiftDateIso(new Date(session.started_at)) : today;
+  const { start, end } = shiftAccountingWindowUtc(shiftDate);
+
+  const { data: shiftBreaks } = await supabase
+    .from("breaks")
+    .select("break_type, ended_at, started_at, duration_seconds, session_id")
+    .eq("employee_id", employeeId)
+    .gte("started_at", start.toISOString())
+    .lt("started_at", end.toISOString());
+
+  const breaks = shiftBreaks ?? [];
+  let teaClosedSeconds = 0;
+  let lunchClosedSeconds = 0;
+  for (const row of breaks) {
+    if (row.ended_at == null) continue;
+    const seconds = breakDurationSeconds(row);
+    if (isLunchBreak(row.break_type)) lunchClosedSeconds += seconds;
+    else teaClosedSeconds += seconds;
+  }
+
+  const weekOff =
+    attendance?.status === "WEEK_OFF" || (!attendance && isWeekendIso(shiftDate));
+  const openBreak = session
+    ? breaks.find((row) => row.session_id === session.id && row.ended_at == null)
+    : undefined;
+
+  const taskList = tasks ?? [];
+  const commonData: CommonDashboardData = {
+    isClockedIn: !!session,
+    isOnBreak: !!openBreak,
+    activeSeconds: attendance?.total_active_seconds ?? 0,
+    breakSeconds: attendance?.total_break_seconds ?? 0,
+    idleSeconds: attendance?.total_idle_seconds ?? 0,
+    assignedTasks: taskList.length,
+    completedTasks: taskList.filter((t) => t.status === "DONE").length,
+    pendingTasks: taskList.filter((t) => !["DONE", "CANCELLED"].includes(t.status)).length,
+  };
+
+  if (!session) {
+    return {
+      sessionState: {
+        isClockedIn: false,
+        isOnBreak: false,
+        sessionStartedAt: null,
+        teaClosedSeconds,
+        lunchClosedSeconds,
+        openBreakType: null,
+        openBreakStartedAt: null,
+        onLeave: attendance?.status === "ON_LEAVE",
+        weekOff,
+      },
+      commonData,
+    };
+  }
+
+  return {
+    sessionState: {
+      isClockedIn: true,
+      isOnBreak: !!openBreak,
+      sessionStartedAt: session.started_at,
+      teaClosedSeconds,
+      lunchClosedSeconds,
+      openBreakType: openBreak?.break_type ?? null,
+      openBreakStartedAt: openBreak?.started_at ?? null,
+      onLeave: attendance?.status === "ON_LEAVE",
+      weekOff,
+    },
+    commonData,
+  };
+}
 
 export async function getMySessionState(employeeId: string): Promise<MySessionState> {
   const supabase = await createClient();

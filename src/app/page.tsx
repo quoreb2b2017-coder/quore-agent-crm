@@ -1,20 +1,32 @@
 import { redirect } from "next/navigation";
-import { getAuthUser } from "@/lib/supabase/server";
+import { createClient } from "@/lib/supabase/server";
+import { postLoginPath, readWorktrackJwtClaims } from "@/lib/auth/jwt-claims";
 import { getCurrentEmployeeContext, isAdminLike } from "@/lib/permissions/server";
 import { AccountSetupNotice } from "@/components/auth/account-setup-notice";
 import { BlockedAccountGate } from "@/components/auth/blocked-account-gate";
 import { isEmploymentBlocked } from "@/lib/format";
 
 export default async function Home() {
-  const user = await getAuthUser();
+  const supabase = await createClient();
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
 
-  if (!user) {
+  if (!session?.user) {
     redirect("/login");
+  }
+
+  const claims = readWorktrackJwtClaims(session.access_token);
+  if (claims.roleKey) {
+    if (claims.employmentStatus && isEmploymentBlocked(claims.employmentStatus)) {
+      return <BlockedAccountGate />;
+    }
+    redirect(postLoginPath(claims.roleKey));
   }
 
   const ctx = await getCurrentEmployeeContext();
   if (!ctx) {
-    return <AccountSetupNotice email={user.email ?? ""} />;
+    return <AccountSetupNotice email={session.user.email ?? ""} />;
   }
 
   if (isEmploymentBlocked(ctx.employmentStatus)) {

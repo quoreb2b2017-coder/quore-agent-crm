@@ -28,7 +28,9 @@ export function NotificationBell({ href }: { href: string }) {
   }, []);
 
   useEffect(() => {
-    void load();
+    const timer = window.setTimeout(() => {
+      void load();
+    }, 900);
     function onPing() {
       setUnreadCount((count) => count + 1);
       void load();
@@ -36,6 +38,7 @@ export function NotificationBell({ href }: { href: string }) {
     window.addEventListener("worktrack:notification", onPing);
     window.addEventListener("worktrack:notifications-changed", load);
     return () => {
+      window.clearTimeout(timer);
       window.removeEventListener("worktrack:notification", onPing);
       window.removeEventListener("worktrack:notifications-changed", load);
     };

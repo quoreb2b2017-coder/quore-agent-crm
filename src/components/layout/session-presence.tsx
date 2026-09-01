@@ -27,7 +27,9 @@ export function SessionPresence({ enableClockIn = true }: { enableClockIn?: bool
       }
       if (result.skipped) return;
       sessionStorage.setItem(FLAG, "done");
-      if (result.activated) router.refresh();
+      if (result.activated) {
+        window.setTimeout(() => router.refresh(), 2000);
+      }
     });
   }, [enableClockIn, router]);
 

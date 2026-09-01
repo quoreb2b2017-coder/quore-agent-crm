@@ -7,9 +7,8 @@ import { DashboardPanel } from "@/components/dashboard/dashboard-panel";
 import { StaffDashboard } from "@/components/dashboards/staff-dashboard";
 import { requireViewer } from "@/lib/permissions/server";
 import { greetingForNow, INDIA_TIME_ZONE } from "@/lib/format";
-import { getAdminDashboardStats, getTodayTeamReport, listWatchableEmployees } from "@/lib/queries/admin-dashboard";
-import { getMySessionState } from "@/lib/queries/employee-status";
-import { getCommonDashboardData } from "@/lib/queries/employee-dashboard";
+import { getAdminDashboardData } from "@/lib/queries/admin-dashboard";
+import { getEmployeeDashboardBundle, getMySessionState } from "@/lib/queries/employee-status";
 import { ClockWidget } from "@/components/attendance/clock-widget";
 import { isUuid } from "@/lib/attendance-period";
 import { EmployeeWatchSelect } from "./employee-watch-select";
@@ -28,10 +27,7 @@ export default async function AdminDashboardPage({
   });
 
   if (!seesAll) {
-    const [sessionState, commonData] = await Promise.all([
-      getMySessionState(ctx.employeeId),
-      getCommonDashboardData(ctx.employeeId),
-    ]);
+    const { sessionState, commonData } = await getEmployeeDashboardBundle(ctx.employeeId);
 
     return (
       <StaffDashboard
@@ -50,15 +46,15 @@ export default async function AdminDashboardPage({
   const requested = Array.isArray(params.employee) ? params.employee[0] : params.employee;
   const requestedId = requested && isUuid(requested) ? requested : null;
 
-  const [stats, employees, watchedSession, teamReport] = await Promise.all([
-    getAdminDashboardStats(),
-    listWatchableEmployees(),
+  const [dashboard, watchedSession] = await Promise.all([
+    getAdminDashboardData(),
     requestedId ? getMySessionState(requestedId) : Promise.resolve(null),
-    requestedId ? Promise.resolve([]) : getTodayTeamReport(),
   ]);
+  const { stats, employees, teamReport } = dashboard;
 
   const selected = employees.find((employee) => employee.id === requestedId) ?? null;
   const session = selected ? watchedSession : null;
+  const reportRows = requestedId ? [] : teamReport;
 
   const firstName = ctx.fullName.split(" ")[0] ?? "Admin";
   const attendancePct =
@@ -101,7 +97,7 @@ export default async function AdminDashboardPage({
             {selected && session ? (
               <ClockWidget compact readOnly embedded session={session} />
             ) : (
-              <TeamTodayReport rows={teamReport} />
+              <TeamTodayReport rows={reportRows} />
             )}
           </div>
         }

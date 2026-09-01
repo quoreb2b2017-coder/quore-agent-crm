@@ -22,6 +22,7 @@ import { PublicShell } from "@/components/layout/public-shell";
 import { ClientGreeting, DualOfficeClocks, ShiftCountdown } from "@/components/layout/live-time";
 import { shiftWindowLabel } from "@/lib/format";
 import { createClient } from "@/lib/supabase/client";
+import { postLoginPath, readWorktrackJwtClaims } from "@/lib/auth/jwt-claims";
 
 const HIGHLIGHTS = [
   { icon: Clock, text: "Sign in and attendance is marked. US hours follow India 6:30 PM – 3:30 AM IST · tea 30 min · lunch 45 min" },
@@ -94,7 +95,9 @@ export default function LoginPage() {
       return;
     }
 
-    router.replace("/");
+    const { data: sessionData } = await supabase.auth.getSession();
+    const claims = readWorktrackJwtClaims(sessionData.session?.access_token);
+    router.replace(postLoginPath(claims.roleKey));
     router.refresh();
   }
 
