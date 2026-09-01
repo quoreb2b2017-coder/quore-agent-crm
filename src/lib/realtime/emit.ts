@@ -1,19 +1,13 @@
 import type { RealtimeNotification } from "./types";
-
-function socketInternalUrl() {
-  return process.env.SOCKET_INTERNAL_URL || "http://127.0.0.1:3002";
-}
-
-function socketSecret() {
-  return process.env.SOCKET_SECRET || process.env.SUPABASE_SERVICE_ROLE_KEY || "";
-}
+import { serverSocketUrl, socketAuthSecret } from "@/lib/env";
 
 async function postSocket(path: string, body: unknown) {
-  const secret = socketSecret();
-  if (!secret) return;
+  const base = serverSocketUrl();
+  const secret = socketAuthSecret();
+  if (!base || !secret) return;
 
   try {
-    await fetch(`${socketInternalUrl()}${path}`, {
+    await fetch(`${base}${path}`, {
       method: "POST",
       headers: {
         "content-type": "application/json",

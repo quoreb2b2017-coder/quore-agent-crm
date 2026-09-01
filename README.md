@@ -92,4 +92,10 @@ Explicitly deferred to follow-up phases: automatic attendance/productivity aggre
 
 ## Deploy on Vercel
 
-Add `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, and `SUPABASE_SERVICE_ROLE_KEY` as environment variables in your deployment settings before deploying.
+1. Import [quore-agent-crm](https://github.com/quoreb2b2017-coder/quore-agent-crm) on Vercel.
+2. Copy variables from `vercel.env.example` into **Project → Settings → Environment Variables** (Production + Preview):
+   - `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY` (required)
+   - `CRON_SECRET` (required for salary slip cron on the 10th)
+   - `COMPANY_*` (optional; payslip header defaults exist)
+3. Deploy. Live chat/notifications need a separate socket host — leave `NEXT_PUBLIC_SOCKET_URL` unset until then (app works without it).
+4. Apply Supabase migrations and enable the Auth Hook (see Setup above).
