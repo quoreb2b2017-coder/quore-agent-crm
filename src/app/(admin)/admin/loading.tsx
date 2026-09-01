@@ -1,5 +1,5 @@
-import { RouteLoading } from "@/components/layout/route-loading";
+import { DashboardPageSkeleton } from "@/components/layout/page-skeleton";
 
 export default function AdminLoading() {
-  return <RouteLoading />;
+  return <DashboardPageSkeleton />;
 }

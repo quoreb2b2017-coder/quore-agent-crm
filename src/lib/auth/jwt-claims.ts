@@ -4,8 +4,21 @@ export type WorktrackJwtClaims = {
   employeeId?: string;
   roleKey?: string;
   employmentStatus?: string;
+  fullName?: string;
+  employeeCode?: string;
+  roleDisplayName?: string;
   permissions?: string[];
 };
+
+export function hasWorktrackProfileClaims(claims: WorktrackJwtClaims) {
+  return Boolean(
+    claims.employeeId &&
+      claims.roleKey &&
+      claims.fullName &&
+      claims.employeeCode &&
+      claims.roleDisplayName
+  );
+}
 
 function parseJwtPayload(accessToken: string): Record<string, unknown> | null {
   try {
@@ -34,6 +47,10 @@ export function readWorktrackJwtClaims(accessToken?: string | null): WorktrackJw
     roleKey: typeof payload.role_key === "string" ? payload.role_key : undefined,
     employmentStatus:
       typeof payload.employment_status === "string" ? payload.employment_status : undefined,
+    fullName: typeof payload.full_name === "string" ? payload.full_name : undefined,
+    employeeCode: typeof payload.employee_code === "string" ? payload.employee_code : undefined,
+    roleDisplayName:
+      typeof payload.role_display_name === "string" ? payload.role_display_name : undefined,
     permissions: Array.isArray(permissions)
       ? permissions.filter((value): value is string => typeof value === "string")
       : undefined,

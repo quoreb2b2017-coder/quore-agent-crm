@@ -98,7 +98,6 @@ export default function LoginPage() {
     const { data: sessionData } = await supabase.auth.getSession();
     const claims = readWorktrackJwtClaims(sessionData.session?.access_token);
     router.replace(postLoginPath(claims.roleKey));
-    router.refresh();
   }
 
   return (

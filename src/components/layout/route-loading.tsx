@@ -20,13 +20,14 @@ export function RouteSpinner({ className }: { className?: string }) {
 
 export function RouteLoading() {
   return (
-    <div
-      className="flex min-h-[min(28rem,70vh)] items-center justify-center"
-      role="status"
-      aria-label="Loading"
-    >
-      <div className="route-loader-enter">
-        <RouteSpinner />
+    <div className="py-2" role="status" aria-label="Loading">
+      <div className="flex flex-col gap-3">
+        <div className="h-10 w-40 animate-pulse rounded-lg bg-muted/70" />
+        <div className="h-4 w-64 max-w-full animate-pulse rounded bg-muted/60" />
+        <div className="mt-2 grid gap-3 lg:grid-cols-2">
+          <div className="min-h-40 animate-pulse rounded-2xl bg-muted/70" />
+          <div className="min-h-40 animate-pulse rounded-2xl bg-muted/70" />
+        </div>
       </div>
     </div>
   );
@@ -74,7 +75,7 @@ function NavigationLoaderInner() {
       setVisible(false);
       return;
     }
-    const show = window.setTimeout(() => setVisible(true), 60);
+    const show = window.setTimeout(() => setVisible(true), 320);
     const giveUp = window.setTimeout(() => setPending(false), 12000);
     return () => {
       window.clearTimeout(show);

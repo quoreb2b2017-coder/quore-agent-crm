@@ -1,13 +1,12 @@
 "use client";
 
 import type { CSSProperties, ReactNode } from "react";
-import { Suspense } from "react";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/layout/app-sidebar";
 import { Topbar } from "@/components/layout/topbar";
 import { SessionPresence } from "@/components/layout/session-presence";
 import { AppSocketProvider } from "@/components/realtime/app-socket";
-import { NavigationLoader, RouteLoading } from "@/components/layout/route-loading";
+import { NavigationLoader } from "@/components/layout/route-loading";
 import { PermissionsProvider } from "@/lib/permissions/context";
 import { isSuperAdmin } from "@/lib/permissions/roles";
 import type { ModuleDefinition } from "@/lib/permissions/modules";
@@ -59,9 +58,7 @@ export function AppShell({
                   isChat ? "overflow-hidden" : "overflow-y-auto px-4 pt-1 pb-8 md:px-8"
                 )}
               >
-                <Suspense fallback={<RouteLoading />}>
-                  <div className={cn(isChat && "h-full min-h-0")}>{children}</div>
-                </Suspense>
+                <div className={cn(isChat && "h-full min-h-0")}>{children}</div>
               </div>
             </div>
           </SidebarInset>

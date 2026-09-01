@@ -2,7 +2,7 @@ import { cache } from "react";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { createServiceClient } from "@/lib/supabase/service";
-import { readWorktrackJwtClaims } from "@/lib/auth/jwt-claims";
+import { readWorktrackJwtClaims, hasWorktrackProfileClaims } from "@/lib/auth/jwt-claims";
 import type { EmployeeContext } from "./types";
 import { isStaffOrAdmin, isStaffRole, isSuperAdmin, staffHasPermission, staffDepartmentLabel } from "./roles";
 export { isAdminLike, isSuperAdmin } from "./roles";
@@ -100,6 +100,20 @@ export const getCurrentEmployeeContext = cache(
     if (!user) return null;
 
     const claims = readWorktrackJwtClaims(session.access_token);
+    if (hasWorktrackProfileClaims(claims)) {
+      return {
+        employeeId: claims.employeeId!,
+        employeeCode: claims.employeeCode!,
+        fullName: claims.fullName!,
+        email: user.email ?? "",
+        profileImagePath: null,
+        employmentStatus: claims.employmentStatus ?? "ACTIVE",
+        roleKey: claims.roleKey!,
+        roleDisplayName: claims.roleDisplayName!,
+        permissions: claims.permissions ?? [],
+      };
+    }
+
     if (claims.employeeId && claims.roleKey) {
       const service = createServiceClient();
       const { data: employee } = await service

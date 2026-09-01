@@ -116,7 +116,7 @@ export function AppSocketProvider({
 
     const timer = window.setTimeout(() => {
       void connect();
-    }, 250);
+    }, 1200);
 
     return () => {
       cancelled = true;

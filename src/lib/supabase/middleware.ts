@@ -51,8 +51,9 @@ export async function updateSession(request: NextRequest) {
   // Refresh the session so it doesn't expire. Required for Server Components,
   // which can't set cookies themselves.
   const {
-    data: { user },
-  } = await supabase.auth.getUser();
+    data: { session },
+  } = await supabase.auth.getSession();
+  const user = session?.user ?? null;
 
   const { pathname } = request.nextUrl;
   const isProtected = PROTECTED_PREFIXES.some((p) => pathname.startsWith(p));
