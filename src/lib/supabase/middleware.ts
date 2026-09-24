@@ -33,6 +33,12 @@ function redirectTo(
   return response;
 }
 
+function dashboardPath(roleKey?: string | null) {
+  const dest = postLoginPath(roleKey);
+  // Never bounce "/" → "/" (ERR_TOO_MANY_REDIRECTS when JWT has no role_key).
+  return dest === "/" ? null : dest;
+}
+
 /**
  * Fast path: gate protected routes from cookies/JWT locally.
  * Only talks to Supabase Auth when the access token is missing or near expiry.
@@ -62,9 +68,9 @@ export async function updateSession(request: NextRequest) {
   const needsRefresh = isAccessTokenExpiringSoon(accessToken, 120);
 
   if (!needsRefresh) {
-    if (pathname === "/login" || pathname === "/") {
-      return redirectTo(request, postLoginPath(claims.roleKey));
-    }
+    // Do not redirect / or /login from the cookie alone. A JWT with no role
+    // makes postLoginPath("/") and the browser loops. The homepage resolves
+    // a real session; /login stays reachable when the server session is missing.
     return NextResponse.next();
   }
 
@@ -92,17 +98,19 @@ export async function updateSession(request: NextRequest) {
     data: { session },
   } = await supabase.auth.getSession();
 
-  if (!session?.user && isProtected) {
-    return redirectTo(request, "/login", supabaseResponse.cookies, { next: pathname });
+  if (!session?.user) {
+    if (isProtected) {
+      return redirectTo(request, "/login", supabaseResponse.cookies, { next: pathname });
+    }
+    return supabaseResponse;
   }
 
-  if (session?.user && (pathname === "/login" || pathname === "/")) {
+  if (pathname === "/login") {
     const refreshedClaims = readWorktrackJwtClaims(session.access_token);
-    return redirectTo(
-      request,
-      postLoginPath(refreshedClaims.roleKey ?? claims.roleKey),
-      supabaseResponse.cookies
-    );
+    const dest = dashboardPath(refreshedClaims.roleKey ?? claims.roleKey);
+    if (dest) {
+      return redirectTo(request, dest, supabaseResponse.cookies);
+    }
   }
 
   return supabaseResponse;

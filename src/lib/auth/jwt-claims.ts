@@ -132,6 +132,7 @@ export function hasAuthCookie(cookies: Array<{ name: string; value: string }>) {
 }
 
 export function postLoginPath(roleKey?: string | null) {
+  // No role in JWT yet → home page loads context from DB (do not loop in middleware).
   if (!roleKey) return "/";
   return isAdminLike(roleKey) ? "/admin/dashboard" : "/portal/dashboard";
 }
