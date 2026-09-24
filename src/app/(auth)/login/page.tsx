@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
 import {
   Loader2,
   Clock,
@@ -31,7 +30,6 @@ const HIGHLIGHTS = [
 ];
 
 export default function LoginPage() {
-  const router = useRouter();
   const emailRef = useRef<HTMLInputElement>(null);
   const passwordRef = useRef<HTMLInputElement>(null);
   const [showPassword, setShowPassword] = useState(false);
@@ -77,7 +75,7 @@ export default function LoginPage() {
     }
 
     const supabase = createClient();
-    const { error: signInError } = await supabase.auth.signInWithPassword({
+    const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
       email: emailValue,
       password: passwordValue,
     });
@@ -95,9 +93,9 @@ export default function LoginPage() {
       return;
     }
 
-    const { data: sessionData } = await supabase.auth.getSession();
-    const claims = readWorktrackJwtClaims(sessionData.session?.access_token);
-    router.replace(postLoginPath(claims.roleKey));
+    const claims = readWorktrackJwtClaims(signInData.session?.access_token);
+    // Hard navigation is faster than soft RSC replace after auth cookie write.
+    window.location.assign(postLoginPath(claims.roleKey));
   }
 
   return (

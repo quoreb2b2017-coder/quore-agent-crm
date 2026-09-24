@@ -1,12 +1,19 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
+import {
+  accessTokenFromCookieList,
+  hasAuthCookie,
+  isAccessTokenExpiringSoon,
+  postLoginPath,
+  readWorktrackJwtClaims,
+} from "@/lib/auth/jwt-claims";
 
 const PROTECTED_PREFIXES = ["/admin", "/portal"];
 
-function redirectWithCookies(
+function redirectTo(
   request: NextRequest,
-  supabaseResponse: NextResponse,
   pathname: string,
+  cookies?: NextResponse["cookies"],
   params?: Record<string, string>
 ) {
   const url = request.nextUrl.clone();
@@ -17,16 +24,51 @@ function redirectWithCookies(
       url.searchParams.set(key, value);
     }
   }
-  const redirectResponse = NextResponse.redirect(url);
-  supabaseResponse.cookies.getAll().forEach((cookie) => {
-    redirectResponse.cookies.set(cookie);
-  });
-  return redirectResponse;
+  const response = NextResponse.redirect(url);
+  if (cookies) {
+    cookies.getAll().forEach((cookie) => {
+      response.cookies.set(cookie);
+    });
+  }
+  return response;
 }
 
+/**
+ * Fast path: gate protected routes from cookies/JWT locally.
+ * Only talks to Supabase Auth when the access token is missing or near expiry.
+ */
 export async function updateSession(request: NextRequest) {
-  let supabaseResponse = NextResponse.next({ request });
+  const { pathname } = request.nextUrl;
 
+  // API routes handle their own auth; skip session refresh overhead.
+  if (pathname.startsWith("/api/")) {
+    return NextResponse.next();
+  }
+
+  const cookieList = request.cookies.getAll();
+  const signedIn = hasAuthCookie(cookieList);
+  const isProtected = PROTECTED_PREFIXES.some((prefix) => pathname.startsWith(prefix));
+
+  if (!signedIn && isProtected) {
+    return redirectTo(request, "/login", undefined, { next: pathname });
+  }
+
+  if (!signedIn) {
+    return NextResponse.next();
+  }
+
+  const accessToken = accessTokenFromCookieList(cookieList);
+  const claims = readWorktrackJwtClaims(accessToken);
+  const needsRefresh = isAccessTokenExpiringSoon(accessToken, 120);
+
+  if (!needsRefresh) {
+    if (pathname === "/login" || pathname === "/") {
+      return redirectTo(request, postLoginPath(claims.roleKey));
+    }
+    return NextResponse.next();
+  }
+
+  let supabaseResponse = NextResponse.next({ request });
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
@@ -36,9 +78,7 @@ export async function updateSession(request: NextRequest) {
           return request.cookies.getAll();
         },
         setAll(cookiesToSet) {
-          cookiesToSet.forEach(({ name, value }) =>
-            request.cookies.set(name, value)
-          );
+          cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value));
           supabaseResponse = NextResponse.next({ request });
           cookiesToSet.forEach(({ name, value, options }) =>
             supabaseResponse.cookies.set(name, value, options)
@@ -48,24 +88,21 @@ export async function updateSession(request: NextRequest) {
     }
   );
 
-  // Refresh the session so it doesn't expire. Required for Server Components,
-  // which can't set cookies themselves.
   const {
     data: { session },
   } = await supabase.auth.getSession();
-  const user = session?.user ?? null;
 
-  const { pathname } = request.nextUrl;
-  const isProtected = PROTECTED_PREFIXES.some((p) => pathname.startsWith(p));
-
-  if (!user && isProtected) {
-    return redirectWithCookies(request, supabaseResponse, "/login", {
-      next: pathname,
-    });
+  if (!session?.user && isProtected) {
+    return redirectTo(request, "/login", supabaseResponse.cookies, { next: pathname });
   }
 
-  if (user && pathname === "/login") {
-    return redirectWithCookies(request, supabaseResponse, "/");
+  if (session?.user && (pathname === "/login" || pathname === "/")) {
+    const refreshedClaims = readWorktrackJwtClaims(session.access_token);
+    return redirectTo(
+      request,
+      postLoginPath(refreshedClaims.roleKey ?? claims.roleKey),
+      supabaseResponse.cookies
+    );
   }
 
   return supabaseResponse;

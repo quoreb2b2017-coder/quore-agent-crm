@@ -1,8 +1,10 @@
+import { Suspense } from "react";
 import { redirect } from "next/navigation";
 import { getCurrentEmployeeContext } from "@/lib/permissions/server";
 import { EMPLOYEE_MODULES, filterModules } from "@/lib/permissions/modules";
 import { AppShell } from "@/components/layout/app-shell";
 import { BlockedAccountGate } from "@/components/auth/blocked-account-gate";
+import { DashboardPageSkeleton } from "@/components/layout/page-skeleton";
 import { isEmploymentBlocked } from "@/lib/format";
 
 export default async function EmployeeLayout({
@@ -31,7 +33,7 @@ export default async function EmployeeLayout({
       profileHref="/portal/profile"
       notificationsHref="/portal/notifications"
     >
-      {children}
+      <Suspense fallback={<DashboardPageSkeleton />}>{children}</Suspense>
     </AppShell>
   );
 }

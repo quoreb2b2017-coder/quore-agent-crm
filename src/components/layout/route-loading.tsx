@@ -60,27 +60,20 @@ function isAppNavigation(anchor: HTMLAnchorElement, event: MouseEvent) {
   return true;
 }
 
+/** Thin top progress bar — does not block the page with a spinner overlay. */
 function NavigationLoaderInner() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const [pending, setPending] = useState(false);
-  const [visible, setVisible] = useState(false);
 
   useEffect(() => {
     setPending(false);
   }, [pathname, searchParams]);
 
   useEffect(() => {
-    if (!pending) {
-      setVisible(false);
-      return;
-    }
-    const show = window.setTimeout(() => setVisible(true), 320);
-    const giveUp = window.setTimeout(() => setPending(false), 12000);
-    return () => {
-      window.clearTimeout(show);
-      window.clearTimeout(giveUp);
-    };
+    if (!pending) return;
+    const giveUp = window.setTimeout(() => setPending(false), 8000);
+    return () => window.clearTimeout(giveUp);
   }, [pending]);
 
   useEffect(() => {
@@ -108,22 +101,20 @@ function NavigationLoaderInner() {
   return (
     <div
       className={cn(
-        "pointer-events-none absolute inset-0 z-30 flex items-center justify-center bg-background/75 backdrop-blur-[2px] transition-opacity duration-200 ease-out",
-        visible ? "opacity-100" : "opacity-0"
+        "pointer-events-none absolute inset-x-0 top-0 z-40 h-0.5 overflow-hidden",
+        pending ? "opacity-100" : "opacity-0"
       )}
-      aria-hidden={!visible}
-      aria-busy={visible}
-      role={visible ? "status" : undefined}
-      aria-label={visible ? "Loading" : undefined}
+      aria-hidden={!pending}
+      aria-busy={pending}
+      role={pending ? "status" : undefined}
+      aria-label={pending ? "Loading" : undefined}
     >
       <div
         className={cn(
-          "transition-transform duration-200 ease-out",
-          visible ? "scale-100" : "scale-95"
+          "h-full w-1/3 rounded-full bg-primary",
+          pending && "animate-[route-progress_1s_ease-in-out_infinite]"
         )}
-      >
-        <RouteSpinner />
-      </div>
+      />
     </div>
   );
 }

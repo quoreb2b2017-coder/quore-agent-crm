@@ -1,8 +1,10 @@
+import { Suspense } from "react";
 import { redirect } from "next/navigation";
 import { getCurrentEmployeeContext, isAdminLike } from "@/lib/permissions/server";
 import { ADMIN_MODULES, filterModules } from "@/lib/permissions/modules";
 import { AppShell } from "@/components/layout/app-shell";
 import { BlockedAccountGate } from "@/components/auth/blocked-account-gate";
+import { DashboardPageSkeleton } from "@/components/layout/page-skeleton";
 import { isEmploymentBlocked } from "@/lib/format";
 
 export default async function AdminLayout({
@@ -35,7 +37,7 @@ export default async function AdminLayout({
       profileHref="/admin/settings"
       notificationsHref="/admin/notifications"
     >
-      {children}
+      <Suspense fallback={<DashboardPageSkeleton />}>{children}</Suspense>
     </AppShell>
   );
 }

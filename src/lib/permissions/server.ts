@@ -4,7 +4,14 @@ import { createClient } from "@/lib/supabase/server";
 import { createServiceClient } from "@/lib/supabase/service";
 import { readWorktrackJwtClaims, hasWorktrackProfileClaims } from "@/lib/auth/jwt-claims";
 import type { EmployeeContext } from "./types";
-import { isStaffOrAdmin, isStaffRole, isSuperAdmin, staffHasPermission, staffDepartmentLabel } from "./roles";
+import {
+  isStaffOrAdmin,
+  isStaffRole,
+  isSuperAdmin,
+  staffHasPermission,
+  staffDepartmentLabel,
+  SUPER_ADMIN_ROLE,
+} from "./roles";
 export { isAdminLike, isSuperAdmin } from "./roles";
 
 const getSession = cache(async () => {
@@ -15,47 +22,33 @@ const getSession = cache(async () => {
   return session;
 });
 
-async function roleDisplayNameForKey(roleKey: string, service: ReturnType<typeof createServiceClient>) {
-  if (isStaffRole(roleKey)) {
-    return staffDepartmentLabel(roleKey);
-  }
-  const { data: role } = await service
-    .from("roles")
-    .select("display_name")
-    .eq("role_key", roleKey)
-    .maybeSingle();
-  return role?.display_name ?? roleKey;
+function roleDisplayNameLocal(roleKey: string) {
+  if (roleKey === SUPER_ADMIN_ROLE) return "Super Admin";
+  if (roleKey === "HR") return "HR";
+  if (isStaffRole(roleKey)) return staffDepartmentLabel(roleKey);
+  return roleKey.replaceAll("_", " ");
 }
 
-async function loadEmployeeContextFromDb(
-  userId: string
-): Promise<EmployeeContext | null> {
+async function loadEmployeeContextFromDb(userId: string): Promise<EmployeeContext | null> {
   const service = createServiceClient();
 
   const { data: employee } = await service
     .from("employees")
     .select(
-      "id, employee_code, full_name, email, profile_image_path, employment_status"
+      "id, employee_code, full_name, email, profile_image_path, employment_status, employee_roles!inner(role_id, is_primary, roles(role_key, display_name))"
     )
     .eq("auth_user_id", userId)
+    .eq("employee_roles.is_primary", true)
     .maybeSingle();
 
   if (!employee) return null;
 
-  const { data: assignment } = await service
-    .from("employee_roles")
-    .select("role_id, roles(role_key, display_name)")
-    .eq("employee_id", employee.id)
-    .eq("is_primary", true)
-    .maybeSingle();
-
+  const assignment = Array.isArray(employee.employee_roles)
+    ? employee.employee_roles[0]
+    : employee.employee_roles;
   const roleRow = assignment?.roles;
   const role =
-    roleRow && !Array.isArray(roleRow)
-      ? roleRow
-      : Array.isArray(roleRow)
-        ? roleRow[0]
-        : null;
+    roleRow && !Array.isArray(roleRow) ? roleRow : Array.isArray(roleRow) ? roleRow[0] : null;
   if (!assignment || !role) return null;
 
   let permissions: string[] = [];
@@ -114,13 +107,12 @@ export const getCurrentEmployeeContext = cache(
       };
     }
 
+    // Partial JWT claims: one employee row, no roles table scan.
     if (claims.employeeId && claims.roleKey) {
       const service = createServiceClient();
       const { data: employee } = await service
         .from("employees")
-        .select(
-          "id, employee_code, full_name, email, profile_image_path, employment_status"
-        )
+        .select("id, employee_code, full_name, email, profile_image_path, employment_status")
         .eq("id", claims.employeeId)
         .maybeSingle();
 
@@ -133,7 +125,7 @@ export const getCurrentEmployeeContext = cache(
           profileImagePath: employee.profile_image_path,
           employmentStatus: claims.employmentStatus ?? employee.employment_status,
           roleKey: claims.roleKey,
-          roleDisplayName: await roleDisplayNameForKey(claims.roleKey, service),
+          roleDisplayName: roleDisplayNameLocal(claims.roleKey),
           permissions: claims.permissions ?? [],
         };
       }

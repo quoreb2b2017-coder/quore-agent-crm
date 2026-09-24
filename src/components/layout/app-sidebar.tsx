@@ -116,6 +116,7 @@ export function AppSidebar({
                       >
                         <Link
                           href={mod.href}
+                          prefetch
                           onClick={() => {
                             if (isMobile) setOpenMobile(false);
                           }}

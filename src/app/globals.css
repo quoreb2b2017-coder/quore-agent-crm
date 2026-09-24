@@ -621,6 +621,18 @@
   }
 }
 
+@keyframes route-progress {
+  0% {
+    transform: translateX(-120%);
+  }
+  50% {
+    transform: translateX(160%);
+  }
+  100% {
+    transform: translateX(420%);
+  }
+}
+
 .route-page-enter {
   animation: route-page-enter 280ms ease-out both;
 }
