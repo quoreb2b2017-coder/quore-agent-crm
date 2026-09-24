@@ -35,7 +35,7 @@ async function loadEmployeeContextFromDb(userId: string): Promise<EmployeeContex
   const { data: employee } = await service
     .from("employees")
     .select(
-      "id, employee_code, full_name, email, profile_image_path, employment_status, employee_roles!inner(role_id, is_primary, roles(role_key, display_name))"
+      "id, employee_code, full_name, email, profile_image_path, employment_status, employee_roles!employee_roles_employee_id_fkey!inner(role_id, is_primary, roles(role_key, display_name))"
     )
     .eq("auth_user_id", userId)
     .eq("employee_roles.is_primary", true)
