@@ -10,13 +10,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { FormSheet } from "@/components/ui/form-sheet";
 import { useActionForm } from "@/hooks/use-action-form";
 import { applyForLeave } from "./actions";
-import { NATIVE_SELECT_CLASS } from "@/lib/shift";
 
-export function ApplyLeaveDialog({
-  leaveTypes,
-}: {
-  leaveTypes: { id: string; name: string; is_paid: boolean }[];
-}) {
+export function ApplyLeaveDialog() {
   const [open, setOpen] = useState(false);
   const { handleSubmit, isPending, error } = useActionForm(
     (formData) => applyForLeave({}, formData),
@@ -31,7 +26,7 @@ export function ApplyLeaveDialog({
       open={open}
       onOpenChange={setOpen}
       title="Apply for leave"
-      description="18 paid days a year. Saturday and Sunday are week off and are not deducted from leave."
+      description="Add a subject and reason. Admin decides if the leave is paid or unpaid. Saturday and Sunday are week off and are not deducted."
       onSubmit={handleSubmit}
       submitLabel="Submit request"
       isPending={isPending}
@@ -44,23 +39,8 @@ export function ApplyLeaveDialog({
       }
     >
       <div className="grid gap-2 sm:col-span-2">
-        <Label htmlFor="leaveTypeId">Leave type</Label>
-        <select
-          id="leaveTypeId"
-          name="leaveTypeId"
-          required
-          defaultValue=""
-          className={NATIVE_SELECT_CLASS}
-        >
-          <option value="" disabled>
-            Select leave type
-          </option>
-          {leaveTypes.map((t) => (
-            <option key={t.id} value={t.id}>
-              {t.name} ({t.is_paid ? "Paid" : "Unpaid"})
-            </option>
-          ))}
-        </select>
+        <Label htmlFor="subject">Subject</Label>
+        <Input id="subject" name="subject" required maxLength={120} placeholder="Short title for this leave" />
       </div>
       <div className="grid gap-2">
         <Label htmlFor="startDate">Start date</Label>
@@ -72,7 +52,7 @@ export function ApplyLeaveDialog({
       </div>
       <div className="grid gap-2 sm:col-span-2">
         <Label htmlFor="reason">Reason</Label>
-        <Textarea id="reason" name="reason" rows={3} />
+        <Textarea id="reason" name="reason" rows={3} required placeholder="Why you need this leave" />
       </div>
     </FormSheet>
   );

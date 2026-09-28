@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/table";
 import { calendarDateIsoIst, formatDate } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { isUndecidedLeaveType, unpackLeaveNote } from "@/lib/leave";
 import { getPaidLeaveQuota } from "@/lib/queries/leave";
 import { LeaveQuotaPanel } from "@/components/leave/leave-quota-panel";
 import { ApplyLeaveDialog } from "./apply-leave-dialog";
@@ -37,7 +38,7 @@ export default async function MyLeavePage() {
     supabase.from("leave_types").select("id, name, is_paid").order("name"),
     supabase
       .from("leave_requests")
-      .select("id, leave_type_id, start_date, end_date, days_count, status")
+      .select("id, leave_type_id, start_date, end_date, days_count, status, reason")
       .eq("employee_id", ctx.employeeId)
       .order("created_at", { ascending: false }),
     getPaidLeaveQuota({ employeeIds: [ctx.employeeId], year, people: 1 }),
@@ -50,7 +51,7 @@ export default async function MyLeavePage() {
       <PageHeader
         title="Leave"
         description="18 paid days each year. Saturday and Sunday are week off and are not deducted."
-        actions={<ApplyLeaveDialog leaveTypes={leaveTypes ?? []} />}
+        actions={<ApplyLeaveDialog />}
       />
 
       <LeaveQuotaPanel
@@ -72,29 +73,45 @@ export default async function MyLeavePage() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Type</TableHead>
-                  <TableHead>Pay</TableHead>
+                  <TableHead>Subject</TableHead>
+                  <TableHead>Decision</TableHead>
                   <TableHead>Dates</TableHead>
                   <TableHead>Days</TableHead>
                   <TableHead>Status</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {requests.map((r) => (
+                {requests.map((r) => {
+                  const note = unpackLeaveNote(r.reason);
+                  const type = typeById.get(r.leave_type_id);
+                  const decided = type && !isUndecidedLeaveType(type.name);
+                  return (
                   <TableRow key={r.id}>
-                    <TableCell>{typeById.get(r.leave_type_id)?.name ?? "—"}</TableCell>
                     <TableCell>
-                      <Badge
-                        variant="outline"
-                        className={cn(
-                          "font-medium",
-                          typeById.get(r.leave_type_id)?.is_paid
-                            ? "border-success/20 bg-success/10 text-success"
-                            : "border-warning/20 bg-warning/10 text-warning"
-                        )}
-                      >
-                        {typeById.get(r.leave_type_id)?.is_paid ? "Paid" : "Unpaid"}
-                      </Badge>
+                      <div className="font-medium">{note.subject || "—"}</div>
+                      {note.reason ? (
+                        <p className="line-clamp-2 text-xs text-muted-foreground">{note.reason}</p>
+                      ) : null}
+                    </TableCell>
+                    <TableCell>
+                      {decided ? (
+                        <Badge
+                          variant="outline"
+                          className={cn(
+                            "font-medium",
+                            type.is_paid
+                              ? "border-success/20 bg-success/10 text-success"
+                              : "border-warning/20 bg-warning/10 text-warning"
+                          )}
+                        >
+                          {type.is_paid ? "Paid" : "Unpaid"}
+                          {type.name ? ` · ${type.name}` : ""}
+                        </Badge>
+                      ) : (
+                        <Badge variant="outline" className="font-medium">
+                          Pending
+                        </Badge>
+                      )}
                     </TableCell>
                     <TableCell>
                       {formatDate(r.start_date)} – {formatDate(r.end_date)}
@@ -106,7 +123,8 @@ export default async function MyLeavePage() {
                       </Badge>
                     </TableCell>
                   </TableRow>
-                ))}
+                  );
+                })}
               </TableBody>
             </Table>
           )}

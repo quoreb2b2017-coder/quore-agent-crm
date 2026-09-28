@@ -1,19 +1,24 @@
 "use client";
 
-import { useRouter } from "next/navigation";
-import { ShieldCheck } from "lucide-react";
+import { useState } from "react";
+import { Loader2, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { createClient } from "@/lib/supabase/client";
 import { PublicShell } from "@/components/layout/public-shell";
 
 export function AccountSetupNotice({ email }: { email: string }) {
-  const router = useRouter();
+  const [signingOut, setSigningOut] = useState(false);
 
   async function handleSignOut() {
-    const supabase = createClient();
-    await supabase.auth.signOut();
-    router.replace("/login");
-    router.refresh();
+    if (signingOut) return;
+    setSigningOut(true);
+    try {
+      const supabase = createClient();
+      await supabase.auth.signOut();
+      window.location.assign("/login");
+    } catch {
+      setSigningOut(false);
+    }
   }
 
   return (
@@ -38,8 +43,9 @@ export function AccountSetupNotice({ email }: { email: string }) {
             </li>
             <li>Refresh this page.</li>
           </ol>
-          <Button variant="outline" onClick={handleSignOut}>
-            Sign out
+          <Button variant="outline" onClick={handleSignOut} disabled={signingOut}>
+            {signingOut ? <Loader2 className="size-4 animate-spin" /> : null}
+            {signingOut ? "Signing out..." : "Sign out"}
           </Button>
         </div>
       </div>

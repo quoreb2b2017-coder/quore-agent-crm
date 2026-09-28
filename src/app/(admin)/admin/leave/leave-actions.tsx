@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState, useTransition, type FormEvent } from "react";
 import { toast } from "sonner";
 import { Check, X, Loader2, Pencil, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -23,7 +23,8 @@ type LeaveRow = {
   leaveTypeId: string;
   startDate: string;
   endDate: string;
-  reason: string | null;
+  subject: string;
+  reason: string;
   status: string;
 };
 
@@ -35,6 +36,7 @@ export function LeaveAdminActions({
   leaveTypes: LeaveTypeOption[];
 }) {
   const [open, setOpen] = useState(false);
+  const [decideOpen, setDecideOpen] = useState(false);
   const [isPending, startTransition] = useTransition();
   const { handleSubmit, isPending: isSaving, error } = useActionForm(
     (formData) => updateLeaveRequest(formData),
@@ -44,11 +46,24 @@ export function LeaveAdminActions({
     }
   );
 
-  function review(decision: "APPROVED" | "REJECTED") {
+  function reject() {
     startTransition(async () => {
-      const res = await reviewLeaveRequest(request.id, decision);
+      const res = await reviewLeaveRequest(request.id, "REJECTED");
       if (res.error) toast.error(res.error);
-      else toast.success(decision === "APPROVED" ? "Leave approved" : "Leave rejected");
+      else toast.success("Leave rejected");
+    });
+  }
+
+  function approve(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const leaveTypeId = String(new FormData(event.currentTarget).get("leaveTypeId") || "");
+    startTransition(async () => {
+      const res = await reviewLeaveRequest(request.id, "APPROVED", leaveTypeId);
+      if (res.error) toast.error(res.error);
+      else {
+        toast.success("Leave approved");
+        setDecideOpen(false);
+      }
     });
   }
 
@@ -69,10 +84,45 @@ export function LeaveAdminActions({
     <div className="flex items-center justify-end gap-1">
       {request.status === "PENDING" ? (
         <>
-          <Button size="icon-sm" variant="outline" disabled={busy} onClick={() => review("APPROVED")}>
-            {busy ? <Loader2 className="size-3.5 animate-spin" /> : <Check className="size-3.5 text-success" />}
-          </Button>
-          <Button size="icon-sm" variant="outline" disabled={busy} onClick={() => review("REJECTED")}>
+          <FormSheet
+            open={decideOpen}
+            onOpenChange={setDecideOpen}
+            title="Decide leave type"
+            description="The employee sent a subject and reason. Choose paid or unpaid before approving."
+            onSubmit={approve}
+            submitLabel="Approve"
+            isPending={isPending}
+            trigger={
+              <Button size="icon-sm" variant="outline" disabled={busy} aria-label="Approve and set leave type">
+                {busy ? <Loader2 className="size-3.5 animate-spin" /> : <Check className="size-3.5 text-success" />}
+              </Button>
+            }
+          >
+            <div className="grid gap-1 sm:col-span-2">
+              <p className="text-sm font-medium">{request.subject || "No subject"}</p>
+              <p className="text-sm text-muted-foreground">{request.reason || "No reason"}</p>
+            </div>
+            <div className="grid gap-2 sm:col-span-2">
+              <Label htmlFor={`decide-type-${request.id}`}>Leave type</Label>
+              <select
+                id={`decide-type-${request.id}`}
+                name="leaveTypeId"
+                required
+                defaultValue={request.leaveTypeId}
+                className={NATIVE_SELECT_CLASS}
+              >
+                <option value="" disabled>
+                  Select paid or unpaid type
+                </option>
+                {leaveTypes.map((type) => (
+                  <option key={type.id} value={type.id}>
+                    {type.name} ({type.is_paid ? "Paid" : "Unpaid"})
+                  </option>
+                ))}
+              </select>
+            </div>
+          </FormSheet>
+          <Button size="icon-sm" variant="outline" disabled={busy} onClick={reject} aria-label="Reject leave">
             <X className="size-3.5 text-destructive" />
           </Button>
         </>
@@ -81,7 +131,7 @@ export function LeaveAdminActions({
         open={open}
         onOpenChange={setOpen}
         title="Edit leave"
-        description="Update the type, dates, or reason. Approved leave is reapplied to attendance."
+        description="Set the leave type, dates, or reason. Approved leave is reapplied to attendance."
         onSubmit={handleSubmit}
         submitLabel="Save"
         isPending={isSaving}
@@ -102,6 +152,9 @@ export function LeaveAdminActions({
             defaultValue={request.leaveTypeId}
             className={NATIVE_SELECT_CLASS}
           >
+            <option value="" disabled>
+              Select paid or unpaid type
+            </option>
             {leaveTypes.map((type) => (
               <option key={type.id} value={type.id}>
                 {type.name} ({type.is_paid ? "Paid" : "Unpaid"})
@@ -130,12 +183,20 @@ export function LeaveAdminActions({
           />
         </div>
         <div className="grid gap-2 sm:col-span-2">
+          <Label htmlFor={`subject-${request.id}`}>Subject</Label>
+          <Input
+            id={`subject-${request.id}`}
+            name="subject"
+            defaultValue={request.subject}
+          />
+        </div>
+        <div className="grid gap-2 sm:col-span-2">
           <Label htmlFor={`reason-${request.id}`}>Reason</Label>
           <Textarea
             id={`reason-${request.id}`}
             name="reason"
             rows={3}
-            defaultValue={request.reason ?? ""}
+            defaultValue={request.reason}
           />
         </div>
       </FormSheet>

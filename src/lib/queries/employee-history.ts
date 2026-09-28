@@ -7,6 +7,7 @@ import {
 } from "@/lib/format";
 import { istLocalToUtc, productivityPercent, shiftAccountingWindowUtc } from "@/lib/shift";
 import { setupAsOf } from "@/lib/payroll";
+import { isUndecidedLeaveType, unpackLeaveNote } from "@/lib/leave";
 import type { BreakRow } from "@/lib/queries/employee-status";
 
 export type EmployeeHistoryAttendance = {
@@ -96,7 +97,7 @@ export async function getEmployeeHistory(employeeId: string): Promise<EmployeeHi
       .order("started_at"),
     supabase
       .from("leave_requests")
-      .select("id, start_date, end_date, days_count, status, leave_type_id")
+      .select("id, start_date, end_date, days_count, status, leave_type_id, reason")
       .eq("employee_id", employeeId)
       .order("created_at", { ascending: false })
       .limit(8),
@@ -165,7 +166,11 @@ export async function getEmployeeHistory(employeeId: string): Promise<EmployeeHi
       end_date: row.end_date,
       days_count: Number(row.days_count),
       status: row.status,
-      leaveType: typeById.get(row.leave_type_id) ?? "Leave",
+      leaveType: (() => {
+        const name = typeById.get(row.leave_type_id);
+        if (!isUndecidedLeaveType(name)) return name ?? "Leave";
+        return unpackLeaveNote(row.reason).subject || "Leave";
+      })(),
     })),
     payroll: payroll
       ? {

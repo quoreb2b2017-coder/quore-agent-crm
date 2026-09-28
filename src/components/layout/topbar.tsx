@@ -1,8 +1,10 @@
 "use client";
 
-import { ChevronDown, LogOut, User } from "lucide-react";
-import { useRouter, usePathname } from "next/navigation";
+import { useState } from "react";
+import { ChevronDown, Loader2, LogOut, User } from "lucide-react";
+import { usePathname } from "next/navigation";
 import Link from "next/link";
+import { toast } from "sonner";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { Button } from "@/components/ui/button";
 import {
@@ -54,17 +56,29 @@ export function Topbar({
   notificationsHref: string;
   chatHref: string;
 }) {
-  const router = useRouter();
   const pathname = usePathname();
   const title = pageTitle(pathname, modules);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [loggingOut, setLoggingOut] = useState(false);
 
   async function handleLogout() {
-    sessionStorage.removeItem("worktrack-session-started");
-    await endWorkSession();
-    const supabase = createClient();
-    await supabase.auth.signOut();
-    router.replace("/login");
-    router.refresh();
+    if (loggingOut) return;
+    setLoggingOut(true);
+    setMenuOpen(true);
+    toast.loading("Logging out...", { id: "logout" });
+    try {
+      sessionStorage.removeItem("worktrack-session-started");
+      await Promise.race([
+        endWorkSession().catch(() => undefined),
+        new Promise((resolve) => setTimeout(resolve, 4000)),
+      ]);
+      const supabase = createClient();
+      await supabase.auth.signOut();
+      window.location.assign("/login");
+    } catch {
+      toast.error("Could not log out. Try again.", { id: "logout" });
+      setLoggingOut(false);
+    }
   }
 
   return (
@@ -77,12 +91,18 @@ export function Topbar({
         <DualOfficeClocks pills />
         <ChatUnreadButton href={chatHref} />
         <NotificationBell href={notificationsHref} />
-        <DropdownMenu>
+        <DropdownMenu
+          open={menuOpen}
+          onOpenChange={(open) => {
+            if (!loggingOut) setMenuOpen(open);
+          }}
+        >
           <DropdownMenuTrigger asChild>
             <Button
               variant="ghost"
               size="sm"
               className="h-8 gap-2 rounded-full px-1.5 hover:bg-muted"
+              disabled={loggingOut}
             >
               <Avatar className="size-6">
                 <AvatarFallback className="bg-primary/10 text-[10px] font-semibold text-primary">
@@ -109,9 +129,20 @@ export function Topbar({
                 Profile
               </Link>
             </DropdownMenuItem>
-            <DropdownMenuItem variant="destructive" onClick={handleLogout}>
-              <LogOut className="size-4" />
-              Log out
+            <DropdownMenuItem
+              variant="destructive"
+              disabled={loggingOut}
+              onSelect={(event) => {
+                event.preventDefault();
+                void handleLogout();
+              }}
+            >
+              {loggingOut ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <LogOut className="size-4" />
+              )}
+              {loggingOut ? "Logging out..." : "Log out"}
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>

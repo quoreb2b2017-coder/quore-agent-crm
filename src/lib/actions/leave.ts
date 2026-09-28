@@ -6,7 +6,8 @@ import { createDataClient as createClient } from "@/lib/supabase/data";
 import { getCurrentEmployeeContext, isSuperAdmin } from "@/lib/permissions/server";
 import { insertAndEmitNotification } from "@/lib/realtime/notify";
 import { eachDateInclusive, isWeekendIso, todayIso } from "@/lib/format";
-import { ANNUAL_PAID_LEAVE_DAYS, leaveDaysCount } from "@/lib/leave";
+import { ANNUAL_PAID_LEAVE_DAYS, isUndecidedLeaveType, leaveDaysCount, packLeaveNote, UNDECIDED_LEAVE_TYPE } from "@/lib/leave";
+import { getPaidLeaveQuota } from "@/lib/queries/leave";
 import { ensureWeekendOff } from "@/lib/attendance-weekend";
 
 function revalidateLeave() {
@@ -140,7 +141,8 @@ async function applyApprovedLeave(
 
 export async function reviewLeaveRequest(
   requestId: string,
-  decision: "APPROVED" | "REJECTED"
+  decision: "APPROVED" | "REJECTED",
+  leaveTypeId?: string
 ) {
   const ctx = await getCurrentEmployeeContext();
   if (!ctx || !isSuperAdmin(ctx.roleKey)) return { error: "Not authorized" };
@@ -155,10 +157,37 @@ export async function reviewLeaveRequest(
   if (loadError || !request) return { error: loadError?.message ?? "Leave request not found" };
   if (request.status !== "PENDING") return { error: "This request was already reviewed." };
 
+  let assignedTypeId = request.leave_type_id;
+  if (decision === "APPROVED") {
+    if (!leaveTypeId) return { error: "Select a leave type before approving." };
+    const { data: leaveType } = await supabase
+      .from("leave_types")
+      .select("id, name, is_paid")
+      .eq("id", leaveTypeId)
+      .maybeSingle();
+    if (!leaveType || isUndecidedLeaveType(leaveType.name)) {
+      return { error: "Select whether this leave is paid or unpaid." };
+    }
+    if (leaveType.is_paid) {
+      const year = Number(request.start_date.slice(0, 4));
+      const quota = await getPaidLeaveQuota({
+        employeeIds: [request.employee_id],
+        year,
+        people: 1,
+      });
+      if (quota.used + Number(request.days_count) > ANNUAL_PAID_LEAVE_DAYS) {
+        const left = Math.max(0, ANNUAL_PAID_LEAVE_DAYS - quota.used);
+        return { error: `Only ${left} of ${ANNUAL_PAID_LEAVE_DAYS} paid days remaining this year.` };
+      }
+    }
+    assignedTypeId = leaveType.id;
+  }
+
   const { error } = await supabase
     .from("leave_requests")
     .update({
       status: decision,
+      leave_type_id: assignedTypeId,
       reviewed_by: ctx.employeeId,
       reviewed_at: new Date().toISOString(),
     })
@@ -171,7 +200,10 @@ export async function reviewLeaveRequest(
   let title = decision === "APPROVED" ? "Leave approved" : "Leave rejected";
 
   if (decision === "APPROVED") {
-    const applied = await applyApprovedLeave(supabase, request);
+    const applied = await applyApprovedLeave(supabase, {
+      ...request,
+      leave_type_id: assignedTypeId,
+    });
     title = `${applied.payLabel} leave approved`;
     body = `Your ${applied.typeName} (${applied.payLabel.toLowerCase()}) was approved. Working days are marked on leave; Saturday and Sunday stay week off.`;
   }
@@ -241,6 +273,7 @@ const updateSchema = z.object({
   leaveTypeId: z.string().uuid("Select a leave type"),
   startDate: z.string().min(1),
   endDate: z.string().min(1),
+  subject: z.string().optional(),
   reason: z.string().optional(),
 });
 
@@ -253,10 +286,20 @@ export async function updateLeaveRequest(formData: FormData) {
     leaveTypeId: formData.get("leaveTypeId"),
     startDate: formData.get("startDate"),
     endDate: formData.get("endDate"),
+    subject: formData.get("subject") || undefined,
     reason: formData.get("reason") || undefined,
   });
   if (!parsed.success) {
     return { error: parsed.error.issues[0]?.message ?? "Invalid input" };
+  }
+
+  const { data: chosenType } = await (await createClient())
+    .from("leave_types")
+    .select("name")
+    .eq("id", parsed.data.leaveTypeId)
+    .maybeSingle();
+  if (!chosenType || chosenType.name === UNDECIDED_LEAVE_TYPE) {
+    return { error: "Select whether this leave is paid or unpaid." };
   }
 
   const daysCount = leaveDaysCount(parsed.data.startDate, parsed.data.endDate);
@@ -284,7 +327,7 @@ export async function updateLeaveRequest(formData: FormData) {
       start_date: parsed.data.startDate,
       end_date: parsed.data.endDate,
       days_count: daysCount,
-      reason: parsed.data.reason || null,
+      reason: packLeaveNote(parsed.data.subject ?? "", parsed.data.reason ?? "") || null,
     })
     .eq("id", request.id);
 

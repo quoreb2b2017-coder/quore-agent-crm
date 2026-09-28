@@ -16,6 +16,7 @@ import { calendarDateIsoIst, formatDate } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { isUuid } from "@/lib/attendance-period";
 import { listWatchableEmployees } from "@/lib/queries/admin-dashboard";
+import { isUndecidedLeaveType, unpackLeaveNote } from "@/lib/leave";
 import { getPaidLeaveQuota } from "@/lib/queries/leave";
 import { LeaveQuotaPanel } from "@/components/leave/leave-quota-panel";
 import { LeaveAdminActions } from "./leave-actions";
@@ -76,6 +77,7 @@ export default async function AdminLeavePage({
 
   const nameById = new Map((namedEmployees ?? []).map((row) => [row.id, row.full_name]));
   const typeById = new Map((leaveTypes ?? []).map((row) => [row.id, row]));
+  const assignableTypes = (leaveTypes ?? []).filter((row) => !isUndecidedLeaveType(row.name));
   const rows = requests ?? [];
 
   return (
@@ -89,7 +91,7 @@ export default async function AdminLeavePage({
               : "Team paid leave quota, requests, and approvals."
             : "18 paid days each year. Weekends stay week off and are not deducted."
         }
-        actions={seesAll ? undefined : <ApplyLeaveDialog leaveTypes={leaveTypes ?? []} />}
+        actions={seesAll ? undefined : <ApplyLeaveDialog />}
       />
 
       <LeaveQuotaPanel
@@ -119,6 +121,7 @@ export default async function AdminLeavePage({
               <TableHeader>
                 <TableRow>
                   <TableHead>Employee</TableHead>
+                  <TableHead>Subject</TableHead>
                   <TableHead>Type</TableHead>
                   <TableHead>Pay</TableHead>
                   <TableHead>Dates</TableHead>
@@ -128,22 +131,38 @@ export default async function AdminLeavePage({
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {rows.map((row) => (
+                {rows.map((row) => {
+                  const note = unpackLeaveNote(row.reason);
+                  const type = typeById.get(row.leave_type_id);
+                  const decided = type && !isUndecidedLeaveType(type.name);
+                  return (
                   <TableRow key={row.id}>
                     <TableCell>{nameById.get(row.employee_id) ?? "—"}</TableCell>
-                    <TableCell>{typeById.get(row.leave_type_id)?.name ?? "—"}</TableCell>
                     <TableCell>
-                      <Badge
-                        variant="outline"
-                        className={cn(
-                          "font-medium",
-                          typeById.get(row.leave_type_id)?.is_paid
-                            ? "border-success/20 bg-success/10 text-success"
-                            : "border-warning/20 bg-warning/10 text-warning"
-                        )}
-                      >
-                        {typeById.get(row.leave_type_id)?.is_paid ? "Paid" : "Unpaid"}
-                      </Badge>
+                      <div className="font-medium">{note.subject || "—"}</div>
+                      {note.reason ? (
+                        <p className="line-clamp-2 max-w-xs text-xs text-muted-foreground">{note.reason}</p>
+                      ) : null}
+                    </TableCell>
+                    <TableCell>{decided ? type.name : "Not decided"}</TableCell>
+                    <TableCell>
+                      {decided ? (
+                        <Badge
+                          variant="outline"
+                          className={cn(
+                            "font-medium",
+                            type.is_paid
+                              ? "border-success/20 bg-success/10 text-success"
+                              : "border-warning/20 bg-warning/10 text-warning"
+                          )}
+                        >
+                          {type.is_paid ? "Paid" : "Unpaid"}
+                        </Badge>
+                      ) : (
+                        <Badge variant="outline" className="font-medium">
+                          Pending
+                        </Badge>
+                      )}
                     </TableCell>
                     <TableCell>
                       {formatDate(row.start_date)} – {formatDate(row.end_date)}
@@ -157,20 +176,22 @@ export default async function AdminLeavePage({
                     {seesAll ? (
                       <TableCell className="text-right">
                         <LeaveAdminActions
-                          leaveTypes={leaveTypes ?? []}
+                          leaveTypes={assignableTypes}
                           request={{
                             id: row.id,
-                            leaveTypeId: row.leave_type_id,
+                            leaveTypeId: decided ? row.leave_type_id : "",
                             startDate: row.start_date,
                             endDate: row.end_date,
-                            reason: row.reason,
+                            subject: note.subject,
+                            reason: note.reason,
                             status: row.status,
                           }}
                         />
                       </TableCell>
                     ) : null}
                   </TableRow>
-                ))}
+                  );
+                })}
               </TableBody>
             </Table>
           )}
