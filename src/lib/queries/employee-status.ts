@@ -7,6 +7,8 @@ export type MySessionState = {
   isClockedIn: boolean;
   isOnBreak: boolean;
   sessionStartedAt: string | null;
+  accruedActiveSeconds: number;
+  sessionClosedBreakSeconds: number;
   teaClosedSeconds: number;
   lunchClosedSeconds: number;
   openBreakType: string | null;
@@ -84,6 +86,8 @@ export async function getEmployeeDashboardBundle(employeeId: string): Promise<Em
         isClockedIn: false,
         isOnBreak: false,
         sessionStartedAt: null,
+        accruedActiveSeconds: attendance?.total_active_seconds ?? 0,
+        sessionClosedBreakSeconds: 0,
         teaClosedSeconds,
         lunchClosedSeconds,
         openBreakType: null,
@@ -100,6 +104,10 @@ export async function getEmployeeDashboardBundle(employeeId: string): Promise<Em
       isClockedIn: true,
       isOnBreak: !!openBreak,
       sessionStartedAt: session.started_at,
+      accruedActiveSeconds: attendance?.total_active_seconds ?? 0,
+      sessionClosedBreakSeconds: breaks
+        .filter((row) => row.session_id === session.id && row.ended_at != null)
+        .reduce((sum, row) => sum + (row.duration_seconds ?? 0), 0),
       teaClosedSeconds,
       lunchClosedSeconds,
       openBreakType: openBreak?.break_type ?? null,
@@ -127,7 +135,7 @@ export async function getMySessionState(employeeId: string): Promise<MySessionSt
   const [{ data: attendance }, { data: shiftBreaks }] = await Promise.all([
     supabase
       .from("attendance")
-      .select("status")
+      .select("status, total_active_seconds")
       .eq("employee_id", employeeId)
       .eq("attendance_date", shiftDate)
       .maybeSingle(),
@@ -157,6 +165,8 @@ export async function getMySessionState(employeeId: string): Promise<MySessionSt
       isClockedIn: false,
       isOnBreak: false,
       sessionStartedAt: null,
+      accruedActiveSeconds: attendance?.total_active_seconds ?? 0,
+      sessionClosedBreakSeconds: 0,
       teaClosedSeconds,
       lunchClosedSeconds,
       openBreakType: null,
@@ -172,6 +182,10 @@ export async function getMySessionState(employeeId: string): Promise<MySessionSt
     isClockedIn: true,
     isOnBreak: !!openBreak,
     sessionStartedAt: session.started_at,
+    accruedActiveSeconds: attendance?.total_active_seconds ?? 0,
+    sessionClosedBreakSeconds: breaks
+      .filter((row) => row.session_id === session.id && row.ended_at != null)
+      .reduce((sum, row) => sum + (row.duration_seconds ?? 0), 0),
     teaClosedSeconds,
     lunchClosedSeconds,
     openBreakType: openBreak?.break_type ?? null,

@@ -3,6 +3,7 @@ import { createDataClient as createClient } from "@/lib/supabase/data";
 import { todayIso } from "@/lib/format";
 import { SUPER_ADMIN_ROLE } from "@/lib/permissions/roles";
 import { weekendOrRecordedStatus } from "@/lib/attendance-weekend";
+import { dailyActiveSeconds } from "@/lib/live-time";
 
 const loadSuperAdminEmployeeIds = cache(async (): Promise<string[]> => {
   const supabase = await createClient();
@@ -59,7 +60,54 @@ export type TeamTodayRow = {
   status: string;
   activeSeconds: number;
   breakSeconds: number;
+  sessionStartedAt: string | null;
+  sessionClosedBreakSeconds: number;
+  openBreakStartedAt: string | null;
 };
+
+async function liveSessionSlices(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  employeeIds: string[]
+) {
+  const slices = new Map<
+    string,
+    {
+      sessionStartedAt: string | null;
+      sessionClosedBreakSeconds: number;
+      openBreakStartedAt: string | null;
+    }
+  >();
+  if (employeeIds.length === 0) return slices;
+
+  const { data: sessions } = await supabase
+    .from("employee_sessions")
+    .select("id, employee_id, started_at")
+    .eq("status", "ACTIVE")
+    .in("employee_id", employeeIds);
+
+  const sessionIds = (sessions ?? []).map((session) => session.id);
+  const { data: breaks } =
+    sessionIds.length > 0
+      ? await supabase
+          .from("breaks")
+          .select("session_id, started_at, ended_at, duration_seconds")
+          .in("session_id", sessionIds)
+      : { data: [] };
+
+  for (const session of sessions ?? []) {
+    const rows = (breaks ?? []).filter((row) => row.session_id === session.id);
+    const open = rows.find((row) => row.ended_at == null);
+    const closed = rows
+      .filter((row) => row.ended_at != null)
+      .reduce((sum, row) => sum + (row.duration_seconds ?? 0), 0);
+    slices.set(session.employee_id, {
+      sessionStartedAt: session.started_at,
+      sessionClosedBreakSeconds: closed,
+      openBreakStartedAt: open?.started_at ?? null,
+    });
+  }
+  return slices;
+}
 
 export async function getTodayTeamReport(
   people?: { id: string; full_name: string; employee_code: string }[]
@@ -78,8 +126,13 @@ export async function getTodayTeamReport(
     );
 
   const byId = new Map((attendance ?? []).map((row) => [row.employee_id, row]));
+  const liveByEmployee = await liveSessionSlices(
+    supabase,
+    staff.map((person) => person.id)
+  );
   return staff.map((person) => {
     const row = byId.get(person.id);
+    const live = liveByEmployee.get(person.id);
     return {
       id: person.id,
       fullName: person.full_name,
@@ -87,6 +140,9 @@ export async function getTodayTeamReport(
       status: weekendOrRecordedStatus(todayIso(), row?.status),
       activeSeconds: row?.total_active_seconds ?? 0,
       breakSeconds: row?.total_break_seconds ?? 0,
+      sessionStartedAt: live?.sessionStartedAt ?? null,
+      sessionClosedBreakSeconds: live?.sessionClosedBreakSeconds ?? 0,
+      openBreakStartedAt: live?.openBreakStartedAt ?? null,
     };
   });
 }
@@ -152,7 +208,23 @@ export async function getAdminDashboardData(): Promise<{
   const onlineEmployees = sessions.length - onBreakEmployees;
 
   const attendance = (attendanceToday ?? []).filter((row) => !adminSet.has(row.employee_id));
-  const totalWorkingSeconds = attendance.reduce((sum, a) => sum + a.total_active_seconds, 0);
+  const liveByEmployee = await liveSessionSlices(
+    supabase,
+    staff.map((person) => person.id)
+  );
+  const totalWorkingSeconds = staff.reduce((sum, person) => {
+    const row = (attendanceToday ?? []).find((item) => item.employee_id === person.id);
+    const live = liveByEmployee.get(person.id);
+    return (
+      sum +
+      dailyActiveSeconds({
+        storedActiveSeconds: row?.total_active_seconds ?? 0,
+        sessionStartedAt: live?.sessionStartedAt ?? null,
+        sessionClosedBreakSeconds: live?.sessionClosedBreakSeconds ?? 0,
+        openBreakStartedAt: live?.openBreakStartedAt ?? null,
+      })
+    );
+  }, 0);
   const totalBreakSeconds = attendance.reduce((sum, a) => sum + a.total_break_seconds, 0);
   const totalIdleSeconds = attendance.reduce((sum, a) => sum + a.total_idle_seconds, 0);
   const total = totalEmployees ?? 0;
@@ -180,6 +252,9 @@ export async function getAdminDashboardData(): Promise<{
       status: weekendOrRecordedStatus(today, row?.status),
       activeSeconds: row?.total_active_seconds ?? 0,
       breakSeconds: row?.total_break_seconds ?? 0,
+      sessionStartedAt: liveByEmployee.get(person.id)?.sessionStartedAt ?? null,
+      sessionClosedBreakSeconds: liveByEmployee.get(person.id)?.sessionClosedBreakSeconds ?? 0,
+      openBreakStartedAt: liveByEmployee.get(person.id)?.openBreakStartedAt ?? null,
     };
   });
 

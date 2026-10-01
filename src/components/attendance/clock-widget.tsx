@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { StatusBadge, type EmployeeLiveStatus } from "@/components/dashboard/status-badge";
 import { clockIn, clockOut, startBreak, endBreak } from "@/lib/actions/attendance";
 import { formatDuration, formatTime } from "@/lib/format";
+import { formatClock } from "@/lib/live-time";
 import {
   breakBudgetSeconds,
   formatBreakType,
@@ -17,13 +18,6 @@ import {
 } from "@/lib/shift";
 import type { MySessionState } from "@/lib/queries/employee-status";
 import { cn } from "@/lib/utils";
-
-function formatSession(totalSeconds: number) {
-  const h = Math.floor(totalSeconds / 3600);
-  const m = Math.floor((totalSeconds % 3600) / 60);
-  const s = totalSeconds % 60;
-  return [h, m, s].map((n) => String(n).padStart(2, "0")).join(":");
-}
 
 function useElapsed(startedAt: string | null, running: boolean) {
   const [now, setNow] = useState<number | null>(null);
@@ -54,6 +48,8 @@ export function ClockWidget({
     isClockedIn,
     isOnBreak,
     sessionStartedAt,
+    accruedActiveSeconds = 0,
+    sessionClosedBreakSeconds = 0,
     teaClosedSeconds,
     lunchClosedSeconds,
     openBreakType,
@@ -66,6 +62,10 @@ export function ClockWidget({
   const router = useRouter();
   const elapsed = useElapsed(sessionStartedAt, isClockedIn);
   const breakElapsed = useElapsed(openBreakStartedAt, isOnBreak);
+  const liveSlice = isClockedIn
+    ? Math.max(0, (elapsed ?? 0) - sessionClosedBreakSeconds - (isOnBreak ? (breakElapsed ?? 0) : 0))
+    : 0;
+  const dailySeconds = accruedActiveSeconds + liveSlice;
   const teaUsed =
     teaClosedSeconds + (openBreakType === "TEA" && breakElapsed != null ? breakElapsed : 0);
   const lunchUsed =
@@ -74,7 +74,7 @@ export function ClockWidget({
   const lunchRemaining = Math.max(0, LUNCH_BREAK_BUDGET_SECONDS - lunchUsed);
   const breakRemaining = openBreakType === "LUNCH" ? lunchRemaining : teaRemaining;
   const breakBudget = openBreakType ? breakBudgetSeconds(openBreakType) : 0;
-  const shiftPct = elapsed != null ? Math.min(100, (elapsed / SHIFT_WORKING_SECONDS) * 100) : 0;
+  const shiftPct = Math.min(100, (dailySeconds / SHIFT_WORKING_SECONDS) * 100);
   const breakPct =
     isOnBreak && breakBudget > 0
       ? Math.min(100, ((breakBudget - breakRemaining) / breakBudget) * 100)
@@ -178,11 +178,7 @@ export function ClockWidget({
                 status === "OFFLINE" && "text-muted-foreground"
               )}
             >
-              {isOnBreak && breakElapsed != null
-                ? formatSession(breakRemaining)
-                : elapsed != null
-                  ? formatSession(elapsed)
-                  : "00:00:00"}
+              {mounted ? formatClock(dailySeconds) : "—"}
             </p>
             {isOnBreak ? (
               <p className="text-xs font-medium text-muted-foreground">

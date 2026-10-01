@@ -1,8 +1,19 @@
-import { formatDuration } from "@/lib/format";
+"use client";
+
+import { useEffect, useState } from "react";
 import { AttendanceStatusBadge } from "@/components/attendance/attendance-status-badge";
 import type { TeamTodayRow } from "@/lib/queries/admin-dashboard";
+import { dailyActiveSeconds, formatClock } from "@/lib/live-time";
 
 export function TeamTodayReport({ rows }: { rows: TeamTodayRow[] }) {
+  const [now, setNow] = useState<number | null>(null);
+
+  useEffect(() => {
+    setNow(Date.now());
+    const id = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(id);
+  }, []);
+
   if (rows.length === 0) {
     return (
       <div className="flex flex-1 items-center justify-center px-4 py-8 text-center text-sm text-muted-foreground">
@@ -22,22 +33,31 @@ export function TeamTodayReport({ rows }: { rows: TeamTodayRow[] }) {
           </tr>
         </thead>
         <tbody>
-          {rows.map((row) => (
-            <tr key={row.id} className="border-t">
-              <td className="px-4 py-2.5">
-                <div className="flex min-w-0 flex-col">
-                  <span className="truncate font-medium">{row.fullName}</span>
-                  <span className="font-mono text-[11px] text-muted-foreground">{row.employeeCode}</span>
-                </div>
-              </td>
-              <td className="px-3 py-2.5">
-                <AttendanceStatusBadge status={row.status} />
-              </td>
-              <td className="px-4 py-2.5 text-right tabular-nums">
-                {formatDuration(row.activeSeconds)}
-              </td>
-            </tr>
-          ))}
+          {rows.map((row) => {
+            const seconds = dailyActiveSeconds({
+              storedActiveSeconds: row.activeSeconds,
+              sessionStartedAt: row.sessionStartedAt,
+              sessionClosedBreakSeconds: row.sessionClosedBreakSeconds,
+              openBreakStartedAt: row.openBreakStartedAt,
+              now: now ?? undefined,
+            });
+            return (
+              <tr key={row.id} className="border-t">
+                <td className="px-4 py-2.5">
+                  <div className="flex min-w-0 flex-col">
+                    <span className="truncate font-medium">{row.fullName}</span>
+                    <span className="font-mono text-[11px] text-muted-foreground">{row.employeeCode}</span>
+                  </div>
+                </td>
+                <td className="px-3 py-2.5">
+                  <AttendanceStatusBadge status={row.status} />
+                </td>
+                <td className="px-4 py-2.5 text-right font-mono tabular-nums">
+                  {now == null ? "—" : formatClock(seconds)}
+                </td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </div>

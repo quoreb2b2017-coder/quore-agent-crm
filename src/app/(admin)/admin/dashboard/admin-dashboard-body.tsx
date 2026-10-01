@@ -8,6 +8,7 @@ import { StaffDashboard } from "@/components/dashboards/staff-dashboard";
 import { requireViewer } from "@/lib/permissions/server";
 import { greetingForNow, INDIA_TIME_ZONE } from "@/lib/format";
 import { getAdminDashboardData } from "@/lib/queries/admin-dashboard";
+import { sweepIdleSessions } from "@/lib/actions/presence";
 import { getEmployeeDashboardBundle, getMySessionState } from "@/lib/queries/employee-status";
 import { ClockWidget } from "@/components/attendance/clock-widget";
 import { isUuid } from "@/lib/attendance-period";
@@ -46,6 +47,7 @@ export async function AdminDashboardBody({
   const requested = Array.isArray(searchParams.employee) ? searchParams.employee[0] : searchParams.employee;
   const requestedId = requested && isUuid(requested) ? requested : null;
 
+  await sweepIdleSessions(undefined, { revalidate: false });
   const [dashboard, watchedSession] = await Promise.all([
     getAdminDashboardData(),
     requestedId ? getMySessionState(requestedId) : Promise.resolve(null),

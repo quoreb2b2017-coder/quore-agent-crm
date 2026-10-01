@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { createDataClient as createClient } from "@/lib/supabase/data";
+import { createServiceClient } from "@/lib/supabase/service";
 import { getCurrentEmployeeContext, isSuperAdmin } from "@/lib/permissions/server";
 import { isSuperAdminEmployee } from "@/lib/queries/admin-dashboard";
 import { isWeekendIso, shiftDateIso } from "@/lib/format";
@@ -167,6 +168,7 @@ export async function clockIn(): Promise<Result> {
   const { error: sessionError } = await supabase.from("employee_sessions").insert({
     employee_id: ctx.employeeId,
     status: "ACTIVE",
+    app_last_seen_at: new Date().toISOString(),
   });
   if (sessionError) {
     if (sessionError.code === "23505") {
@@ -209,11 +211,10 @@ export async function clockOut(): Promise<Result> {
 
   const { data: session } = await supabase
     .from("employee_sessions")
-    .select("id, started_at")
+    .select("id")
     .eq("employee_id", ctx.employeeId)
     .eq("status", "ACTIVE")
     .maybeSingle();
-
   if (!session) return {};
 
   const { data: openBreak } = await supabase
@@ -222,32 +223,86 @@ export async function clockOut(): Promise<Result> {
     .eq("session_id", session.id)
     .is("ended_at", null)
     .maybeSingle();
-
   if (openBreak) return { error: "End your current break before clocking out." };
 
+  return closeWorkSession(ctx.employeeId, "ENDED");
+}
+
+/** Stops today's timer and stores the elapsed working time. Login starts a new slice on the same day. */
+export async function closeWorkSession(
+  employeeId: string,
+  status: "ENDED" | "TIMED_OUT" = "ENDED",
+  options?: { revalidate?: boolean }
+): Promise<Result> {
+  const supabase = createServiceClient();
+  const { data: session } = await supabase
+    .from("employee_sessions")
+    .select("id, started_at")
+    .eq("employee_id", employeeId)
+    .eq("status", "ACTIVE")
+    .maybeSingle();
+  if (!session) return {};
+
   const now = new Date();
+  const { data: openBreak } = await supabase
+    .from("breaks")
+    .select("id, started_at, break_type")
+    .eq("session_id", session.id)
+    .is("ended_at", null)
+    .maybeSingle();
+
+  if (openBreak) {
+    let durationSeconds = Math.max(
+      0,
+      Math.floor((now.getTime() - new Date(openBreak.started_at).getTime()) / 1000)
+    );
+    const shiftDate = shiftDateIso(new Date(openBreak.started_at));
+    const used = await usedShiftBreakSeconds(supabase as never, employeeId, shiftDate);
+    const budget = isLunchBreak(openBreak.break_type)
+      ? LUNCH_BREAK_BUDGET_SECONDS
+      : TEA_BREAK_BUDGET_SECONDS;
+    const rawUsed = isLunchBreak(openBreak.break_type) ? used.lunch : used.tea;
+    const closedUsed = Math.max(0, rawUsed - durationSeconds);
+    durationSeconds = Math.min(durationSeconds, Math.max(0, budget - closedUsed));
+    await supabase
+      .from("breaks")
+      .update({ ended_at: now.toISOString(), duration_seconds: durationSeconds })
+      .eq("id", openBreak.id);
+    try {
+      const attendance = await ensureAttendanceRow(supabase as never, employeeId, shiftDate);
+      if (!BLOCKED_CLOCK_STATUSES.has(attendance.status)) {
+        await supabase
+          .from("attendance")
+          .update({
+            total_break_seconds: (attendance.total_break_seconds ?? 0) + durationSeconds,
+          })
+          .eq("id", attendance.id);
+      }
+    } catch {
+      /* still close the session so the working timer stops */
+    }
+  }
+
   const sessionSeconds = Math.max(
     0,
     Math.floor((now.getTime() - new Date(session.started_at).getTime()) / 1000)
   );
-
   const { data: sessionBreaks } = await supabase
     .from("breaks")
     .select("duration_seconds")
     .eq("session_id", session.id);
-
-  const breakSeconds = (sessionBreaks ?? []).reduce((sum, b) => sum + (b.duration_seconds ?? 0), 0);
+  const breakSeconds = (sessionBreaks ?? []).reduce((sum, row) => sum + (row.duration_seconds ?? 0), 0);
   const activeSeconds = Math.max(0, sessionSeconds - breakSeconds);
   const shiftDate = shiftDateIso(new Date(session.started_at));
 
   const { error: sessionError } = await supabase
     .from("employee_sessions")
-    .update({ ended_at: now.toISOString(), status: "ENDED" })
+    .update({ ended_at: now.toISOString(), status })
     .eq("id", session.id);
   if (sessionError) return { error: sessionError.message };
 
   try {
-    const attendance = await ensureAttendanceRow(supabase, ctx.employeeId, shiftDate);
+    const attendance = await ensureAttendanceRow(supabase as never, employeeId, shiftDate);
     if (!BLOCKED_CLOCK_STATUSES.has(attendance.status)) {
       await supabase
         .from("attendance")
@@ -261,7 +316,7 @@ export async function clockOut(): Promise<Result> {
     return { error: e instanceof Error ? e.message : "Failed to update attendance" };
   }
 
-  revalidateLive();
+  if (options?.revalidate !== false) revalidateLive();
   return {};
 }
 
@@ -383,9 +438,10 @@ export async function endBreak(): Promise<Result> {
 }
 
 export async function endWorkSession(): Promise<Result> {
-  const breakResult = await endBreak();
-  if (breakResult.error) return breakResult;
-  return clockOut();
+  const ctx = await getCurrentEmployeeContext();
+  if (!ctx) return { error: "Not authenticated" };
+  if (isSuperAdmin(ctx.roleKey)) return { skipped: true };
+  return closeWorkSession(ctx.employeeId, "ENDED");
 }
 
 const editSchema = z.object({
