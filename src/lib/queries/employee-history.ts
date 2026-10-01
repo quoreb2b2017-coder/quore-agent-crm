@@ -187,5 +187,7 @@ export async function getEmployeeHistory(employeeId: string): Promise<EmployeeHi
 function formatBreakLabel(breakType: string) {
   if (breakType === "LUNCH") return "Lunch";
   if (breakType === "TEA") return "Tea";
+  if (breakType === "TEA_1") return "Tea 1";
+  if (breakType === "TEA_2") return "Tea 2";
   return "Break";
 }

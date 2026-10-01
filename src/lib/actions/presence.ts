@@ -7,7 +7,8 @@ import { shiftDateIso } from "@/lib/format";
 import { IDLE_LOGOUT_MS } from "@/lib/live-time";
 import {
   breakDurationSeconds,
-  isLunchBreak,
+  breakSecondsBySlot,
+  breakSlot,
   openBreakLimitSeconds,
   shiftAccountingWindowUtc,
 } from "@/lib/shift";
@@ -33,13 +34,9 @@ async function breakLogoutState(service: ServiceClient, employeeId: string) {
     .gte("started_at", start.toISOString())
     .lt("started_at", end.toISOString());
 
-  const lunch = isLunchBreak(openBreak.break_type);
-  let closed = 0;
-  for (const row of rows ?? []) {
-    if (row.id === openBreak.id || row.ended_at == null) continue;
-    if (isLunchBreak(row.break_type) !== lunch) continue;
-    closed += breakDurationSeconds(row);
-  }
+  const closed = breakSecondsBySlot(rows ?? [], { closedOnly: true, excludeId: openBreak.id })[
+    breakSlot(openBreak.break_type)
+  ];
 
   const limit = openBreakLimitSeconds(openBreak.break_type, closed);
   const elapsed = breakDurationSeconds({ started_at: openBreak.started_at, ended_at: null });

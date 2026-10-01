@@ -9,14 +9,14 @@ import { isSuperAdminEmployee } from "@/lib/queries/admin-dashboard";
 import { isWeekendIso, shiftDateIso } from "@/lib/format";
 import { ensureWeekendOff } from "@/lib/attendance-weekend";
 import {
-  breakDurationSeconds,
+  BREAK_SLOTS,
+  breakSecondsBySlot,
+  breakSlot,
+  formatBreakType,
   fromDatetimeLocalIst,
-  isLunchBreak,
-  LUNCH_BREAK_BUDGET_SECONDS,
   openBreakLimitSeconds,
-  TEA_BREAK_MINUTES,
-  TEA_BREAKS_PER_SHIFT,
   shiftAccountingWindowUtc,
+  slotBudgetSeconds,
   type PolicyBreakType,
 } from "@/lib/shift";
 import { notifySuperAdmins } from "@/lib/realtime/notify";
@@ -118,19 +118,7 @@ async function usedShiftBreakSeconds(
     .eq("employee_id", employeeId)
     .gte("started_at", start.toISOString())
     .lt("started_at", end.toISOString());
-
-  let tea = 0;
-  let lunch = 0;
-  let teaCount = 0;
-  for (const row of data ?? []) {
-    const seconds = breakDurationSeconds(row);
-    if (isLunchBreak(row.break_type)) lunch += seconds;
-    else {
-      tea += seconds;
-      teaCount += 1;
-    }
-  }
-  return { tea, lunch, teaCount };
+  return breakSecondsBySlot(data ?? []);
 }
 
 async function closeOpenMeeting(employeeId: string, at = new Date()) {
@@ -286,7 +274,7 @@ export async function closeWorkSession(
     );
     const shiftDate = shiftDateIso(new Date(openBreak.started_at));
     const used = await usedShiftBreakSeconds(supabase as never, employeeId, shiftDate);
-    const rawUsed = isLunchBreak(openBreak.break_type) ? used.lunch : used.tea;
+    const rawUsed = used[breakSlot(openBreak.break_type)];
     const closedUsed = Math.max(0, rawUsed - durationSeconds);
     durationSeconds = Math.min(
       durationSeconds,
@@ -348,12 +336,12 @@ export async function closeWorkSession(
   return {};
 }
 
-export async function startBreak(breakType: PolicyBreakType = "TEA"): Promise<Result> {
+export async function startBreak(breakType: PolicyBreakType): Promise<Result> {
   const ctx = await getCurrentEmployeeContext();
   if (!ctx) return { error: "Not authenticated" };
   if (isSuperAdmin(ctx.roleKey)) return { skipped: true };
-  if (breakType !== "TEA" && breakType !== "LUNCH") {
-    return { error: "Choose Tea or Lunch." };
+  if (!BREAK_SLOTS.includes(breakType)) {
+    return { error: "Choose Tea 1, Tea 2 or Lunch." };
   }
 
   const supabase = await createClient();
@@ -386,11 +374,8 @@ export async function startBreak(breakType: PolicyBreakType = "TEA"): Promise<Re
 
   const shiftDate = shiftDateIso(new Date(session.started_at));
   const used = await usedShiftBreakSeconds(supabase, ctx.employeeId, shiftDate);
-  if (breakType === "TEA" && used.teaCount >= TEA_BREAKS_PER_SHIFT) {
-    return { error: `Both ${TEA_BREAK_MINUTES}-minute tea breaks are used for this shift.` };
-  }
-  if (breakType === "LUNCH" && used.lunch >= LUNCH_BREAK_BUDGET_SECONDS) {
-    return { error: "Lunch time is finished for this shift." };
+  if (used[breakType] >= slotBudgetSeconds(breakType)) {
+    return { error: `${formatBreakType(breakType)} time is finished for this shift.` };
   }
 
   const { error } = await supabase.from("breaks").insert({
@@ -434,16 +419,10 @@ export async function endBreak(): Promise<Result> {
     .gte("started_at", start.toISOString())
     .lt("started_at", end.toISOString());
 
-  let closedTea = 0;
-  let closedLunch = 0;
-  for (const row of shiftBreaks ?? []) {
-    if (row.id === openBreak.id || row.ended_at == null) continue;
-    const seconds = breakDurationSeconds(row);
-    if (isLunchBreak(row.break_type)) closedLunch += seconds;
-    else closedTea += seconds;
-  }
-
-  const closedUsed = isLunchBreak(openBreak.break_type) ? closedLunch : closedTea;
+  const closedUsed = breakSecondsBySlot(shiftBreaks ?? [], {
+    closedOnly: true,
+    excludeId: openBreak.id,
+  })[breakSlot(openBreak.break_type)];
   durationSeconds = Math.min(
     durationSeconds,
     openBreakLimitSeconds(openBreak.break_type, closedUsed)

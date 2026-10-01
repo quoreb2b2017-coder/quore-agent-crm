@@ -8,7 +8,7 @@ import {
 } from "@/lib/format";
 
 export const SHIFT_WORKING_SECONDS = 9 * 3600;
-/** Each tea break is its own 15-minute slot; time left unused in one slot does not carry over. */
+/** Two separate 15-minute tea slots. Each slot can be taken in parts until its own 15 minutes are used. */
 export const TEA_BREAK_MINUTES = 15;
 export const TEA_BREAKS_PER_SHIFT = 2;
 export const LUNCH_BREAK_MINUTES = 45;
@@ -24,7 +24,33 @@ export const PRODUCTIVE_HOURS_LABEL = "7 hrs 45 min";
 export const BREAK_BUDGET_LABEL = "1 hr 15 min";
 export const BREAK_POLICY_LABEL = `Tea ${TEA_BREAKS_PER_SHIFT} × ${TEA_BREAK_MINUTES} min · Lunch ${LUNCH_BREAK_MINUTES} min`;
 
-export type PolicyBreakType = "TEA" | "LUNCH";
+export type BreakSlot = "TEA_1" | "TEA_2" | "LUNCH";
+export type PolicyBreakType = BreakSlot;
+export const BREAK_SLOTS: BreakSlot[] = ["TEA_1", "TEA_2", "LUNCH"];
+
+/** Older rows saved as "TEA" or "GENERAL" count against the first tea slot. */
+export function breakSlot(breakType: string): BreakSlot {
+  if (breakType === "LUNCH") return "LUNCH";
+  if (breakType === "TEA_2") return "TEA_2";
+  return "TEA_1";
+}
+
+export function slotBudgetSeconds(slot: BreakSlot): number {
+  return slot === "LUNCH" ? LUNCH_BREAK_SECONDS : TEA_BREAK_SECONDS;
+}
+
+export function breakSecondsBySlot(
+  rows: { id?: string; break_type: string; started_at: string; ended_at: string | null; duration_seconds?: number | null }[],
+  options?: { closedOnly?: boolean; excludeId?: string }
+): Record<BreakSlot, number> {
+  const totals: Record<BreakSlot, number> = { TEA_1: 0, TEA_2: 0, LUNCH: 0 };
+  for (const row of rows) {
+    if (options?.excludeId && row.id === options.excludeId) continue;
+    if (options?.closedOnly && row.ended_at == null) continue;
+    totals[breakSlot(row.break_type)] += breakDurationSeconds(row);
+  }
+  return totals;
+}
 
 const IST_OFFSET_MS = (5 * 60 + 30) * 60 * 1000;
 
@@ -76,12 +102,9 @@ export function breakBudgetSeconds(breakType: string): number {
   return breakType === "LUNCH" ? LUNCH_BREAK_BUDGET_SECONDS : TEA_BREAK_BUDGET_SECONDS;
 }
 
-/** How long the break in progress may run, given closed time already used for the same type. */
-export function openBreakLimitSeconds(breakType: string, closedSameTypeSeconds: number): number {
-  if (isLunchBreak(breakType)) {
-    return Math.max(0, LUNCH_BREAK_BUDGET_SECONDS - closedSameTypeSeconds);
-  }
-  return TEA_BREAK_SECONDS;
+/** How long the break in progress may run, given closed time already used in the same slot. */
+export function openBreakLimitSeconds(breakType: string, closedSameSlotSeconds: number): number {
+  return Math.max(0, slotBudgetSeconds(breakSlot(breakType)) - closedSameSlotSeconds);
 }
 
 export function breakDurationSeconds(
@@ -102,13 +125,11 @@ export function breakMinutesLabel(breakType: string): string {
   return breakType === "LUNCH" ? `${LUNCH_BREAK_MINUTES} min` : `${TEA_BREAK_MINUTES} min`;
 }
 
-export function teaBreaksLeft(teaBreaksTaken: number): number {
-  return Math.max(0, TEA_BREAKS_PER_SHIFT - teaBreaksTaken);
-}
-
 export function formatBreakType(breakType: string): string {
   if (breakType === "LUNCH") return "Lunch";
   if (breakType === "TEA") return "Tea";
+  if (breakType === "TEA_1") return "Tea 1";
+  if (breakType === "TEA_2") return "Tea 2";
   if (breakType === "GENERAL") return "Break";
   return breakType.replaceAll("_", " ").toLowerCase();
 }

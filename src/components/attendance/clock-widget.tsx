@@ -19,13 +19,12 @@ import { createClient } from "@/lib/supabase/client";
 import { formatDuration, formatTime } from "@/lib/format";
 import { formatClock } from "@/lib/live-time";
 import {
+  breakSlot,
   formatBreakType,
-  LUNCH_BREAK_BUDGET_SECONDS,
   openBreakLimitSeconds,
   SHIFT_WORKING_SECONDS,
-  TEA_BREAK_MINUTES,
-  TEA_BREAKS_PER_SHIFT,
-  teaBreaksLeft,
+  slotBudgetSeconds,
+  type BreakSlot,
 } from "@/lib/shift";
 import type { MySessionState } from "@/lib/queries/employee-status";
 import { cn } from "@/lib/utils";
@@ -61,9 +60,7 @@ export function ClockWidget({
     sessionStartedAt,
     accruedActiveSeconds = 0,
     sessionClosedBreakSeconds = 0,
-    teaClosedSeconds,
-    lunchClosedSeconds,
-    teaBreaksTaken = 0,
+    closedBreakSeconds = { TEA_1: 0, TEA_2: 0, LUNCH: 0 },
     openBreakType,
     openBreakStartedAt,
     meetingStartedAt = null,
@@ -81,15 +78,20 @@ export function ClockWidget({
     ? Math.max(0, (elapsed ?? 0) - sessionClosedBreakSeconds - (isOnBreak ? (breakElapsed ?? 0) : 0))
     : 0;
   const dailySeconds = accruedActiveSeconds + liveSlice;
-  const lunchUsed =
-    lunchClosedSeconds + (openBreakType === "LUNCH" && breakElapsed != null ? breakElapsed : 0);
-  const teaSlotsLeft = teaBreaksLeft(teaBreaksTaken);
-  const lunchRemaining = Math.max(0, LUNCH_BREAK_BUDGET_SECONDS - lunchUsed);
+  const openSlot = openBreakType ? breakSlot(openBreakType) : null;
+  const slotRemaining = (slot: BreakSlot) =>
+    Math.max(
+      0,
+      slotBudgetSeconds(slot) -
+        closedBreakSeconds[slot] -
+        (openSlot === slot ? (breakElapsed ?? 0) : 0)
+    );
+  const tea1Remaining = slotRemaining("TEA_1");
+  const tea2Remaining = slotRemaining("TEA_2");
+  const lunchRemaining = slotRemaining("LUNCH");
+  const openSlotClosedSeconds = openSlot ? closedBreakSeconds[openSlot] : 0;
   const breakBudget = openBreakType
-    ? openBreakLimitSeconds(
-        openBreakType,
-        openBreakType === "LUNCH" ? lunchClosedSeconds : teaClosedSeconds
-      )
+    ? openBreakLimitSeconds(openBreakType, openSlotClosedSeconds)
     : 0;
   const breakRemaining = Math.max(0, breakBudget - (breakElapsed ?? 0));
   const shiftPct = Math.min(100, (dailySeconds / SHIFT_WORKING_SECONDS) * 100);
@@ -104,8 +106,7 @@ export function ClockWidget({
 
   useEffect(() => {
     if (readOnly || !isOnBreak || !openBreakStartedAt || !openBreakType) return;
-    const closed = openBreakType === "LUNCH" ? lunchClosedSeconds : teaClosedSeconds;
-    const remainingAtStart = openBreakLimitSeconds(openBreakType, closed);
+    const remainingAtStart = openBreakLimitSeconds(openBreakType, openSlotClosedSeconds);
     const delay = Math.max(
       0,
       new Date(openBreakStartedAt).getTime() + remainingAtStart * 1000 - Date.now()
@@ -123,7 +124,7 @@ export function ClockWidget({
       });
     }, delay);
     return () => window.clearTimeout(timer);
-  }, [readOnly, isOnBreak, openBreakStartedAt, openBreakType, teaClosedSeconds, lunchClosedSeconds, router]);
+  }, [readOnly, isOnBreak, openBreakStartedAt, openBreakType, openSlotClosedSeconds, router]);
 
   const status: EmployeeLiveStatus = isOnBreak
     ? "BREAK"
@@ -226,9 +227,8 @@ export function ClockWidget({
 
         {readOnly ? (
           <div className="flex flex-wrap gap-1.5 sm:justify-end">
-            <span className="break-chip break-chip-tea">
-              Tea {teaSlotsLeft} of {TEA_BREAKS_PER_SHIFT} left
-            </span>
+            <span className="break-chip break-chip-tea">Tea 1 {formatDuration(tea1Remaining)} left</span>
+            <span className="break-chip break-chip-tea">Tea 2 {formatDuration(tea2Remaining)} left</span>
             <span className="break-chip break-chip-lunch">Lunch {formatDuration(lunchRemaining)} left</span>
           </div>
         ) : (
@@ -268,16 +268,24 @@ export function ClockWidget({
                       {isPending ? <Loader2 className="size-4 animate-spin" /> : <Users className="size-4" />}
                       Meeting
                     </Button>
-                    <Button
-                      variant="outline"
-                      size={compact ? "sm" : "lg"}
-                      className={compact ? "h-8" : "h-10"}
-                      disabled={isPending || teaSlotsLeft === 0}
-                      onClick={() => run(() => startBreak("TEA"))}
-                    >
-                      {isPending ? <Loader2 className="size-4 animate-spin" /> : <Coffee className="size-4" />}
-                      Tea {TEA_BREAK_MINUTES} min · {teaSlotsLeft} left
-                    </Button>
+                    {(
+                      [
+                        ["TEA_1", tea1Remaining],
+                        ["TEA_2", tea2Remaining],
+                      ] as const
+                    ).map(([slot, remaining]) => (
+                      <Button
+                        key={slot}
+                        variant="outline"
+                        size={compact ? "sm" : "lg"}
+                        className={compact ? "h-8" : "h-10"}
+                        disabled={isPending || remaining === 0}
+                        onClick={() => run(() => startBreak(slot))}
+                      >
+                        {isPending ? <Loader2 className="size-4 animate-spin" /> : <Coffee className="size-4" />}
+                        {formatBreakType(slot)} · {formatDuration(remaining)} left
+                      </Button>
+                    ))}
                     <Button
                       variant="outline"
                       size={compact ? "sm" : "lg"}
