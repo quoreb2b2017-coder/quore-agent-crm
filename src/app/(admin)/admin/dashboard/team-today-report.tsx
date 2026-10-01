@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { AttendanceStatusBadge } from "@/components/attendance/attendance-status-badge";
+import { StatusBadge } from "@/components/dashboard/status-badge";
 import type { TeamTodayRow } from "@/lib/queries/admin-dashboard";
 import { dailyActiveSeconds, formatClock } from "@/lib/live-time";
 
@@ -50,7 +51,10 @@ export function TeamTodayReport({ rows }: { rows: TeamTodayRow[] }) {
                   </div>
                 </td>
                 <td className="px-3 py-2.5">
-                  <AttendanceStatusBadge status={row.status} />
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <AttendanceStatusBadge status={row.status} />
+                    {row.inMeeting ? <StatusBadge status="MEETING" /> : null}
+                  </div>
                 </td>
                 <td className="px-4 py-2.5 text-right font-mono tabular-nums">
                   {now == null ? "—" : formatClock(seconds)}

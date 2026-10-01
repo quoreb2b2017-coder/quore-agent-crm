@@ -24,7 +24,7 @@ import { createClient } from "@/lib/supabase/client";
 import { postLoginPath, readWorktrackJwtClaims } from "@/lib/auth/jwt-claims";
 
 const HIGHLIGHTS = [
-  { icon: Clock, text: "Sign in and attendance is marked. US hours follow India 6:30 PM – 3:30 AM IST · tea 30 min · lunch 45 min" },
+  { icon: Clock, text: "Sign in and attendance is marked. US hours follow India 6:30 PM – 3:30 AM IST · two 15-min tea breaks · lunch 45 min" },
   { icon: Radio, text: "See live status across your team in real time" },
   { icon: Wallet, text: "Access salary slips, leave, and tasks in one place" },
 ];

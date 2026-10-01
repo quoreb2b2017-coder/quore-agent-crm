@@ -8,12 +8,13 @@ import {
 } from "@/lib/format";
 
 export const SHIFT_WORKING_SECONDS = 9 * 3600;
-export const TEA_BREAK_MINUTES = 30;
+/** Each tea break is its own 15-minute slot; time left unused in one slot does not carry over. */
+export const TEA_BREAK_MINUTES = 15;
+export const TEA_BREAKS_PER_SHIFT = 2;
 export const LUNCH_BREAK_MINUTES = 45;
 export const TEA_BREAK_SECONDS = TEA_BREAK_MINUTES * 60;
 export const LUNCH_BREAK_SECONDS = LUNCH_BREAK_MINUTES * 60;
-/** Total tea time per shift (shared across multiple tea breaks). */
-export const TEA_BREAK_BUDGET_SECONDS = TEA_BREAK_SECONDS;
+export const TEA_BREAK_BUDGET_SECONDS = TEA_BREAK_SECONDS * TEA_BREAKS_PER_SHIFT;
 export const LUNCH_BREAK_BUDGET_SECONDS = LUNCH_BREAK_SECONDS;
 export const BREAK_TOTAL_SECONDS = TEA_BREAK_BUDGET_SECONDS + LUNCH_BREAK_BUDGET_SECONDS;
 export const PRODUCTIVE_SECONDS = SHIFT_WORKING_SECONDS - BREAK_TOTAL_SECONDS;
@@ -21,7 +22,7 @@ export const PRODUCTIVE_SECONDS = SHIFT_WORKING_SECONDS - BREAK_TOTAL_SECONDS;
 export const SHIFT_WORKING_LABEL = "9 hrs";
 export const PRODUCTIVE_HOURS_LABEL = "7 hrs 45 min";
 export const BREAK_BUDGET_LABEL = "1 hr 15 min";
-export const BREAK_POLICY_LABEL = `Tea ${TEA_BREAK_MINUTES} min · Lunch ${LUNCH_BREAK_MINUTES} min`;
+export const BREAK_POLICY_LABEL = `Tea ${TEA_BREAKS_PER_SHIFT} × ${TEA_BREAK_MINUTES} min · Lunch ${LUNCH_BREAK_MINUTES} min`;
 
 export type PolicyBreakType = "TEA" | "LUNCH";
 
@@ -75,6 +76,14 @@ export function breakBudgetSeconds(breakType: string): number {
   return breakType === "LUNCH" ? LUNCH_BREAK_BUDGET_SECONDS : TEA_BREAK_BUDGET_SECONDS;
 }
 
+/** How long the break in progress may run, given closed time already used for the same type. */
+export function openBreakLimitSeconds(breakType: string, closedSameTypeSeconds: number): number {
+  if (isLunchBreak(breakType)) {
+    return Math.max(0, LUNCH_BREAK_BUDGET_SECONDS - closedSameTypeSeconds);
+  }
+  return TEA_BREAK_SECONDS;
+}
+
 export function breakDurationSeconds(
   row: { started_at: string; ended_at: string | null; duration_seconds?: number | null },
   now = Date.now()
@@ -91,6 +100,10 @@ export function breakDurationSeconds(
 
 export function breakMinutesLabel(breakType: string): string {
   return breakType === "LUNCH" ? `${LUNCH_BREAK_MINUTES} min` : `${TEA_BREAK_MINUTES} min`;
+}
+
+export function teaBreaksLeft(teaBreaksTaken: number): number {
+  return Math.max(0, TEA_BREAKS_PER_SHIFT - teaBreaksTaken);
 }
 
 export function formatBreakType(breakType: string): string {

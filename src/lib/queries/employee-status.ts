@@ -1,4 +1,5 @@
 import { createDataClient as createClient } from "@/lib/supabase/data";
+import { createServiceClient } from "@/lib/supabase/service";
 import { isWeekendIso, shiftDateIso, todayIso } from "@/lib/format";
 import { breakDurationSeconds, isLunchBreak, shiftAccountingWindowUtc } from "@/lib/shift";
 import type { CommonDashboardData } from "@/lib/queries/employee-dashboard";
@@ -11,11 +12,23 @@ export type MySessionState = {
   sessionClosedBreakSeconds: number;
   teaClosedSeconds: number;
   lunchClosedSeconds: number;
+  teaBreaksTaken: number;
   openBreakType: string | null;
   openBreakStartedAt: string | null;
+  meetingStartedAt: string | null;
   onLeave: boolean;
   weekOff: boolean;
 };
+
+async function openMeetingStartedAt(employeeId: string) {
+  const { data } = await createServiceClient()
+    .from("meetings")
+    .select("started_at")
+    .eq("employee_id", employeeId)
+    .is("ended_at", null)
+    .maybeSingle();
+  return data?.started_at ?? null;
+}
 
 export type EmployeeDashboardBundle = {
   sessionState: MySessionState;
@@ -55,7 +68,9 @@ export async function getEmployeeDashboardBundle(employeeId: string): Promise<Em
   const breaks = shiftBreaks ?? [];
   let teaClosedSeconds = 0;
   let lunchClosedSeconds = 0;
+  let teaBreaksTaken = 0;
   for (const row of breaks) {
+    if (!isLunchBreak(row.break_type)) teaBreaksTaken += 1;
     if (row.ended_at == null) continue;
     const seconds = breakDurationSeconds(row);
     if (isLunchBreak(row.break_type)) lunchClosedSeconds += seconds;
@@ -90,8 +105,10 @@ export async function getEmployeeDashboardBundle(employeeId: string): Promise<Em
         sessionClosedBreakSeconds: 0,
         teaClosedSeconds,
         lunchClosedSeconds,
+        teaBreaksTaken,
         openBreakType: null,
         openBreakStartedAt: null,
+        meetingStartedAt: null,
         onLeave: attendance?.status === "ON_LEAVE",
         weekOff,
       },
@@ -110,8 +127,10 @@ export async function getEmployeeDashboardBundle(employeeId: string): Promise<Em
         .reduce((sum, row) => sum + (row.duration_seconds ?? 0), 0),
       teaClosedSeconds,
       lunchClosedSeconds,
+      teaBreaksTaken,
       openBreakType: openBreak?.break_type ?? null,
       openBreakStartedAt: openBreak?.started_at ?? null,
+      meetingStartedAt: await openMeetingStartedAt(employeeId),
       onLeave: attendance?.status === "ON_LEAVE",
       weekOff,
     },
@@ -150,7 +169,9 @@ export async function getMySessionState(employeeId: string): Promise<MySessionSt
   const breaks = shiftBreaks ?? [];
   let teaClosedSeconds = 0;
   let lunchClosedSeconds = 0;
+  let teaBreaksTaken = 0;
   for (const row of breaks) {
+    if (!isLunchBreak(row.break_type)) teaBreaksTaken += 1;
     if (row.ended_at == null) continue;
     const seconds = breakDurationSeconds(row);
     if (isLunchBreak(row.break_type)) lunchClosedSeconds += seconds;
@@ -169,8 +190,10 @@ export async function getMySessionState(employeeId: string): Promise<MySessionSt
       sessionClosedBreakSeconds: 0,
       teaClosedSeconds,
       lunchClosedSeconds,
+      teaBreaksTaken,
       openBreakType: null,
       openBreakStartedAt: null,
+      meetingStartedAt: null,
       onLeave: attendance?.status === "ON_LEAVE",
       weekOff,
     };
@@ -188,8 +211,10 @@ export async function getMySessionState(employeeId: string): Promise<MySessionSt
       .reduce((sum, row) => sum + (row.duration_seconds ?? 0), 0),
     teaClosedSeconds,
     lunchClosedSeconds,
+    teaBreaksTaken,
     openBreakType: openBreak?.break_type ?? null,
     openBreakStartedAt: openBreak?.started_at ?? null,
+    meetingStartedAt: await openMeetingStartedAt(employeeId),
     onLeave: attendance?.status === "ON_LEAVE",
     weekOff,
   };

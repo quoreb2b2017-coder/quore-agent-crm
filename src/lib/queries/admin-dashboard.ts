@@ -1,5 +1,6 @@
 import { cache } from "react";
 import { createDataClient as createClient } from "@/lib/supabase/data";
+import { createServiceClient } from "@/lib/supabase/service";
 import { todayIso } from "@/lib/format";
 import { SUPER_ADMIN_ROLE } from "@/lib/permissions/roles";
 import { weekendOrRecordedStatus } from "@/lib/attendance-weekend";
@@ -63,6 +64,7 @@ export type TeamTodayRow = {
   sessionStartedAt: string | null;
   sessionClosedBreakSeconds: number;
   openBreakStartedAt: string | null;
+  inMeeting: boolean;
 };
 
 async function liveSessionSlices(
@@ -75,6 +77,7 @@ async function liveSessionSlices(
       sessionStartedAt: string | null;
       sessionClosedBreakSeconds: number;
       openBreakStartedAt: string | null;
+      inMeeting: boolean;
     }
   >();
   if (employeeIds.length === 0) return slices;
@@ -93,6 +96,12 @@ async function liveSessionSlices(
           .select("session_id, started_at, ended_at, duration_seconds")
           .in("session_id", sessionIds)
       : { data: [] };
+  const { data: meetings } = await createServiceClient()
+    .from("meetings")
+    .select("employee_id")
+    .is("ended_at", null)
+    .in("employee_id", employeeIds);
+  const inMeeting = new Set((meetings ?? []).map((row) => row.employee_id));
 
   for (const session of sessions ?? []) {
     const rows = (breaks ?? []).filter((row) => row.session_id === session.id);
@@ -104,6 +113,7 @@ async function liveSessionSlices(
       sessionStartedAt: session.started_at,
       sessionClosedBreakSeconds: closed,
       openBreakStartedAt: open?.started_at ?? null,
+      inMeeting: !open && inMeeting.has(session.employee_id),
     });
   }
   return slices;
@@ -143,6 +153,7 @@ export async function getTodayTeamReport(
       sessionStartedAt: live?.sessionStartedAt ?? null,
       sessionClosedBreakSeconds: live?.sessionClosedBreakSeconds ?? 0,
       openBreakStartedAt: live?.openBreakStartedAt ?? null,
+      inMeeting: live?.inMeeting ?? false,
     };
   });
 }
@@ -255,6 +266,7 @@ export async function getAdminDashboardData(): Promise<{
       sessionStartedAt: liveByEmployee.get(person.id)?.sessionStartedAt ?? null,
       sessionClosedBreakSeconds: liveByEmployee.get(person.id)?.sessionClosedBreakSeconds ?? 0,
       openBreakStartedAt: liveByEmployee.get(person.id)?.openBreakStartedAt ?? null,
+      inMeeting: liveByEmployee.get(person.id)?.inMeeting ?? false,
     };
   });
 

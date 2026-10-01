@@ -263,6 +263,28 @@ export interface Database {
           updated_at?: string;
         }
       >;
+      meetings: Table<
+        {
+          id: string;
+          employee_id: string;
+          session_id: string | null;
+          started_at: string;
+          ended_at: string | null;
+          duration_seconds: number | null;
+          created_at: string;
+          updated_at: string;
+        },
+        {
+          id?: string;
+          employee_id: string;
+          session_id?: string | null;
+          started_at?: string;
+          ended_at?: string | null;
+          duration_seconds?: number | null;
+          created_at?: string;
+          updated_at?: string;
+        }
+      >;
       activity_events: Table<
         {
           id: string;

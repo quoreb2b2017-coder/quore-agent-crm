@@ -13,7 +13,9 @@ import {
   fromDatetimeLocalIst,
   isLunchBreak,
   LUNCH_BREAK_BUDGET_SECONDS,
-  TEA_BREAK_BUDGET_SECONDS,
+  openBreakLimitSeconds,
+  TEA_BREAK_MINUTES,
+  TEA_BREAKS_PER_SHIFT,
   shiftAccountingWindowUtc,
   type PolicyBreakType,
 } from "@/lib/shift";
@@ -119,12 +121,37 @@ async function usedShiftBreakSeconds(
 
   let tea = 0;
   let lunch = 0;
+  let teaCount = 0;
   for (const row of data ?? []) {
     const seconds = breakDurationSeconds(row);
     if (isLunchBreak(row.break_type)) lunch += seconds;
-    else tea += seconds;
+    else {
+      tea += seconds;
+      teaCount += 1;
+    }
   }
-  return { tea, lunch };
+  return { tea, lunch, teaCount };
+}
+
+async function closeOpenMeeting(employeeId: string, at = new Date()) {
+  const service = createServiceClient();
+  const { data: meeting } = await service
+    .from("meetings")
+    .select("id, started_at")
+    .eq("employee_id", employeeId)
+    .is("ended_at", null)
+    .maybeSingle();
+  if (!meeting) return;
+  await service
+    .from("meetings")
+    .update({
+      ended_at: at.toISOString(),
+      duration_seconds: Math.max(
+        0,
+        Math.floor((at.getTime() - new Date(meeting.started_at).getTime()) / 1000)
+      ),
+    })
+    .eq("id", meeting.id);
 }
 
 export async function clockIn(): Promise<Result> {
@@ -244,6 +271,7 @@ export async function closeWorkSession(
   if (!session) return {};
 
   const now = new Date();
+  await closeOpenMeeting(employeeId, now);
   const { data: openBreak } = await supabase
     .from("breaks")
     .select("id, started_at, break_type")
@@ -258,12 +286,12 @@ export async function closeWorkSession(
     );
     const shiftDate = shiftDateIso(new Date(openBreak.started_at));
     const used = await usedShiftBreakSeconds(supabase as never, employeeId, shiftDate);
-    const budget = isLunchBreak(openBreak.break_type)
-      ? LUNCH_BREAK_BUDGET_SECONDS
-      : TEA_BREAK_BUDGET_SECONDS;
     const rawUsed = isLunchBreak(openBreak.break_type) ? used.lunch : used.tea;
     const closedUsed = Math.max(0, rawUsed - durationSeconds);
-    durationSeconds = Math.min(durationSeconds, Math.max(0, budget - closedUsed));
+    durationSeconds = Math.min(
+      durationSeconds,
+      openBreakLimitSeconds(openBreak.break_type, closedUsed)
+    );
     await supabase
       .from("breaks")
       .update({ ended_at: now.toISOString(), duration_seconds: durationSeconds })
@@ -348,10 +376,18 @@ export async function startBreak(breakType: PolicyBreakType = "TEA"): Promise<Re
 
   if (openBreak) return { error: "You already have a break in progress." };
 
+  const { data: openMeeting } = await createServiceClient()
+    .from("meetings")
+    .select("id")
+    .eq("employee_id", ctx.employeeId)
+    .is("ended_at", null)
+    .maybeSingle();
+  if (openMeeting) return { error: "End your meeting before starting a break." };
+
   const shiftDate = shiftDateIso(new Date(session.started_at));
   const used = await usedShiftBreakSeconds(supabase, ctx.employeeId, shiftDate);
-  if (breakType === "TEA" && used.tea >= TEA_BREAK_BUDGET_SECONDS) {
-    return { error: "Tea time is finished for this shift." };
+  if (breakType === "TEA" && used.teaCount >= TEA_BREAKS_PER_SHIFT) {
+    return { error: `Both ${TEA_BREAK_MINUTES}-minute tea breaks are used for this shift.` };
   }
   if (breakType === "LUNCH" && used.lunch >= LUNCH_BREAK_BUDGET_SECONDS) {
     return { error: "Lunch time is finished for this shift." };
@@ -407,11 +443,11 @@ export async function endBreak(): Promise<Result> {
     else closedTea += seconds;
   }
 
-  const budget = isLunchBreak(openBreak.break_type)
-    ? LUNCH_BREAK_BUDGET_SECONDS
-    : TEA_BREAK_BUDGET_SECONDS;
   const closedUsed = isLunchBreak(openBreak.break_type) ? closedLunch : closedTea;
-  durationSeconds = Math.min(durationSeconds, Math.max(0, budget - closedUsed));
+  durationSeconds = Math.min(
+    durationSeconds,
+    openBreakLimitSeconds(openBreak.break_type, closedUsed)
+  );
 
   const { error } = await supabase
     .from("breaks")
@@ -432,6 +468,70 @@ export async function endBreak(): Promise<Result> {
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Failed to update attendance" };
   }
+
+  revalidateLive();
+  return {};
+}
+
+/** Meeting time keeps the working timer running and is counted as productive time. */
+export async function startMeeting(): Promise<Result> {
+  const ctx = await getCurrentEmployeeContext();
+  if (!ctx) return { error: "Not authenticated" };
+  if (isSuperAdmin(ctx.roleKey)) return { skipped: true };
+  const service = createServiceClient();
+
+  const { data: session } = await service
+    .from("employee_sessions")
+    .select("id")
+    .eq("employee_id", ctx.employeeId)
+    .eq("status", "ACTIVE")
+    .maybeSingle();
+  if (!session) return { error: "Clock in before starting a meeting." };
+
+  const { data: openBreak } = await service
+    .from("breaks")
+    .select("id")
+    .eq("session_id", session.id)
+    .is("ended_at", null)
+    .maybeSingle();
+  if (openBreak) return { error: "End your break before starting a meeting." };
+
+  const { data: openMeeting, error: lookupError } = await service
+    .from("meetings")
+    .select("id")
+    .eq("employee_id", ctx.employeeId)
+    .is("ended_at", null)
+    .maybeSingle();
+  if (lookupError) {
+    return { error: "Meeting tracking is not set up yet. Run migration 0018_meetings.sql." };
+  }
+  if (openMeeting) return {};
+
+  const { error } = await service
+    .from("meetings")
+    .insert({ employee_id: ctx.employeeId, session_id: session.id });
+  if (error && error.code !== "23505") return { error: error.message };
+
+  await service
+    .from("employee_sessions")
+    .update({ app_last_seen_at: new Date().toISOString() })
+    .eq("id", session.id);
+
+  revalidateLive();
+  return {};
+}
+
+export async function endMeeting(): Promise<Result> {
+  const ctx = await getCurrentEmployeeContext();
+  if (!ctx) return { error: "Not authenticated" };
+  if (isSuperAdmin(ctx.roleKey)) return { skipped: true };
+
+  await closeOpenMeeting(ctx.employeeId);
+  await createServiceClient()
+    .from("employee_sessions")
+    .update({ app_last_seen_at: new Date().toISOString() })
+    .eq("employee_id", ctx.employeeId)
+    .eq("status", "ACTIVE");
 
   revalidateLive();
   return {};

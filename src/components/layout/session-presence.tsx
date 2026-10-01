@@ -4,11 +4,21 @@ import { useEffect, useRef } from "react";
 import { toast } from "sonner";
 import { clockIn } from "@/lib/actions/attendance";
 import { IDLE_LOGOUT_MS } from "@/lib/live-time";
-import { expireIfIdle, touchPresence } from "@/lib/actions/presence";
+import { syncPresence } from "@/lib/actions/presence";
 import { createClient } from "@/lib/supabase/client";
 
 const FLAG = "worktrack-session-started";
 const HEARTBEAT_MS = 20_000;
+const ACTIVITY_KEY = "worktrack-last-activity";
+const SHARE_THROTTLE_MS = 5_000;
+const ACTIVITY_EVENTS = [
+  "keydown",
+  "mousemove",
+  "mousedown",
+  "wheel",
+  "scroll",
+  "touchstart",
+] as const;
 
 /** Marks attendance once per browser tab. Does not refresh the whole page. */
 export function SessionPresence({ enableClockIn = true }: { enableClockIn?: boolean }) {
@@ -39,57 +49,55 @@ export function SessionPresence({ enableClockIn = true }: { enableClockIn?: bool
 
   useEffect(() => {
     let lastActivity = Date.now();
-    let hiddenAt: number | null = null;
+    let lastShared = 0;
     let loggingOut = false;
+    const share = (at: number) => {
+      lastShared = at;
+      try {
+        localStorage.setItem(ACTIVITY_KEY, String(at));
+      } catch {
+        /* storage blocked: this tab still tracks its own activity */
+      }
+    };
     const mark = () => {
       lastActivity = Date.now();
+      if (lastActivity - lastShared >= SHARE_THROTTLE_MS) share(lastActivity);
     };
-    const logout = () => {
+    // Activity in any open CRM tab keeps every tab signed in.
+    const latestActivity = () => {
+      let shared = 0;
+      try {
+        shared = Number(localStorage.getItem(ACTIVITY_KEY)) || 0;
+      } catch {
+        shared = 0;
+      }
+      return Math.max(lastActivity, shared);
+    };
+    const tick = () => {
       if (loggingOut) return;
-      loggingOut = true;
-      void expireIfIdle().then(async (result) => {
-        if (!result.expired) {
-          loggingOut = false;
-          return;
+      const idle = Date.now() - latestActivity() >= IDLE_LOGOUT_MS;
+      void syncPresence(idle).then(async (result) => {
+        if (result.hold) {
+          lastActivity = Date.now();
+          share(lastActivity);
         }
+        if (!result.expired || loggingOut) return;
+        loggingOut = true;
         sessionStorage.removeItem(FLAG);
         const supabase = createClient();
         await supabase.auth.signOut();
         window.location.assign("/login");
       });
     };
-    const onVisibility = () => {
-      if (document.hidden) {
-        hiddenAt = Date.now();
-        return;
-      }
-      const away = hiddenAt == null ? 0 : Date.now() - hiddenAt;
-      hiddenAt = null;
-      if (away >= IDLE_LOGOUT_MS) logout();
-      else mark();
-    };
-    window.addEventListener("pointerdown", mark);
-    window.addEventListener("keydown", mark);
-    window.addEventListener("mousemove", mark);
-    document.addEventListener("visibilitychange", onVisibility);
-
-    void touchPresence();
-    const timer = window.setInterval(() => {
-      const idle = Date.now() - lastActivity;
-      const hiddenFor = hiddenAt == null ? 0 : Date.now() - hiddenAt;
-      if (idle >= IDLE_LOGOUT_MS || hiddenFor >= IDLE_LOGOUT_MS) {
-        logout();
-        return;
-      }
-      if (!document.hidden) void touchPresence();
-    }, HEARTBEAT_MS);
+    share(lastActivity);
+    for (const event of ACTIVITY_EVENTS) {
+      window.addEventListener(event, mark, { passive: true });
+    }
+    const timer = window.setInterval(tick, HEARTBEAT_MS);
 
     return () => {
       window.clearInterval(timer);
-      window.removeEventListener("pointerdown", mark);
-      window.removeEventListener("keydown", mark);
-      window.removeEventListener("mousemove", mark);
-      document.removeEventListener("visibilitychange", onVisibility);
+      for (const event of ACTIVITY_EVENTS) window.removeEventListener(event, mark);
     };
   }, []);
 

@@ -3,18 +3,29 @@
 import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { LogIn, LogOut, Coffee, Play, Loader2, Clock as ClockIcon, UtensilsCrossed } from "lucide-react";
+import { LogIn, LogOut, Coffee, Play, Loader2, Clock as ClockIcon, UtensilsCrossed, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { StatusBadge, type EmployeeLiveStatus } from "@/components/dashboard/status-badge";
-import { clockIn, clockOut, startBreak, endBreak } from "@/lib/actions/attendance";
+import {
+  clockIn,
+  clockOut,
+  startBreak,
+  endBreak,
+  endWorkSession,
+  startMeeting,
+  endMeeting,
+} from "@/lib/actions/attendance";
+import { createClient } from "@/lib/supabase/client";
 import { formatDuration, formatTime } from "@/lib/format";
 import { formatClock } from "@/lib/live-time";
 import {
-  breakBudgetSeconds,
   formatBreakType,
   LUNCH_BREAK_BUDGET_SECONDS,
+  openBreakLimitSeconds,
   SHIFT_WORKING_SECONDS,
-  TEA_BREAK_BUDGET_SECONDS,
+  TEA_BREAK_MINUTES,
+  TEA_BREAKS_PER_SHIFT,
+  teaBreaksLeft,
 } from "@/lib/shift";
 import type { MySessionState } from "@/lib/queries/employee-status";
 import { cn } from "@/lib/utils";
@@ -52,8 +63,10 @@ export function ClockWidget({
     sessionClosedBreakSeconds = 0,
     teaClosedSeconds,
     lunchClosedSeconds,
+    teaBreaksTaken = 0,
     openBreakType,
     openBreakStartedAt,
+    meetingStartedAt = null,
     onLeave,
     weekOff = false,
   } = session;
@@ -62,18 +75,23 @@ export function ClockWidget({
   const router = useRouter();
   const elapsed = useElapsed(sessionStartedAt, isClockedIn);
   const breakElapsed = useElapsed(openBreakStartedAt, isOnBreak);
+  const isInMeeting = isClockedIn && !isOnBreak && !!meetingStartedAt;
+  const meetingElapsed = useElapsed(meetingStartedAt, isInMeeting);
   const liveSlice = isClockedIn
     ? Math.max(0, (elapsed ?? 0) - sessionClosedBreakSeconds - (isOnBreak ? (breakElapsed ?? 0) : 0))
     : 0;
   const dailySeconds = accruedActiveSeconds + liveSlice;
-  const teaUsed =
-    teaClosedSeconds + (openBreakType === "TEA" && breakElapsed != null ? breakElapsed : 0);
   const lunchUsed =
     lunchClosedSeconds + (openBreakType === "LUNCH" && breakElapsed != null ? breakElapsed : 0);
-  const teaRemaining = Math.max(0, TEA_BREAK_BUDGET_SECONDS - teaUsed);
+  const teaSlotsLeft = teaBreaksLeft(teaBreaksTaken);
   const lunchRemaining = Math.max(0, LUNCH_BREAK_BUDGET_SECONDS - lunchUsed);
-  const breakRemaining = openBreakType === "LUNCH" ? lunchRemaining : teaRemaining;
-  const breakBudget = openBreakType ? breakBudgetSeconds(openBreakType) : 0;
+  const breakBudget = openBreakType
+    ? openBreakLimitSeconds(
+        openBreakType,
+        openBreakType === "LUNCH" ? lunchClosedSeconds : teaClosedSeconds
+      )
+    : 0;
+  const breakRemaining = Math.max(0, breakBudget - (breakElapsed ?? 0));
   const shiftPct = Math.min(100, (dailySeconds / SHIFT_WORKING_SECONDS) * 100);
   const breakPct =
     isOnBreak && breakBudget > 0
@@ -87,25 +105,33 @@ export function ClockWidget({
   useEffect(() => {
     if (readOnly || !isOnBreak || !openBreakStartedAt || !openBreakType) return;
     const closed = openBreakType === "LUNCH" ? lunchClosedSeconds : teaClosedSeconds;
-    const remainingAtStart = Math.max(0, breakBudgetSeconds(openBreakType) - closed);
+    const remainingAtStart = openBreakLimitSeconds(openBreakType, closed);
     const delay = Math.max(
       0,
       new Date(openBreakStartedAt).getTime() + remainingAtStart * 1000 - Date.now()
     );
     const timer = window.setTimeout(() => {
       startTransition(async () => {
-        const res = await endBreak();
-        if (res.error) toast.error(res.error);
-        else {
-          toast.success(`${formatBreakType(openBreakType)} break ended`);
-          router.refresh();
+        const res = await endWorkSession();
+        if (res.error) {
+          toast.error(res.error);
+          return;
         }
+        const supabase = createClient();
+        await supabase.auth.signOut();
+        window.location.assign("/login");
       });
     }, delay);
     return () => window.clearTimeout(timer);
   }, [readOnly, isOnBreak, openBreakStartedAt, openBreakType, teaClosedSeconds, lunchClosedSeconds, router]);
 
-  const status: EmployeeLiveStatus = isOnBreak ? "BREAK" : isClockedIn ? "ONLINE" : "OFFLINE";
+  const status: EmployeeLiveStatus = isOnBreak
+    ? "BREAK"
+    : isInMeeting
+      ? "MEETING"
+      : isClockedIn
+        ? "ONLINE"
+        : "OFFLINE";
 
   function run(action: () => Promise<{ error?: string }>) {
     startTransition(async () => {
@@ -139,12 +165,18 @@ export function ClockWidget({
               compact ? "size-12" : "size-16 sm:size-[4.5rem]",
               status === "ONLINE" &&
                 "bg-success text-white shadow-[0_0_0_4px_oklch(0.55_0.14_155/0.22)]",
+              status === "MEETING" &&
+                "bg-info text-white shadow-[0_0_0_4px_oklch(0.6_0.12_240/0.22)]",
               status === "BREAK" &&
                 "bg-warning text-warning-foreground shadow-[0_0_0_4px_oklch(0.75_0.14_70/0.28)]",
               status === "OFFLINE" && "bg-muted text-muted-foreground"
             )}
           >
-            <ClockIcon className={compact ? "size-5" : "size-7 sm:size-8"} />
+            {isInMeeting ? (
+              <Users className={compact ? "size-5" : "size-7 sm:size-8"} />
+            ) : (
+              <ClockIcon className={compact ? "size-5" : "size-7 sm:size-8"} />
+            )}
             {status === "ONLINE" ? (
               <span className="absolute -top-0.5 -right-0.5 flex size-2.5">
                 <span className="absolute inline-flex size-full animate-ping rounded-full bg-success opacity-75" />
@@ -173,7 +205,7 @@ export function ClockWidget({
               className={cn(
                 "font-mono font-semibold tracking-tight tabular-nums",
                 compact ? "text-2xl" : "text-3xl sm:text-4xl",
-                status === "ONLINE" && "clock-timer",
+                (status === "ONLINE" || status === "MEETING") && "clock-timer",
                 status === "BREAK" && "text-warning-foreground",
                 status === "OFFLINE" && "text-muted-foreground"
               )}
@@ -184,13 +216,19 @@ export function ClockWidget({
               <p className="text-xs font-medium text-muted-foreground">
                 {formatBreakType(openBreakType ?? "TEA")} remaining · {formatDuration(breakRemaining)} left
               </p>
+            ) : isInMeeting ? (
+              <p className="text-xs font-medium text-muted-foreground">
+                In meeting · {formatDuration(meetingElapsed ?? 0)} · counts as productive time
+              </p>
             ) : null}
           </div>
         </div>
 
         {readOnly ? (
           <div className="flex flex-wrap gap-1.5 sm:justify-end">
-            <span className="break-chip break-chip-tea">Tea {formatDuration(teaRemaining)} left</span>
+            <span className="break-chip break-chip-tea">
+              Tea {teaSlotsLeft} of {TEA_BREAKS_PER_SHIFT} left
+            </span>
             <span className="break-chip break-chip-lunch">Lunch {formatDuration(lunchRemaining)} left</span>
           </div>
         ) : (
@@ -208,17 +246,37 @@ export function ClockWidget({
               </Button>
             ) : (
               <>
-                {!isOnBreak ? (
+                {isInMeeting ? (
+                  <Button
+                    size={compact ? "sm" : "lg"}
+                    className={compact ? "h-8" : "h-10"}
+                    disabled={isPending}
+                    onClick={() => run(endMeeting)}
+                  >
+                    {isPending ? <Loader2 className="size-4 animate-spin" /> : <Play className="size-4" />}
+                    End meeting
+                  </Button>
+                ) : !isOnBreak ? (
                   <>
                     <Button
                       variant="outline"
                       size={compact ? "sm" : "lg"}
                       className={compact ? "h-8" : "h-10"}
-                      disabled={isPending || teaRemaining === 0}
+                      disabled={isPending}
+                      onClick={() => run(startMeeting)}
+                    >
+                      {isPending ? <Loader2 className="size-4 animate-spin" /> : <Users className="size-4" />}
+                      Meeting
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size={compact ? "sm" : "lg"}
+                      className={compact ? "h-8" : "h-10"}
+                      disabled={isPending || teaSlotsLeft === 0}
                       onClick={() => run(() => startBreak("TEA"))}
                     >
                       {isPending ? <Loader2 className="size-4 animate-spin" /> : <Coffee className="size-4" />}
-                      Tea · {formatDuration(teaRemaining)} left
+                      Tea {TEA_BREAK_MINUTES} min · {teaSlotsLeft} left
                     </Button>
                     <Button
                       variant="outline"
@@ -251,7 +309,7 @@ export function ClockWidget({
                   variant="secondary"
                   size={compact ? "sm" : "lg"}
                   className={compact ? "h-8" : "h-10"}
-                  disabled={isPending || isOnBreak}
+                  disabled={isPending || isOnBreak || isInMeeting}
                   onClick={() => run(clockOut)}
                 >
                   {isPending ? <Loader2 className="size-4 animate-spin" /> : <LogOut className="size-4" />}
