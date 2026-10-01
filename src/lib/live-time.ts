@@ -1,4 +1,5 @@
-export const IDLE_LOGOUT_MS = 5 * 60 * 1000;
+/** No keyboard or mouse activity in the CRM for this long signs the employee out (not during breaks or meetings). */
+export const IDLE_LOGOUT_MS = 10 * 60 * 1000;
 
 export function dailyActiveSeconds(input: {
   storedActiveSeconds: number;

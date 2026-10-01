@@ -19,7 +19,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { PublicShell } from "@/components/layout/public-shell";
 import { ClientGreeting, DualOfficeClocks, ShiftCountdown } from "@/components/layout/live-time";
-import { shiftWindowLabel } from "@/lib/format";
+import { formatTime, shiftWindowLabel } from "@/lib/format";
 import { createClient } from "@/lib/supabase/client";
 import { postLoginPath, readWorktrackJwtClaims } from "@/lib/auth/jwt-claims";
 
@@ -35,15 +35,27 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [email, setEmail] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [isPending, setIsPending] = useState(false);
   const [spot, setSpot] = useState({ x: 70, y: 20 });
   const emailOk = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
 
   useEffect(() => {
     emailRef.current?.focus();
-    const reason = new URLSearchParams(window.location.search).get("reason");
+    const params = new URLSearchParams(window.location.search);
+    const reason = params.get("reason");
+    const at = Number(params.get("at"));
+    const when = Number.isFinite(at) && at > 0 ? ` at ${formatTime(new Date(at).toISOString())}` : "";
     if (reason === "blocked") {
       setError("This account is blocked. Contact Super Admin.");
+    } else if (reason === "idle") {
+      setNotice(
+        `Signed out for inactivity${when}: no keyboard or mouse activity for 10 minutes. Your timer is paused — sign in to resume.`
+      );
+    } else if (reason === "break") {
+      setNotice(`Your break time ended${when}, so you were signed out. Sign in to resume your timer.`);
+    } else if (reason === "timeout") {
+      setNotice("Your session was closed automatically. Sign in to resume your timer.");
     }
   }, []);
 
@@ -183,6 +195,12 @@ export default function LoginPage() {
                 <ClientGreeting />. You can sign in any time. Shift {shiftWindowLabel()}.
               </p>
             </div>
+
+            {notice ? (
+              <p className="rounded-lg border border-warning/40 bg-warning/10 px-3 py-2 text-sm text-warning-foreground">
+                {notice}
+              </p>
+            ) : null}
 
             <form onSubmit={handleSubmit} className="grid gap-4">
               <div className="grid gap-2">

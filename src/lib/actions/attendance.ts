@@ -45,7 +45,7 @@ async function attendanceForShift(
 ) {
   const { data } = await supabase
     .from("attendance")
-    .select("id, status, first_check_in, last_check_out, total_active_seconds, total_break_seconds")
+    .select("id, status, first_check_in, last_check_out, total_active_seconds, total_break_seconds, total_idle_seconds")
     .eq("employee_id", employeeId)
     .eq("attendance_date", shiftDate)
     .maybeSingle();
@@ -63,7 +63,7 @@ async function ensureAttendanceRow(
   const { data: created, error } = await supabase
     .from("attendance")
     .insert({ employee_id: employeeId, attendance_date: shiftDate, status: "PRESENT" })
-    .select("id, status, first_check_in, last_check_out, total_active_seconds, total_break_seconds")
+    .select("id, status, first_check_in, last_check_out, total_active_seconds, total_break_seconds, total_idle_seconds")
     .single();
 
   if (error || !created) throw new Error(error?.message ?? "Failed to create attendance row");
@@ -89,7 +89,7 @@ async function markPresent(
         status: "PRESENT",
         first_check_in: new Date().toISOString(),
       })
-      .select("id, status, first_check_in, last_check_out, total_active_seconds, total_break_seconds")
+      .select("id, status, first_check_in, last_check_out, total_active_seconds, total_break_seconds, total_idle_seconds")
       .single();
     if (error || !created) throw new Error(error?.message ?? "Failed to mark attendance");
     return created;
@@ -243,11 +243,15 @@ export async function clockOut(): Promise<Result> {
   return closeWorkSession(ctx.employeeId, "ENDED");
 }
 
-/** Stops today's timer and stores the elapsed working time. Login starts a new slice on the same day. */
+/**
+ * Stops today's timer and stores the elapsed working time. Login starts a new slice on the same day.
+ * `endedAt` backdates the stop (last activity, or when break time ran out) so unattended time is not
+ * counted as productive; `idleSeconds` is added to the day's idle total.
+ */
 export async function closeWorkSession(
   employeeId: string,
   status: "ENDED" | "TIMED_OUT" = "ENDED",
-  options?: { revalidate?: boolean }
+  options?: { revalidate?: boolean; endedAt?: Date; idleSeconds?: number }
 ): Promise<Result> {
   const supabase = createServiceClient();
   const { data: session } = await supabase
@@ -258,7 +262,11 @@ export async function closeWorkSession(
     .maybeSingle();
   if (!session) return {};
 
-  const now = new Date();
+  const current = Date.now();
+  const sessionStart = new Date(session.started_at).getTime();
+  const now = new Date(
+    Math.min(current, Math.max(sessionStart, options?.endedAt?.getTime() ?? current))
+  );
   await closeOpenMeeting(employeeId, now);
   const { data: openBreak } = await supabase
     .from("breaks")
@@ -325,6 +333,8 @@ export async function closeWorkSession(
         .update({
           last_check_out: now.toISOString(),
           total_active_seconds: (attendance.total_active_seconds ?? 0) + activeSeconds,
+          total_idle_seconds:
+            (attendance.total_idle_seconds ?? 0) + Math.max(0, Math.floor(options?.idleSeconds ?? 0)),
         })
         .eq("id", attendance.id);
     }

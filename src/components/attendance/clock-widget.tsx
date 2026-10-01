@@ -11,10 +11,11 @@ import {
   clockOut,
   startBreak,
   endBreak,
-  endWorkSession,
   startMeeting,
   endMeeting,
 } from "@/lib/actions/attendance";
+import { autoLogoutUrl, postPresence } from "@/lib/presence-client";
+import { RESET_IDLE_EVENT, SESSION_STARTED_FLAG } from "@/components/layout/session-presence";
 import { createClient } from "@/lib/supabase/client";
 import { formatDuration, formatTime } from "@/lib/format";
 import { formatClock } from "@/lib/live-time";
@@ -113,14 +114,15 @@ export function ClockWidget({
     );
     const timer = window.setTimeout(() => {
       startTransition(async () => {
-        const res = await endWorkSession();
-        if (res.error) {
-          toast.error(res.error);
+        const res = await postPresence(0, true).catch(() => null);
+        if (!res?.expired) {
+          router.refresh();
           return;
         }
+        sessionStorage.removeItem(SESSION_STARTED_FLAG);
         const supabase = createClient();
         await supabase.auth.signOut();
-        window.location.assign("/login");
+        window.location.assign(autoLogoutUrl(res.reason ?? "break", res.at ?? Date.now()));
       });
     }, delay);
     return () => window.clearTimeout(timer);
@@ -137,8 +139,12 @@ export function ClockWidget({
   function run(action: () => Promise<{ error?: string }>) {
     startTransition(async () => {
       const res = await action();
-      if (res.error) toast.error(res.error);
-      else router.refresh();
+      if (res.error) {
+        toast.error(res.error);
+        return;
+      }
+      window.dispatchEvent(new Event(RESET_IDLE_EVENT));
+      router.refresh();
     });
   }
 

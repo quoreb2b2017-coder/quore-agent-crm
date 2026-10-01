@@ -5,6 +5,7 @@ import { AttendanceStatusBadge } from "@/components/attendance/attendance-status
 import { StatusBadge } from "@/components/dashboard/status-badge";
 import type { TeamTodayRow } from "@/lib/queries/admin-dashboard";
 import { dailyActiveSeconds, formatClock } from "@/lib/live-time";
+import { formatTimeInZone, INDIA_TIME_ZONE } from "@/lib/format";
 
 export function TeamTodayReport({ rows }: { rows: TeamTodayRow[] }) {
   const [now, setNow] = useState<number | null>(null);
@@ -54,6 +55,11 @@ export function TeamTodayReport({ rows }: { rows: TeamTodayRow[] }) {
                   <div className="flex flex-wrap items-center gap-1.5">
                     <AttendanceStatusBadge status={row.status} />
                     {row.inMeeting ? <StatusBadge status="MEETING" /> : null}
+                    {row.autoLoggedOutAt ? (
+                      <span className="rounded-md bg-info/10 px-1.5 py-0.5 text-[11px] font-medium text-info">
+                        Auto logout · {now == null ? "—" : formatTimeInZone(row.autoLoggedOutAt, INDIA_TIME_ZONE)} IST
+                      </span>
+                    ) : null}
                   </div>
                 </td>
                 <td className="px-4 py-2.5 text-right font-mono tabular-nums">

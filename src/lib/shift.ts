@@ -7,6 +7,8 @@ import {
   todayIso,
 } from "@/lib/format";
 
+/** Productivity targets are counted from this shift date onward. */
+export const TRACKING_START_DATE = "2026-10-01";
 export const SHIFT_WORKING_SECONDS = 9 * 3600;
 /** Two separate 15-minute tea slots. Each slot can be taken in parts until its own 15 minutes are used. */
 export const TEA_BREAK_MINUTES = 15;

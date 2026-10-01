@@ -5,6 +5,7 @@ import { todayIso } from "@/lib/format";
 import { SUPER_ADMIN_ROLE } from "@/lib/permissions/roles";
 import { weekendOrRecordedStatus } from "@/lib/attendance-weekend";
 import { dailyActiveSeconds } from "@/lib/live-time";
+import { shiftAccountingWindowUtc } from "@/lib/shift";
 
 const loadSuperAdminEmployeeIds = cache(async (): Promise<string[]> => {
   const supabase = await createClient();
@@ -65,9 +66,11 @@ export type TeamTodayRow = {
   sessionClosedBreakSeconds: number;
   openBreakStartedAt: string | null;
   inMeeting: boolean;
+  /** Set when today's latest session was closed automatically (idle or break time over). */
+  autoLoggedOutAt: string | null;
 };
 
-async function liveSessionSlices(
+export async function liveSessionSlices(
   supabase: Awaited<ReturnType<typeof createClient>>,
   employeeIds: string[]
 ) {
@@ -78,9 +81,27 @@ async function liveSessionSlices(
       sessionClosedBreakSeconds: number;
       openBreakStartedAt: string | null;
       inMeeting: boolean;
+      autoLoggedOutAt: string | null;
     }
   >();
   if (employeeIds.length === 0) return slices;
+
+  const { data: todaysSessions } = await supabase
+    .from("employee_sessions")
+    .select("employee_id, status, ended_at")
+    .in("employee_id", employeeIds)
+    .gte("started_at", shiftAccountingWindowUtc(todayIso()).start.toISOString())
+    .order("started_at", { ascending: false });
+  for (const row of todaysSessions ?? []) {
+    if (slices.has(row.employee_id)) continue;
+    slices.set(row.employee_id, {
+      sessionStartedAt: null,
+      sessionClosedBreakSeconds: 0,
+      openBreakStartedAt: null,
+      inMeeting: false,
+      autoLoggedOutAt: row.status === "TIMED_OUT" ? row.ended_at : null,
+    });
+  }
 
   const { data: sessions } = await supabase
     .from("employee_sessions")
@@ -114,6 +135,7 @@ async function liveSessionSlices(
       sessionClosedBreakSeconds: closed,
       openBreakStartedAt: open?.started_at ?? null,
       inMeeting: !open && inMeeting.has(session.employee_id),
+      autoLoggedOutAt: null,
     });
   }
   return slices;
@@ -154,6 +176,7 @@ export async function getTodayTeamReport(
       sessionClosedBreakSeconds: live?.sessionClosedBreakSeconds ?? 0,
       openBreakStartedAt: live?.openBreakStartedAt ?? null,
       inMeeting: live?.inMeeting ?? false,
+      autoLoggedOutAt: live?.autoLoggedOutAt ?? null,
     };
   });
 }
@@ -267,6 +290,7 @@ export async function getAdminDashboardData(): Promise<{
       sessionClosedBreakSeconds: liveByEmployee.get(person.id)?.sessionClosedBreakSeconds ?? 0,
       openBreakStartedAt: liveByEmployee.get(person.id)?.openBreakStartedAt ?? null,
       inMeeting: liveByEmployee.get(person.id)?.inMeeting ?? false,
+      autoLoggedOutAt: liveByEmployee.get(person.id)?.autoLoggedOutAt ?? null,
     };
   });
 
