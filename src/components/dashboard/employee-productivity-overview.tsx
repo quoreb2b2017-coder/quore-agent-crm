@@ -1,11 +1,11 @@
-import { Coffee, Timer, TrendingUp } from "lucide-react";
+import { Coffee, Timer } from "lucide-react";
 import { createDataClient as createClient } from "@/lib/supabase/data";
 import { StatCard } from "@/components/dashboard/stat-card";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ProductivityChart } from "@/components/dashboard/productivity-chart";
 import { addDaysIso, eachDateInclusive, formatDuration, todayIso, weekdayShortIst } from "@/lib/format";
 import { dailyActiveSeconds } from "@/lib/live-time";
-import { PRODUCTIVE_SECONDS, productivityPercent } from "@/lib/shift";
+import { PRODUCTIVE_SECONDS } from "@/lib/shift";
 import { liveSessionSlices } from "@/lib/queries/admin-dashboard";
 
 /** Today's numbers and the last 7 shifts for one employee — the same view the employee sees. */
@@ -51,7 +51,7 @@ export async function EmployeeProductivityOverview({
 
   return (
     <>
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <StatCard
           label={`${who}Productive today`}
           value={formatDuration(totalActive)}
@@ -60,7 +60,6 @@ export async function EmployeeProductivityOverview({
           hint={`of ${formatDuration(PRODUCTIVE_SECONDS)}`}
         />
         <StatCard label="Break today" value={formatDuration(totalBreak)} icon={Coffee} tone="warning" />
-        <StatCard label="Productivity" value={`${productivityPercent(totalActive)}%`} icon={TrendingUp} tone="info" />
       </div>
 
       <Card>

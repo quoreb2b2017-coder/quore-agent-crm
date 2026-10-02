@@ -44,7 +44,6 @@ import {
   DayStatusPill,
   PeriodEndCell,
   Pill,
-  ProgressRing,
   StatusLegend,
   TargetBar,
 } from "./productivity-ui";
@@ -165,7 +164,6 @@ export default async function ProductivityPage({
 function DailyView({ rows, date, today }: { rows: ProductivityRow[]; date: string; today: string }) {
   const days = rows.map((row) => ({ row, day: row.days[0] }));
   const counted = days.filter(({ day }) => day && day.status !== "off");
-  const met = counted.filter(({ day }) => day.status === "met").length;
   const productive = counted.reduce((sum, { day }) => sum + day.productiveSeconds, 0);
   const deficit = counted.reduce(
     (sum, { day }) => sum + Math.max(0, PRODUCTIVE_SECONDS - day.productiveSeconds),
@@ -183,13 +181,6 @@ function DailyView({ rows, date, today }: { rows: ProductivityRow[]; date: strin
           icon={Timer}
           tone="success"
           hint={`Target ${PRODUCTIVE_HOURS_LABEL} each`}
-        />
-        <StatCard
-          label="Target met"
-          value={`${met} / ${counted.length}`}
-          icon={CheckCircle2}
-          tone="success"
-          progress={counted.length ? (met / counted.length) * 100 : 0}
         />
         <StatCard
           label={isToday ? "Still to go" : "Total deficit"}
@@ -458,7 +449,6 @@ function ProductivityHero({
   targetSeconds: number;
   who: string;
 }) {
-  const pct = targetSeconds > 0 ? (productiveSeconds / targetSeconds) * 100 : 0;
   const gap = targetSeconds - productiveSeconds;
   return (
     <section className="dash-hero relative overflow-hidden rounded-3xl p-6 text-white sm:p-7">
@@ -488,7 +478,6 @@ function ProductivityHero({
             <span className="dash-chip">Mon–Fri · Sat & Sun off</span>
           </div>
         </div>
-        <ProgressRing pct={pct} />
       </div>
     </section>
   );

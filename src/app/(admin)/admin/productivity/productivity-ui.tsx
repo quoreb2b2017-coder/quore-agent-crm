@@ -59,13 +59,7 @@ export function DayStatusPill({
   offStatus?: string | null;
 }) {
   const left = Math.max(0, PRODUCTIVE_SECONDS - productiveSeconds);
-  if (status === "met") {
-    return (
-      <Pill tone="success" icon={CheckCircle2}>
-        Target met
-      </Pill>
-    );
-  }
+  if (status === "met") return null;
   if (status === "in_progress") {
     return (
       <Pill tone="warning" icon={Clock3}>
@@ -155,40 +149,8 @@ export function PeriodEndCell({
   );
 }
 
-export function ProgressRing({ pct, size = 112 }: { pct: number; size?: number }) {
-  const stroke = 10;
-  const radius = (size - stroke) / 2;
-  const circumference = 2 * Math.PI * radius;
-  const shown = Math.max(0, Math.min(100, pct));
-  return (
-    <div className="relative shrink-0" style={{ width: size, height: size }}>
-      <svg width={size} height={size} className="-rotate-90">
-        <circle cx={size / 2} cy={size / 2} r={radius} fill="none" stroke="rgb(255 255 255 / 0.18)" strokeWidth={stroke} />
-        <circle
-          cx={size / 2}
-          cy={size / 2}
-          r={radius}
-          fill="none"
-          stroke={shown >= 100 ? "oklch(0.82 0.17 150)" : "white"}
-          strokeWidth={stroke}
-          strokeLinecap="round"
-          strokeDasharray={circumference}
-          strokeDashoffset={circumference * (1 - shown / 100)}
-          className="transition-[stroke-dashoffset] duration-1000 ease-out"
-        />
-      </svg>
-      <div className="absolute inset-0 flex flex-col items-center justify-center">
-        {shown >= 100 ? <CheckCircle2 className="mb-0.5 size-4 text-[oklch(0.82_0.17_150)]" /> : null}
-        <span className="text-2xl font-semibold tabular-nums">{Math.round(pct)}%</span>
-        <span className="text-[10px] tracking-wide text-white/70 uppercase">of target</span>
-      </div>
-    </div>
-  );
-}
-
 export function StatusLegend() {
   const items = [
-    { label: "Target met", className: "bg-success" },
     { label: "In progress", className: "bg-warning" },
     { label: "Short", className: "bg-destructive/70" },
     { label: "Off · not counted", className: "bg-muted-foreground/30" },
