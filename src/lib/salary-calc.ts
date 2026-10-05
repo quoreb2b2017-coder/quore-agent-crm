@@ -88,7 +88,7 @@ export function attendanceBreakdown(input: {
       paidLeaveDays += 1;
       continue;
     }
-    if (status === "PRESENT") {
+    if (status === "PRESENT" || status === "LATE") {
       officeDays += 1;
       continue;
     }

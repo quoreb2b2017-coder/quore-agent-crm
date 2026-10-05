@@ -111,6 +111,8 @@ export async function getProductivityReport(
               sessionStartedAt: slice?.sessionStartedAt ?? null,
               sessionClosedBreakSeconds: slice?.sessionClosedBreakSeconds ?? 0,
               openBreakStartedAt: slice?.openBreakStartedAt ?? null,
+              sessionClosedWashroomSeconds: slice?.sessionClosedWashroomSeconds ?? 0,
+              openWashroomStartedAt: slice?.openWashroomStartedAt ?? null,
             })
           : (row?.total_active_seconds ?? 0);
       const off = row && OFF_STATUSES.has(row.status) ? row.status : null;

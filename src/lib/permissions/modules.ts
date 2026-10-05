@@ -91,6 +91,7 @@ export const ADMIN_MODULES: ModuleDefinition[] = [
     rolesOnly: ["SUPER_ADMIN"],
   },
   { key: "attendance", label: "Attendance", href: "/admin/attendance", icon: "clock", group: "operations" },
+  { key: "activity", label: "Activity", href: "/admin/activity", icon: "radio", group: "operations" },
   { key: "productivity", label: "Productivity", href: "/admin/productivity", icon: "trending", group: "operations" },
   { key: "salary-slips", label: "Salary Slips", href: "/admin/salary-slips", icon: "file", group: "hr" },
   {

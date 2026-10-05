@@ -28,7 +28,7 @@ export default async function ReportsPage() {
     supabase.from("employees").select("department_id").eq("employment_status", "ACTIVE"),
   ]);
 
-  const presentDays = (monthAttendance ?? []).filter((a) => a.status === "PRESENT").length;
+  const presentDays = (monthAttendance ?? []).filter((a) => a.status === "PRESENT" || a.status === "LATE").length;
   const totalDays = (monthAttendance ?? []).length;
   const attendanceRate = totalDays > 0 ? Math.round((presentDays / totalDays) * 100) : 0;
 

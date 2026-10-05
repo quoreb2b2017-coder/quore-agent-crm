@@ -5,7 +5,7 @@ import { AttendanceStatusBadge } from "@/components/attendance/attendance-status
 import { StatusBadge } from "@/components/dashboard/status-badge";
 import type { TeamTodayRow } from "@/lib/queries/admin-dashboard";
 import { dailyActiveSeconds, formatClock } from "@/lib/live-time";
-import { formatTimeInZone, INDIA_TIME_ZONE } from "@/lib/format";
+import { formatDuration, formatTimeInZone, INDIA_TIME_ZONE } from "@/lib/format";
 
 export function TeamTodayReport({ rows }: { rows: TeamTodayRow[] }) {
   const [now, setNow] = useState<number | null>(null);
@@ -31,6 +31,7 @@ export function TeamTodayReport({ rows }: { rows: TeamTodayRow[] }) {
           <tr>
             <th className="px-4 py-2 font-medium">Employee</th>
             <th className="px-3 py-2 font-medium">Status</th>
+            <th className="px-3 py-2 font-medium">Washroom</th>
             <th className="px-4 py-2 text-right font-medium">Hours</th>
           </tr>
         </thead>
@@ -41,8 +42,15 @@ export function TeamTodayReport({ rows }: { rows: TeamTodayRow[] }) {
               sessionStartedAt: row.sessionStartedAt,
               sessionClosedBreakSeconds: row.sessionClosedBreakSeconds,
               openBreakStartedAt: row.openBreakStartedAt,
+              sessionClosedWashroomSeconds: row.sessionClosedWashroomSeconds,
+              openWashroomStartedAt: row.openWashroomStartedAt,
               now: now ?? undefined,
             });
+            const washroomLive =
+              row.inWashroom && row.openWashroomStartedAt && now != null
+                ? Math.max(0, Math.floor((now - new Date(row.openWashroomStartedAt).getTime()) / 1000))
+                : 0;
+            const washroomTotal = row.washroomSeconds + washroomLive;
             return (
               <tr key={row.id} className="border-t">
                 <td className="px-4 py-2.5">
@@ -55,12 +63,28 @@ export function TeamTodayReport({ rows }: { rows: TeamTodayRow[] }) {
                   <div className="flex flex-wrap items-center gap-1.5">
                     <AttendanceStatusBadge status={row.status} />
                     {row.inMeeting ? <StatusBadge status="MEETING" /> : null}
+                    {row.meetingPending ? (
+                      <span className="rounded-md bg-warning/15 px-1.5 py-0.5 text-[11px] font-medium text-warning-foreground">
+                        Meeting requested
+                      </span>
+                    ) : null}
+                    {row.inWashroom ? <StatusBadge status="WASHROOM" /> : null}
                     {row.autoLoggedOutAt ? (
                       <span className="rounded-md bg-info/10 px-1.5 py-0.5 text-[11px] font-medium text-info">
                         Auto logout · {now == null ? "—" : formatTimeInZone(row.autoLoggedOutAt, INDIA_TIME_ZONE)} IST
                       </span>
                     ) : null}
                   </div>
+                </td>
+                <td className="px-3 py-2.5 text-xs text-muted-foreground">
+                  {row.washroomVisitCount === 0 && !row.inWashroom ? (
+                    "—"
+                  ) : (
+                    <span className="tabular-nums">
+                      {row.washroomVisitCount} {row.washroomVisitCount === 1 ? "visit" : "visits"}
+                      {now == null ? "" : ` · ${formatDuration(washroomTotal)}`}
+                    </span>
+                  )}
                 </td>
                 <td className="px-4 py-2.5 text-right font-mono tabular-nums">
                   {now == null ? "—" : formatClock(seconds)}

@@ -1,4 +1,5 @@
 import { createDataClient as createClient } from "@/lib/supabase/data";
+import { createServiceClient } from "@/lib/supabase/service";
 import {
   addDaysIso,
   eachDateInclusive,
@@ -44,6 +45,7 @@ export type EmployeeHistoryPayload = {
   attendance: EmployeeHistoryAttendance[];
   breaks: BreakRow[];
   timeline: { time: string; label: string }[];
+  todayWashroomVisits: number;
   leaves: EmployeeHistoryLeave[];
   payroll: {
     base: number;
@@ -63,10 +65,13 @@ export async function getEmployeeHistory(employeeId: string): Promise<EmployeeHi
   const rangeStart = istLocalToUtc(since, 0, 0).toISOString();
   const rangeEnd = istLocalToUtc(addDaysIso(today, 1), 3, 30).toISOString();
 
+  const service = createServiceClient();
   const [
     { data: attendance },
     { data: breakRows },
     { data: sessions },
+    { data: washroomRows },
+    { data: meetingRows },
     { data: leaveRows },
     { data: leaveTypes },
     { data: salaryRecords },
@@ -95,6 +100,20 @@ export async function getEmployeeHistory(employeeId: string): Promise<EmployeeHi
       .gte("started_at", start.toISOString())
       .lt("started_at", end.toISOString())
       .order("started_at"),
+    service
+      .from("washroom_visits")
+      .select("started_at, ended_at, duration_seconds")
+      .eq("employee_id", employeeId)
+      .gte("started_at", start.toISOString())
+      .lt("started_at", end.toISOString())
+      .order("started_at"),
+    service
+      .from("meetings")
+      .select("started_at, ended_at, requested_at")
+      .eq("employee_id", employeeId)
+      .gte("requested_at", start.toISOString())
+      .lt("requested_at", end.toISOString())
+      .order("requested_at"),
     supabase
       .from("leave_requests")
       .select("id, start_date, end_date, days_count, status, leave_type_id, reason")
@@ -134,6 +153,18 @@ export async function getEmployeeHistory(employeeId: string): Promise<EmployeeHi
     timeline.push({ time: row.started_at, label: `${formatBreakLabel(row.break_type)} started` });
     if (row.ended_at) timeline.push({ time: row.ended_at, label: "Break ended" });
   }
+  for (const row of washroomRows ?? []) {
+    timeline.push({ time: row.started_at, label: "Washroom started" });
+    if (row.ended_at) timeline.push({ time: row.ended_at, label: "Washroom ended" });
+  }
+  for (const row of meetingRows ?? []) {
+    if (row.started_at) {
+      timeline.push({ time: row.started_at, label: "Meeting started (accepted)" });
+      if (row.ended_at) timeline.push({ time: row.ended_at, label: "Meeting ended" });
+    } else {
+      timeline.push({ time: row.requested_at, label: "Meeting requested" });
+    }
+  }
   timeline.sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime());
 
   const payroll = setupAsOf(salaryRecords ?? [], employeeId, today, employee?.salary ?? null);
@@ -141,7 +172,7 @@ export async function getEmployeeHistory(employeeId: string): Promise<EmployeeHi
   return {
     today,
     since,
-    presentDays: rows.filter((row) => row.status === "PRESENT" || row.status === "HALF_DAY").length,
+    presentDays: rows.filter((row) => row.status === "PRESENT" || row.status === "LATE" || row.status === "HALF_DAY").length,
     leaveDays: rows.filter((row) => row.status === "ON_LEAVE").length,
     activeSeconds: rows.reduce((sum, row) => sum + row.total_active_seconds, 0),
     breakSeconds: rows.reduce((sum, row) => sum + row.total_break_seconds, 0),
@@ -160,6 +191,7 @@ export async function getEmployeeHistory(employeeId: string): Promise<EmployeeHi
       durationSeconds: row.duration_seconds,
     })),
     timeline,
+    todayWashroomVisits: (washroomRows ?? []).length,
     leaves: (leaveRows ?? []).map((row) => ({
       id: row.id,
       start_date: row.start_date,

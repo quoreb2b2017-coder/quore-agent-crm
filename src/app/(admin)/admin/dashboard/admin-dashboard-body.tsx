@@ -14,6 +14,7 @@ import { ClockWidget } from "@/components/attendance/clock-widget";
 import { isUuid } from "@/lib/attendance-period";
 import { EmployeeWatchSelect } from "./employee-watch-select";
 import { TeamTodayReport } from "./team-today-report";
+import { MeetingRequests } from "./meeting-requests";
 
 export async function AdminDashboardBody({
   searchParams,
@@ -52,7 +53,7 @@ export async function AdminDashboardBody({
     getAdminDashboardData(),
     requestedId ? getMySessionState(requestedId) : Promise.resolve(null),
   ]);
-  const { stats, employees, teamReport } = dashboard;
+  const { stats, employees, teamReport, pendingMeetings } = dashboard;
 
   const selected = employees.find((employee) => employee.id === requestedId) ?? null;
   const session = selected ? watchedSession : null;
@@ -96,6 +97,7 @@ export async function AdminDashboardBody({
                 <EmployeeWatchSelect employees={employees} employeeId={selected?.id ?? null} />
               </div>
             </div>
+            <MeetingRequests requests={pendingMeetings} />
             {selected && session ? (
               <ClockWidget compact readOnly embedded session={session} />
             ) : (
@@ -158,7 +160,7 @@ export async function AdminDashboardBody({
               value={stats.todaysAttendance}
               icon={CalendarCheck}
               tone="success"
-              hint={`${attendancePct}% attendance`}
+              hint={`${attendancePct}% attendance${stats.lateEmployees ? ` · ${stats.lateEmployees} late` : ""}`}
               progress={attendancePct}
             />
             <StatCard

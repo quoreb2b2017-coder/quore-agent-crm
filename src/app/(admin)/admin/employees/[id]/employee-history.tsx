@@ -104,7 +104,10 @@ export function EmployeeHistory({
         <Card className="gap-0 py-0 lg:col-span-2">
           <CardHeader className="border-b py-4">
             <CardTitle className="text-[15px] font-semibold">Today&apos;s activity</CardTitle>
-            <p className="text-sm text-muted-foreground">Login, logout, and breaks this shift</p>
+            <p className="text-sm text-muted-foreground">
+              Login, logout, breaks, washroom ({data.todayWashroomVisits}{" "}
+              {data.todayWashroomVisits === 1 ? "visit" : "visits"}), and meetings this shift
+            </p>
           </CardHeader>
           <CardContent className="py-4">
             {data.timeline.length === 0 ? (

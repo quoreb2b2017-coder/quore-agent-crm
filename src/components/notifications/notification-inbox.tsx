@@ -21,6 +21,15 @@ function typeMeta(type?: string) {
   if (type === "EMPLOYEE_LOGIN") {
     return { label: "Login", Icon: LogIn, tone: "bg-emerald-500/10 text-emerald-700" };
   }
+  if (type === "MEETING_REQUEST") {
+    return { label: "Meeting", Icon: Bell, tone: "bg-sky-500/10 text-sky-700" };
+  }
+  if (type === "MEETING_ACCEPTED") {
+    return { label: "Meeting", Icon: Bell, tone: "bg-emerald-500/10 text-emerald-700" };
+  }
+  if (type === "MEETING_REJECTED") {
+    return { label: "Meeting", Icon: Bell, tone: "bg-amber-500/10 text-amber-800" };
+  }
   if (type === "ADMIN_ANNOUNCEMENT") {
     return { label: "Announcement", Icon: Megaphone, tone: "bg-sky-500/10 text-sky-700" };
   }

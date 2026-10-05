@@ -39,6 +39,8 @@ export async function EmployeeProductivityOverview({
     sessionStartedAt: slice?.sessionStartedAt ?? null,
     sessionClosedBreakSeconds: slice?.sessionClosedBreakSeconds ?? 0,
     openBreakStartedAt: slice?.openBreakStartedAt ?? null,
+    sessionClosedWashroomSeconds: slice?.sessionClosedWashroomSeconds ?? 0,
+    openWashroomStartedAt: slice?.openWashroomStartedAt ?? null,
   });
   const totalBreak = todayRow?.total_break_seconds ?? 0;
 

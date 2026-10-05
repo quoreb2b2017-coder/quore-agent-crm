@@ -66,7 +66,13 @@ export type TeamTodayRow = {
   sessionClosedBreakSeconds: number;
   openBreakStartedAt: string | null;
   inMeeting: boolean;
-  /** Set when today's latest session was closed automatically (idle or break time over). */
+  meetingPending: boolean;
+  inWashroom: boolean;
+  washroomVisitCount: number;
+  washroomSeconds: number;
+  sessionClosedWashroomSeconds: number;
+  openWashroomStartedAt: string | null;
+  /** Set when today's latest session was closed automatically (break time over). */
   autoLoggedOutAt: string | null;
 };
 
@@ -81,6 +87,12 @@ export async function liveSessionSlices(
       sessionClosedBreakSeconds: number;
       openBreakStartedAt: string | null;
       inMeeting: boolean;
+      meetingPending: boolean;
+      inWashroom: boolean;
+      washroomVisitCount: number;
+      washroomSeconds: number;
+      sessionClosedWashroomSeconds: number;
+      openWashroomStartedAt: string | null;
       autoLoggedOutAt: string | null;
     }
   >();
@@ -99,6 +111,12 @@ export async function liveSessionSlices(
       sessionClosedBreakSeconds: 0,
       openBreakStartedAt: null,
       inMeeting: false,
+      meetingPending: false,
+      inWashroom: false,
+      washroomVisitCount: 0,
+      washroomSeconds: 0,
+      sessionClosedWashroomSeconds: 0,
+      openWashroomStartedAt: null,
       autoLoggedOutAt: row.status === "TIMED_OUT" ? row.ended_at : null,
     });
   }
@@ -117,12 +135,27 @@ export async function liveSessionSlices(
           .select("session_id, started_at, ended_at, duration_seconds")
           .in("session_id", sessionIds)
       : { data: [] };
-  const { data: meetings } = await createServiceClient()
-    .from("meetings")
-    .select("employee_id")
-    .is("ended_at", null)
-    .in("employee_id", employeeIds);
-  const inMeeting = new Set((meetings ?? []).map((row) => row.employee_id));
+  const { start, end } = shiftAccountingWindowUtc(todayIso());
+  const service = createServiceClient();
+  const [{ data: meetings }, { data: washrooms }] = await Promise.all([
+    service
+      .from("meetings")
+      .select("employee_id, started_at")
+      .is("ended_at", null)
+      .in("employee_id", employeeIds),
+    service
+      .from("washroom_visits")
+      .select("employee_id, session_id, started_at, ended_at, duration_seconds")
+      .in("employee_id", employeeIds)
+      .gte("started_at", start.toISOString())
+      .lt("started_at", end.toISOString()),
+  ]);
+  const inMeeting = new Set(
+    (meetings ?? []).filter((row) => row.started_at).map((row) => row.employee_id)
+  );
+  const meetingPending = new Set(
+    (meetings ?? []).filter((row) => !row.started_at).map((row) => row.employee_id)
+  );
 
   for (const session of sessions ?? []) {
     const rows = (breaks ?? []).filter((row) => row.session_id === session.id);
@@ -130,13 +163,39 @@ export async function liveSessionSlices(
     const closed = rows
       .filter((row) => row.ended_at != null)
       .reduce((sum, row) => sum + (row.duration_seconds ?? 0), 0);
+    const visits = (washrooms ?? []).filter((row) => row.employee_id === session.employee_id);
+    const openWashrooms = visits
+      .filter((row) => row.ended_at == null)
+      .sort((a, b) => new Date(b.started_at).getTime() - new Date(a.started_at).getTime());
+    const openWashroom = openWashrooms[0];
+    const closedWashroom = visits
+      .filter((row) => row.ended_at != null)
+      .reduce((sum, row) => sum + (row.duration_seconds ?? 0), 0);
+    const sessionClosedWashroom = visits
+      .filter((row) => row.session_id === session.id && row.ended_at != null)
+      .reduce((sum, row) => sum + (row.duration_seconds ?? 0), 0);
     slices.set(session.employee_id, {
       sessionStartedAt: session.started_at,
       sessionClosedBreakSeconds: closed,
       openBreakStartedAt: open?.started_at ?? null,
-      inMeeting: !open && inMeeting.has(session.employee_id),
+      inMeeting: !open && !openWashroom && inMeeting.has(session.employee_id),
+      meetingPending: !open && !openWashroom && meetingPending.has(session.employee_id),
+      inWashroom: !open && !!openWashroom,
+      washroomVisitCount: visits.length,
+      washroomSeconds: closedWashroom,
+      sessionClosedWashroomSeconds: sessionClosedWashroom,
+      openWashroomStartedAt: openWashroom?.started_at ?? null,
       autoLoggedOutAt: null,
     });
+  }
+
+  for (const [employeeId, slice] of slices) {
+    if (slice.sessionStartedAt) continue;
+    const visits = (washrooms ?? []).filter((row) => row.employee_id === employeeId);
+    slice.washroomVisitCount = visits.length;
+    slice.washroomSeconds = visits
+      .filter((row) => row.ended_at != null)
+      .reduce((sum, row) => sum + (row.duration_seconds ?? 0), 0);
   }
   return slices;
 }
@@ -176,6 +235,12 @@ export async function getTodayTeamReport(
       sessionClosedBreakSeconds: live?.sessionClosedBreakSeconds ?? 0,
       openBreakStartedAt: live?.openBreakStartedAt ?? null,
       inMeeting: live?.inMeeting ?? false,
+      meetingPending: live?.meetingPending ?? false,
+      inWashroom: live?.inWashroom ?? false,
+      washroomVisitCount: live?.washroomVisitCount ?? 0,
+      washroomSeconds: live?.washroomSeconds ?? 0,
+      sessionClosedWashroomSeconds: live?.sessionClosedWashroomSeconds ?? 0,
+      openWashroomStartedAt: live?.openWashroomStartedAt ?? null,
       autoLoggedOutAt: live?.autoLoggedOutAt ?? null,
     };
   });
@@ -198,6 +263,7 @@ export async function getAdminDashboardData(): Promise<{
   stats: AdminDashboardStats;
   employees: { id: string; full_name: string; employee_code: string }[];
   teamReport: TeamTodayRow[];
+  pendingMeetings: PendingMeetingRequest[];
 }> {
   const supabase = await createClient();
   const today = todayIso();
@@ -256,6 +322,8 @@ export async function getAdminDashboardData(): Promise<{
         sessionStartedAt: live?.sessionStartedAt ?? null,
         sessionClosedBreakSeconds: live?.sessionClosedBreakSeconds ?? 0,
         openBreakStartedAt: live?.openBreakStartedAt ?? null,
+        sessionClosedWashroomSeconds: live?.sessionClosedWashroomSeconds ?? 0,
+        openWashroomStartedAt: live?.openWashroomStartedAt ?? null,
       })
     );
   }, 0);
@@ -269,8 +337,8 @@ export async function getAdminDashboardData(): Promise<{
     onBreakEmployees,
     offlineEmployees: Math.max(total - onlineEmployees - onBreakEmployees, 0),
     idleEmployees: 0,
-    todaysAttendance: attendance.filter((a) => a.status === "PRESENT").length,
-    lateEmployees: 0,
+    todaysAttendance: attendance.filter((a) => a.status === "PRESENT" || a.status === "LATE").length,
+    lateEmployees: attendance.filter((a) => a.status === "LATE").length,
     totalWorkingHours: Math.round((totalWorkingSeconds / 3600) * 10) / 10,
     totalBreakHours: Math.round((totalBreakSeconds / 3600) * 10) / 10,
     totalIdleHours: Math.round((totalIdleSeconds / 3600) * 10) / 10,
@@ -290,11 +358,50 @@ export async function getAdminDashboardData(): Promise<{
       sessionClosedBreakSeconds: liveByEmployee.get(person.id)?.sessionClosedBreakSeconds ?? 0,
       openBreakStartedAt: liveByEmployee.get(person.id)?.openBreakStartedAt ?? null,
       inMeeting: liveByEmployee.get(person.id)?.inMeeting ?? false,
+      meetingPending: liveByEmployee.get(person.id)?.meetingPending ?? false,
+      inWashroom: liveByEmployee.get(person.id)?.inWashroom ?? false,
+      washroomVisitCount: liveByEmployee.get(person.id)?.washroomVisitCount ?? 0,
+      washroomSeconds: liveByEmployee.get(person.id)?.washroomSeconds ?? 0,
+      sessionClosedWashroomSeconds: liveByEmployee.get(person.id)?.sessionClosedWashroomSeconds ?? 0,
+      openWashroomStartedAt: liveByEmployee.get(person.id)?.openWashroomStartedAt ?? null,
       autoLoggedOutAt: liveByEmployee.get(person.id)?.autoLoggedOutAt ?? null,
     };
   });
 
-  return { stats, employees: staff, teamReport };
+  return { stats, employees: staff, teamReport, pendingMeetings: await listPendingMeetings(staff) };
+}
+
+export type PendingMeetingRequest = {
+  id: string;
+  employeeId: string;
+  fullName: string;
+  employeeCode: string;
+  requestedAt: string;
+};
+
+async function listPendingMeetings(
+  staff: { id: string; full_name: string; employee_code: string }[]
+): Promise<PendingMeetingRequest[]> {
+  const { data } = await createServiceClient()
+    .from("meetings")
+    .select("id, employee_id, requested_at, started_at")
+    .is("ended_at", null)
+    .is("started_at", null)
+    .order("requested_at", { ascending: true });
+  const byId = new Map(staff.map((person) => [person.id, person]));
+  return (data ?? [])
+    .map((row) => {
+      const person = byId.get(row.employee_id);
+      if (!person) return null;
+      return {
+        id: row.id,
+        employeeId: person.id,
+        fullName: person.full_name,
+        employeeCode: person.employee_code,
+        requestedAt: row.requested_at,
+      };
+    })
+    .filter((row): row is PendingMeetingRequest => row != null);
 }
 
 export async function getAdminDashboardStats(): Promise<AdminDashboardStats> {
@@ -343,8 +450,8 @@ export async function getAdminDashboardStats(): Promise<AdminDashboardStats> {
     onBreakEmployees,
     offlineEmployees: Math.max(total - onlineEmployees - onBreakEmployees, 0),
     idleEmployees: 0,
-    todaysAttendance: attendance.filter((a) => a.status === "PRESENT").length,
-    lateEmployees: 0,
+    todaysAttendance: attendance.filter((a) => a.status === "PRESENT" || a.status === "LATE").length,
+    lateEmployees: attendance.filter((a) => a.status === "LATE").length,
     totalWorkingHours: Math.round((totalWorkingSeconds / 3600) * 10) / 10,
     totalBreakHours: Math.round((totalBreakSeconds / 3600) * 10) / 10,
     totalIdleHours: Math.round((totalIdleSeconds / 3600) * 10) / 10,

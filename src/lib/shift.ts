@@ -4,6 +4,7 @@ import {
   INDIA_LOGOUT_MINUTES,
   INDIA_TIME_ZONE,
   minutesInTimeZone,
+  shiftDateIso,
   todayIso,
 } from "@/lib/format";
 
@@ -68,6 +69,32 @@ export function shiftWindowUtc(shiftDate = todayIso()): { start: Date; end: Date
   };
 }
 
+/** After 7:00 PM IST the employee is late; they can still log in. */
+export const INDIA_LATE_MINUTES = 19 * 60;
+export const INDIA_LATE_TIME = "7:00 PM";
+
+/** Productive time starts at 6:30 PM even if they signed in earlier, and stops at 3:30 AM. */
+export function creditedWorkBounds(startedAt: string | Date, endedAt: Date | number = new Date()) {
+  const start = typeof startedAt === "string" ? new Date(startedAt) : startedAt;
+  const endAt = typeof endedAt === "number" ? new Date(endedAt) : endedAt;
+  const shiftDate = shiftDateIso(start);
+  const { start: official, end } = shiftWindowUtc(shiftDate);
+  const from = Math.max(start.getTime(), official.getTime());
+  const to = Math.min(endAt.getTime(), end.getTime());
+  return {
+    from,
+    to,
+    seconds: Math.max(0, Math.floor((to - from) / 1000)),
+    shiftDate,
+  };
+}
+
+export function isLateClockIn(at: Date | string = new Date()) {
+  const date = typeof at === "string" ? new Date(at) : at;
+  const shiftDate = shiftDateIso(date);
+  return date.getTime() > istLocalToUtc(shiftDate, 19, 0).getTime();
+}
+
 /** 3:30 AM on the shift date through 3:30 AM the next day — includes early login. */
 export function shiftAccountingWindowUtc(shiftDate = todayIso()): { start: Date; end: Date } {
   return {
@@ -105,8 +132,23 @@ export function breakBudgetSeconds(breakType: string): number {
 }
 
 /** How long the break in progress may run, given closed time already used in the same slot. */
-export function openBreakLimitSeconds(breakType: string, closedSameSlotSeconds: number): number {
-  return Math.max(0, slotBudgetSeconds(breakSlot(breakType)) - closedSameSlotSeconds);
+export function remainingBreakPoolSeconds(usedSeconds: number) {
+  return Math.max(0, BREAK_TOTAL_SECONDS - Math.max(0, usedSeconds));
+}
+
+export function slotRemainingInPool(slotLeftSeconds: number, poolLeftSeconds: number) {
+  return Math.max(0, Math.min(slotLeftSeconds, poolLeftSeconds));
+}
+
+/** How long the break in progress may run, given closed time already used in the same slot. */
+export function openBreakLimitSeconds(
+  breakType: string,
+  closedSameSlotSeconds: number,
+  poolLeftSeconds?: number
+): number {
+  const slotLeft = Math.max(0, slotBudgetSeconds(breakSlot(breakType)) - closedSameSlotSeconds);
+  if (poolLeftSeconds == null) return slotLeft;
+  return Math.min(slotLeft, Math.max(0, poolLeftSeconds));
 }
 
 export function breakDurationSeconds(

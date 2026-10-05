@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { clockIn } from "@/lib/actions/attendance";
 import { autoLogoutUrl, postPresence } from "@/lib/presence-client";
@@ -26,7 +25,6 @@ const ACTIVITY_EVENTS = [
 /** Marks attendance once per browser tab. Does not refresh the whole page. */
 export function SessionPresence({ enableClockIn = true }: { enableClockIn?: boolean }) {
   const ran = useRef(false);
-  const router = useRouter();
 
   useEffect(() => {
     if (!enableClockIn || ran.current) return;
@@ -104,7 +102,6 @@ export function SessionPresence({ enableClockIn = true }: { enableClockIn?: bool
         const result = await postPresence(idleMs, hadSession);
         if (result.active) hadSession = true;
         if (result.hold) resetIdle();
-        if (result.resumed) router.refresh();
         if (result.expired && !loggingOut) {
           await signOut(result.reason ?? "timeout", result.at ?? Date.now());
         }
@@ -135,7 +132,7 @@ export function SessionPresence({ enableClockIn = true }: { enableClockIn?: bool
       window.removeEventListener("online", onVisible);
       document.removeEventListener("visibilitychange", onVisible);
     };
-  }, [router]);
+  }, []);
 
   return null;
 }

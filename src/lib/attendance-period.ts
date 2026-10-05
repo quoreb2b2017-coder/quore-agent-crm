@@ -116,7 +116,7 @@ export function addAttendanceRow(
   counts.records += 1;
   counts.activeSeconds += row.total_active_seconds ?? 0;
   counts.breakSeconds += row.total_break_seconds ?? 0;
-  if (row.status === "PRESENT") counts.present += 1;
+  if (row.status === "PRESENT" || row.status === "LATE") counts.present += 1;
   else if (row.status === "ABSENT") counts.absent += 1;
   else if (row.status === "ON_LEAVE") counts.leave += 1;
   else if (row.status === "HALF_DAY") counts.halfDay += 1;

@@ -207,6 +207,7 @@ export interface Database {
           total_idle_seconds: number;
           status:
             | "PRESENT"
+            | "LATE"
             | "ABSENT"
             | "HALF_DAY"
             | "ON_LEAVE"
@@ -228,6 +229,7 @@ export interface Database {
           total_idle_seconds?: number;
           status?:
             | "PRESENT"
+            | "LATE"
             | "ABSENT"
             | "HALF_DAY"
             | "ON_LEAVE"
@@ -264,6 +266,36 @@ export interface Database {
         }
       >;
       meetings: Table<
+        {
+          id: string;
+          employee_id: string;
+          session_id: string | null;
+          started_at: string | null;
+          ended_at: string | null;
+          duration_seconds: number | null;
+          status: string;
+          requested_at: string;
+          approved_by: string | null;
+          approved_at: string | null;
+          created_at: string;
+          updated_at: string;
+        },
+        {
+          id?: string;
+          employee_id: string;
+          session_id?: string | null;
+          started_at?: string | null;
+          ended_at?: string | null;
+          duration_seconds?: number | null;
+          status?: string;
+          requested_at?: string;
+          approved_by?: string | null;
+          approved_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        }
+      >;
+      washroom_visits: Table<
         {
           id: string;
           employee_id: string;

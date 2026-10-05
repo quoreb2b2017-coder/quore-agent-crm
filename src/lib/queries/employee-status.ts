@@ -14,19 +14,61 @@ export type MySessionState = {
   closedBreakSeconds: Record<BreakSlot, number>;
   openBreakType: string | null;
   openBreakStartedAt: string | null;
+  /** Set only after admin accepts the meeting. */
   meetingStartedAt: string | null;
+  /** Waiting for admin to accept. */
+  meetingRequestedAt: string | null;
+  washroomStartedAt: string | null;
+  /** Closed washroom time this shift (all visits today). */
+  closedWashroomSeconds: number;
+  sessionClosedWashroomSeconds: number;
   onLeave: boolean;
   weekOff: boolean;
 };
 
-async function openMeetingStartedAt(employeeId: string) {
+async function openAwayState(employeeId: string) {
+  const service = createServiceClient();
+  const [{ data: meeting }, { data: washroom }] = await Promise.all([
+    service
+      .from("meetings")
+      .select("started_at, requested_at")
+      .eq("employee_id", employeeId)
+      .is("ended_at", null)
+      .maybeSingle(),
+    service
+      .from("washroom_visits")
+      .select("started_at")
+      .eq("employee_id", employeeId)
+      .is("ended_at", null)
+      .order("started_at", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+  ]);
+  return {
+    meetingStartedAt: meeting?.started_at ?? null,
+    meetingRequestedAt: meeting && !meeting.started_at ? (meeting.requested_at ?? null) : null,
+    washroomStartedAt: washroom?.started_at ?? null,
+  };
+}
+
+async function shiftWashroomSeconds(employeeId: string, startIso: string, endIso: string) {
   const { data } = await createServiceClient()
-    .from("meetings")
-    .select("started_at")
+    .from("washroom_visits")
+    .select("session_id, ended_at, duration_seconds")
     .eq("employee_id", employeeId)
-    .is("ended_at", null)
-    .maybeSingle();
-  return data?.started_at ?? null;
+    .gte("started_at", startIso)
+    .lt("started_at", endIso);
+  const rows = data ?? [];
+  const closedWashroomSeconds = rows
+    .filter((row) => row.ended_at != null)
+    .reduce((sum, row) => sum + (row.duration_seconds ?? 0), 0);
+  return {
+    closedWashroomSeconds,
+    sessionClosedSeconds: (sessionId: string) =>
+      rows
+        .filter((row) => row.session_id === sessionId && row.ended_at != null)
+        .reduce((sum, row) => sum + (row.duration_seconds ?? 0), 0),
+  };
 }
 
 export type EmployeeDashboardBundle = {
@@ -97,12 +139,21 @@ export async function getEmployeeDashboardBundle(employeeId: string): Promise<Em
         openBreakType: null,
         openBreakStartedAt: null,
         meetingStartedAt: null,
+        meetingRequestedAt: null,
+        washroomStartedAt: null,
+        closedWashroomSeconds: 0,
+        sessionClosedWashroomSeconds: 0,
         onLeave: attendance?.status === "ON_LEAVE",
         weekOff,
       },
       commonData,
     };
   }
+
+  const [away, washroom] = await Promise.all([
+    openAwayState(employeeId),
+    shiftWashroomSeconds(employeeId, start.toISOString(), end.toISOString()),
+  ]);
 
   return {
     sessionState: {
@@ -116,7 +167,11 @@ export async function getEmployeeDashboardBundle(employeeId: string): Promise<Em
       closedBreakSeconds,
       openBreakType: openBreak?.break_type ?? null,
       openBreakStartedAt: openBreak?.started_at ?? null,
-      meetingStartedAt: await openMeetingStartedAt(employeeId),
+      meetingStartedAt: away.meetingStartedAt,
+      meetingRequestedAt: away.meetingRequestedAt,
+      washroomStartedAt: away.washroomStartedAt,
+      closedWashroomSeconds: washroom.closedWashroomSeconds,
+      sessionClosedWashroomSeconds: washroom.sessionClosedSeconds(session.id),
       onLeave: attendance?.status === "ON_LEAVE",
       weekOff,
     },
@@ -166,15 +221,24 @@ export async function getMySessionState(employeeId: string): Promise<MySessionSt
       accruedActiveSeconds: attendance?.total_active_seconds ?? 0,
       sessionClosedBreakSeconds: 0,
       closedBreakSeconds,
-      openBreakType: null,
-      openBreakStartedAt: null,
-      meetingStartedAt: null,
-      onLeave: attendance?.status === "ON_LEAVE",
+        openBreakType: null,
+        openBreakStartedAt: null,
+        meetingStartedAt: null,
+        meetingRequestedAt: null,
+        washroomStartedAt: null,
+        closedWashroomSeconds: 0,
+        sessionClosedWashroomSeconds: 0,
+        onLeave: attendance?.status === "ON_LEAVE",
       weekOff,
     };
   }
 
   const openBreak = breaks.find((row) => row.session_id === session.id && row.ended_at == null);
+
+  const [away, washroom] = await Promise.all([
+    openAwayState(employeeId),
+    shiftWashroomSeconds(employeeId, start.toISOString(), end.toISOString()),
+  ]);
 
   return {
     isClockedIn: true,
@@ -187,7 +251,11 @@ export async function getMySessionState(employeeId: string): Promise<MySessionSt
     closedBreakSeconds,
     openBreakType: openBreak?.break_type ?? null,
     openBreakStartedAt: openBreak?.started_at ?? null,
-    meetingStartedAt: await openMeetingStartedAt(employeeId),
+    meetingStartedAt: away.meetingStartedAt,
+    meetingRequestedAt: away.meetingRequestedAt,
+    washroomStartedAt: away.washroomStartedAt,
+    closedWashroomSeconds: washroom.closedWashroomSeconds,
+    sessionClosedWashroomSeconds: washroom.sessionClosedSeconds(session.id),
     onLeave: attendance?.status === "ON_LEAVE",
     weekOff,
   };

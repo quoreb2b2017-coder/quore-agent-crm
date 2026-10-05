@@ -22,6 +22,7 @@ type AttendanceEdit = {
 
 const STATUSES = [
   { value: "PRESENT", label: "Present" },
+  { value: "LATE", label: "Late" },
   { value: "ABSENT", label: "Absent" },
   { value: "HALF_DAY", label: "Half day" },
   { value: "ON_LEAVE", label: "On leave" },

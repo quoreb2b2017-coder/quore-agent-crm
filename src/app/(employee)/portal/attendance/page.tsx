@@ -23,6 +23,7 @@ import { cn } from "@/lib/utils";
 
 const statusTone: Record<string, string> = {
   PRESENT: "bg-success/10 text-success border-success/20",
+  LATE: "bg-warning/10 text-warning border-warning/20",
   ABSENT: "bg-destructive/10 text-destructive border-destructive/20",
   HALF_DAY: "bg-warning/10 text-warning border-warning/20",
   ON_LEAVE: "bg-info/10 text-info border-info/20",

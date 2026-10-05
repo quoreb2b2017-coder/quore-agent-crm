@@ -1,11 +1,12 @@
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 
-export type EmployeeLiveStatus = "ONLINE" | "MEETING" | "BREAK" | "IDLE" | "OFFLINE";
+export type EmployeeLiveStatus = "ONLINE" | "MEETING" | "WASHROOM" | "BREAK" | "IDLE" | "OFFLINE";
 
 const statusStyles: Record<EmployeeLiveStatus, string> = {
   ONLINE: "bg-success/15 text-success border-success/35",
   MEETING: "bg-info/15 text-info border-info/35",
+  WASHROOM: "bg-info/15 text-info border-info/35",
   BREAK: "bg-warning/20 text-warning-foreground border-warning/40",
   IDLE: "bg-info/15 text-info border-info/35",
   OFFLINE: "bg-muted text-muted-foreground border-transparent",
@@ -14,6 +15,7 @@ const statusStyles: Record<EmployeeLiveStatus, string> = {
 const statusLabels: Record<EmployeeLiveStatus, string> = {
   ONLINE: "Online",
   MEETING: "In Meeting",
+  WASHROOM: "Washroom",
   BREAK: "On Break",
   IDLE: "Idle",
   OFFLINE: "Offline",
@@ -28,6 +30,7 @@ export function StatusBadge({ status }: { status: EmployeeLiveStatus }) {
           status === "ONLINE" && "bg-success",
           status === "MEETING" && "bg-info",
           status === "BREAK" && "bg-warning",
+          status === "WASHROOM" && "bg-info",
           status === "IDLE" && "bg-info",
           status === "OFFLINE" && "bg-muted-foreground"
         )}

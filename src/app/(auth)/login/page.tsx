@@ -49,9 +49,7 @@ export default function LoginPage() {
     if (reason === "blocked") {
       setError("This account is blocked. Contact Super Admin.");
     } else if (reason === "idle") {
-      setNotice(
-        `Signed out for inactivity${when}: no keyboard or mouse activity for 10 minutes. Your timer is paused — sign in to resume.`
-      );
+      setNotice(`Signed out${when}. Sign in to resume your timer.`);
     } else if (reason === "break") {
       setNotice(`Your break time ended${when}, so you were signed out. Sign in to resume your timer.`);
     } else if (reason === "timeout") {
