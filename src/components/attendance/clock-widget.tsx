@@ -231,31 +231,41 @@ export function ClockWidget({
                 status === "OFFLINE" && "text-muted-foreground"
               )}
             >
-              {mounted ? formatClock(dailySeconds) : "—"}
+              {mounted ? formatClock(isOnBreak ? liveBreak : isInWashroom ? liveWashroom : dailySeconds) : "—"}
             </p>
             {isOnBreak ? (
-              openBreakOver > 0 ? (
-                <p className="text-xs font-semibold text-destructive">
-                  {formatBreakType(openBreakType ?? "TEA")} excess · +{formatExcess(openBreakOver)} over
-                </p>
-              ) : (
-                <p className="text-xs font-medium text-muted-foreground">
-                  {formatBreakType(openBreakType ?? "TEA")} remaining ·{" "}
-                  {formatDuration(openSlot ? slotRemaining(openSlot) : 0)} left
-                </p>
-              )
-            ) : isInWashroom ? (
-              <p
-                className={cn(
-                  "text-xs font-medium",
-                  excess.washroom > 0 ? "text-destructive" : "text-muted-foreground"
+              <>
+                {openBreakOver > 0 ? (
+                  <p className="text-xs font-semibold text-destructive">
+                    {formatBreakType(openBreakType ?? "TEA")} running · excess +{formatExcess(openBreakOver)} over
+                  </p>
+                ) : (
+                  <p className="text-xs font-medium text-muted-foreground">
+                    {formatBreakType(openBreakType ?? "TEA")} running ·{" "}
+                    {formatDuration(openSlot ? slotRemaining(openSlot) : 0)} left
+                  </p>
                 )}
-              >
-                This washroom visit · {formatDuration(washroomElapsed ?? 0)} ·{" "}
-                {excess.washroom > 0
-                  ? `excess +${formatExcess(excess.washroom)}`
-                  : `break total ${formatDuration(poolLeft)} left`}
-              </p>
+                <p className="text-xs text-muted-foreground">
+                  Productive today {mounted ? formatClock(dailySeconds) : "—"} · paused during break
+                </p>
+              </>
+            ) : isInWashroom ? (
+              <>
+                <p
+                  className={cn(
+                    "text-xs font-medium",
+                    excess.washroom > 0 ? "text-destructive" : "text-muted-foreground"
+                  )}
+                >
+                  Washroom running ·{" "}
+                  {excess.washroom > 0
+                    ? `excess +${formatExcess(excess.washroom)}`
+                    : `break total ${formatDuration(poolLeft)} left`}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  Productive today {mounted ? formatClock(dailySeconds) : "—"} · paused during washroom
+                </p>
+              </>
             ) : isInMeeting ? (
               <p className="text-xs font-medium text-muted-foreground">
                 In meeting · {formatDuration(meetingElapsed ?? 0)} · counts as productive time
