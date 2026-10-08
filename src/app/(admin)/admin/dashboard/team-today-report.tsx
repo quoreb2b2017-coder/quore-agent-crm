@@ -2,13 +2,15 @@
 
 import { useEffect, useState } from "react";
 import { AttendanceStatusBadge } from "@/components/attendance/attendance-status-badge";
+import { AdminLogoutButton } from "@/components/attendance/admin-logout-button";
 import { BreakExcessCell } from "@/components/attendance/break-excess";
+import { EditAttendanceDialog } from "@/components/attendance/edit-attendance-dialog";
 import { StatusBadge } from "@/components/dashboard/status-badge";
 import type { TeamTodayRow } from "@/lib/queries/admin-dashboard";
 import { dailyActiveSeconds, formatClock } from "@/lib/live-time";
 import { formatDuration, formatTimeInZone, INDIA_TIME_ZONE } from "@/lib/format";
 
-export function TeamTodayReport({ rows }: { rows: TeamTodayRow[] }) {
+export function TeamTodayReport({ rows, attendanceDate }: { rows: TeamTodayRow[]; attendanceDate: string }) {
   const [now, setNow] = useState<number | null>(null);
 
   useEffect(() => {
@@ -34,7 +36,8 @@ export function TeamTodayReport({ rows }: { rows: TeamTodayRow[] }) {
             <th className="px-3 py-2 font-medium">Status</th>
             <th className="px-3 py-2 font-medium">Washroom</th>
             <th className="px-3 py-2 font-medium">Excess break</th>
-            <th className="px-4 py-2 text-right font-medium">Hours</th>
+            <th className="px-3 py-2 text-right font-medium">Hours</th>
+            <th className="px-4 py-2 text-right font-medium">Action</th>
           </tr>
         </thead>
         <tbody>
@@ -91,8 +94,21 @@ export function TeamTodayReport({ rows }: { rows: TeamTodayRow[] }) {
                 <td className="px-3 py-2.5">
                   <BreakExcessCell excess={row.breakExcess} />
                 </td>
-                <td className="px-4 py-2.5 text-right font-mono tabular-nums">
+                <td className="px-3 py-2.5 text-right font-mono tabular-nums">
                   {now == null ? "—" : formatClock(seconds)}
+                </td>
+                <td className="px-4 py-2.5">
+                  <div className="flex justify-end gap-1.5">
+                    <EditAttendanceDialog
+                      employeeId={row.id}
+                      employeeName={row.fullName}
+                      attendanceDate={attendanceDate}
+                      attendance={row.attendance ?? undefined}
+                    />
+                    {row.sessionStartedAt ? (
+                      <AdminLogoutButton employeeId={row.id} employeeName={row.fullName} />
+                    ) : null}
+                  </div>
                 </td>
               </tr>
             );

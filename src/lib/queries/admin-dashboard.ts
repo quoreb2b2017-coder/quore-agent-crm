@@ -70,6 +70,13 @@ export type TeamTodayRow = {
   fullName: string;
   employeeCode: string;
   status: string;
+  /** Recorded attendance row (null status when nothing is saved yet), for the admin edit form. */
+  attendance: {
+    status: string;
+    first_check_in: string | null;
+    last_check_out: string | null;
+    notes: string | null;
+  } | null;
   activeSeconds: number;
   breakSeconds: number;
   sessionStartedAt: string | null;
@@ -234,7 +241,9 @@ export async function getTodayTeamReport(
   const supabase = await createClient();
   const { data: attendance } = await supabase
     .from("attendance")
-    .select("employee_id, status, total_active_seconds, total_break_seconds")
+    .select(
+      "employee_id, status, first_check_in, last_check_out, notes, total_active_seconds, total_break_seconds"
+    )
     .eq("attendance_date", todayIso())
     .in(
       "employee_id",
@@ -254,6 +263,7 @@ export async function getTodayTeamReport(
       fullName: person.full_name,
       employeeCode: person.employee_code,
       status: weekendOrRecordedStatus(todayIso(), row?.status),
+      attendance: row ?? null,
       activeSeconds: row?.total_active_seconds ?? 0,
       breakSeconds: row?.total_break_seconds ?? 0,
       sessionStartedAt: live?.sessionStartedAt ?? null,
@@ -323,7 +333,9 @@ export async function getAdminDashboardData(): Promise<{
     supabase.from("breaks").select("session_id").is("ended_at", null),
     supabase
       .from("attendance")
-      .select("employee_id, status, total_active_seconds, total_break_seconds, total_idle_seconds")
+      .select(
+        "employee_id, status, first_check_in, last_check_out, notes, total_active_seconds, total_break_seconds, total_idle_seconds"
+      )
       .eq("attendance_date", today),
   ]);
 
@@ -378,6 +390,7 @@ export async function getAdminDashboardData(): Promise<{
       fullName: person.full_name,
       employeeCode: person.employee_code,
       status: weekendOrRecordedStatus(today, row?.status),
+      attendance: row ?? null,
       activeSeconds: row?.total_active_seconds ?? 0,
       breakSeconds: row?.total_break_seconds ?? 0,
       sessionStartedAt: liveByEmployee.get(person.id)?.sessionStartedAt ?? null,

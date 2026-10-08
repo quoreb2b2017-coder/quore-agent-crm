@@ -52,6 +52,8 @@ export default function LoginPage() {
       setNotice(`Signed out${when}. Sign in to resume your timer.`);
     } else if (reason === "break") {
       setNotice(`Your break time ended${when}, so you were signed out. Sign in to resume your timer.`);
+    } else if (reason === "admin") {
+      setNotice(`Super Admin logged you out${when}. Sign in again to resume your timer.`);
     } else if (reason === "timeout") {
       setNotice("Your session was closed automatically. Sign in to resume your timer.");
     }

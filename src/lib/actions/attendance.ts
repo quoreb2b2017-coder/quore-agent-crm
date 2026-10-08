@@ -20,7 +20,7 @@ import {
   slotBudgetSeconds,
   type PolicyBreakType,
 } from "@/lib/shift";
-import { insertAndEmitNotification, notifySuperAdmins } from "@/lib/realtime/notify";
+import { ADMIN_LOGOUT_TYPE, insertAndEmitNotification, notifySuperAdmins } from "@/lib/realtime/notify";
 
 type Result = { error?: string; activated?: boolean; skipped?: boolean };
 
@@ -83,12 +83,9 @@ async function markPresent(
   const row = await attendanceForShift(supabase, employeeId, shiftDate);
   if (row && BLOCKED_CLOCK_STATUSES.has(row.status)) return row;
   const now = new Date();
-  const status: "PRESENT" | "LATE" =
-    row?.status === "LATE" || row?.status === "PRESENT"
-      ? row.status
-      : isLateClockIn(now)
-        ? "LATE"
-        : "PRESENT";
+  // Keep what is already recorded (e.g. Half day set by admin); only a new or Absent row is re-marked.
+  const status =
+    row && row.status !== "ABSENT" ? row.status : isLateClockIn(now) ? "LATE" : "PRESENT";
 
   if (!row) {
     const payload = {
@@ -266,6 +263,13 @@ export async function clockIn(): Promise<Result> {
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Failed to update attendance" };
   }
+
+  await createServiceClient()
+    .from("notifications")
+    .update({ data: { pending_signout: false } })
+    .eq("employee_id", ctx.employeeId)
+    .eq("type", ADMIN_LOGOUT_TYPE)
+    .eq("data->>pending_signout", "true");
 
   try {
     void notifySuperAdmins({
@@ -718,6 +722,37 @@ export async function endWashroom(): Promise<Result> {
   if (isSuperAdmin(ctx.roleKey)) return { skipped: true };
   await closeOpenWashroom(ctx.employeeId);
   revalidateLive();
+  return {};
+}
+
+/** Super Admin stops an employee's timer and signs their open tab out (e.g. they left without logging out). */
+export async function logoutEmployeeByAdmin(employeeId: string): Promise<Result> {
+  const ctx = await getCurrentEmployeeContext();
+  if (!ctx || !isSuperAdmin(ctx.roleKey)) return { error: "Not authorized" };
+  if (!z.string().uuid().safeParse(employeeId).success) return { error: "Invalid employee" };
+
+  const { data: session } = await createServiceClient()
+    .from("employee_sessions")
+    .select("id")
+    .eq("employee_id", employeeId)
+    .eq("status", "ACTIVE")
+    .maybeSingle();
+  if (!session) return { error: "This employee is not logged in." };
+
+  const result = await closeWorkSession(employeeId, "ENDED");
+  if (result.error) return result;
+
+  try {
+    await insertAndEmitNotification({
+      employeeId,
+      type: ADMIN_LOGOUT_TYPE,
+      title: "Logged out by admin",
+      body: `${ctx.fullName} ended your session. Sign in again to resume your timer.`,
+      data: { pending_signout: true },
+    });
+  } catch {
+    /* the timer is already stopped */
+  }
   return {};
 }
 

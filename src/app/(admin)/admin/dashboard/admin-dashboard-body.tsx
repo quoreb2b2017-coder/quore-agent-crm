@@ -6,7 +6,8 @@ import { DashboardHero } from "@/components/dashboard/dashboard-hero";
 import { DashboardPanel } from "@/components/dashboard/dashboard-panel";
 import { StaffDashboard } from "@/components/dashboards/staff-dashboard";
 import { requireViewer } from "@/lib/permissions/server";
-import { greetingForNow, INDIA_TIME_ZONE } from "@/lib/format";
+import { greetingForNow, INDIA_TIME_ZONE, todayIso } from "@/lib/format";
+import { AdminLogoutButton } from "@/components/attendance/admin-logout-button";
 import { getAdminDashboardData } from "@/lib/queries/admin-dashboard";
 import { sweepIdleSessions } from "@/lib/presence-server";
 import { getEmployeeDashboardBundle, getMySessionState } from "@/lib/queries/employee-status";
@@ -93,15 +94,20 @@ export async function AdminDashboardBody({
                   {selected ? "View only · Super Admin is not tracked" : "All employees · pick someone for session detail"}
                 </p>
               </div>
-              <div className="sm:w-64">
-                <EmployeeWatchSelect employees={employees} employeeId={selected?.id ?? null} />
+              <div className="flex items-center gap-2 sm:w-auto">
+                {selected && session?.isClockedIn ? (
+                  <AdminLogoutButton employeeId={selected.id} employeeName={selected.full_name} />
+                ) : null}
+                <div className="sm:w-64">
+                  <EmployeeWatchSelect employees={employees} employeeId={selected?.id ?? null} />
+                </div>
               </div>
             </div>
             <MeetingRequests requests={pendingMeetings} />
             {selected && session ? (
               <ClockWidget compact readOnly embedded session={session} />
             ) : (
-              <TeamTodayReport rows={reportRows} />
+              <TeamTodayReport rows={reportRows} attendanceDate={todayIso()} />
             )}
           </div>
         }

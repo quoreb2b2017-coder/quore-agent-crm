@@ -1,12 +1,17 @@
 import { createDataClient as createClient } from "@/lib/supabase/data";
 import { SUPER_ADMIN_ROLE } from "@/lib/permissions/roles";
+import type { Json } from "@/types/supabase";
 import { emitNotifications } from "./emit";
+
+/** Super Admin ended this employee's session; `data.pending_signout` tells their open tab to sign out. */
+export const ADMIN_LOGOUT_TYPE = "ADMIN_LOGOUT";
 
 export async function insertAndEmitNotification(input: {
   employeeId: string;
   title: string;
   body?: string | null;
   type: string;
+  data?: Json;
 }) {
   const supabase = await createClient();
   const { data, error } = await supabase
@@ -16,6 +21,7 @@ export async function insertAndEmitNotification(input: {
       type: input.type,
       title: input.title,
       body: input.body ?? null,
+      ...(input.data ? { data: input.data } : {}),
     })
     .select("id, employee_id, title, body, type, created_at")
     .single();

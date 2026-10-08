@@ -3,6 +3,7 @@ import { getCurrentEmployeeContext, isSuperAdmin } from "@/lib/permissions/serve
 import { closeWorkSession } from "@/lib/actions/attendance";
 import { shiftDateIso } from "@/lib/format";
 import { shiftWindowUtc } from "@/lib/shift";
+import { ADMIN_LOGOUT_TYPE } from "@/lib/realtime/notify";
 
 export type PresenceResult = {
   expired: boolean;
@@ -10,7 +11,7 @@ export type PresenceResult = {
   active?: boolean;
   /** Break time remaining; the client restarts its countdown. */
   hold?: boolean;
-  reason?: "break";
+  reason?: "break" | "admin";
   /** When the timer stopped (epoch ms). */
   at?: number;
 };
@@ -46,7 +47,25 @@ export async function runPresenceHeartbeat(_input: {
     .eq("status", "ACTIVE")
     .maybeSingle();
 
-  if (!session) return { expired: false };
+  if (!session) {
+    const { data: forced } = await service
+      .from("notifications")
+      .select("id, created_at")
+      .eq("employee_id", ctx.employeeId)
+      .eq("type", ADMIN_LOGOUT_TYPE)
+      .eq("data->>pending_signout", "true")
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (!forced) return { expired: false };
+    await service
+      .from("notifications")
+      .update({ data: { pending_signout: false } })
+      .eq("employee_id", ctx.employeeId)
+      .eq("type", ADMIN_LOGOUT_TYPE)
+      .eq("data->>pending_signout", "true");
+    return { expired: true, reason: "admin", at: new Date(forced.created_at).getTime() };
+  }
 
   const markSeen = () =>
     service
