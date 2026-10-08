@@ -16,20 +16,17 @@ import {
   startWashroom,
   endWashroom,
 } from "@/lib/actions/attendance";
-import { autoLogoutUrl, postPresence } from "@/lib/presence-client";
-import { RESET_IDLE_EVENT, SESSION_STARTED_FLAG } from "@/components/layout/session-presence";
-import { createClient } from "@/lib/supabase/client";
-import { formatDuration, formatTime } from "@/lib/format";
+import { RESET_IDLE_EVENT } from "@/components/layout/session-presence";
+import { formatDuration, formatExcess, formatTime } from "@/lib/format";
 import { formatClock } from "@/lib/live-time";
 import {
   BREAK_TOTAL_SECONDS,
+  breakExcess,
+  breakPoolLeftSeconds,
   breakSlot,
   formatBreakType,
-  openBreakLimitSeconds,
-  remainingBreakPoolSeconds,
   SHIFT_WORKING_SECONDS,
   slotBudgetSeconds,
-  slotRemainingInPool,
   creditedWorkBounds,
   type BreakSlot,
 } from "@/lib/shift";
@@ -91,105 +88,44 @@ export function ClockWidget({
   const isInMeeting = isClockedIn && !isOnBreak && !isInWashroom && !!meetingStartedAt;
   const meetingPending = isClockedIn && !isOnBreak && !isInWashroom && !isInMeeting && !!meetingRequestedAt;
   const meetingElapsed = useElapsed(meetingStartedAt, isInMeeting);
+  const liveBreak = isOnBreak ? (breakElapsed ?? 0) : 0;
+  const liveWashroom = isInWashroom ? (washroomElapsed ?? 0) : 0;
+  // Only the part of an open break after 6:30 PM comes out of productive time.
+  const creditedOpen = (seconds: number) => Math.min(seconds, elapsed ?? 0);
   const liveSlice = isClockedIn
     ? Math.max(
         0,
         (elapsed ?? 0) -
           sessionClosedBreakSeconds -
           sessionClosedWashroomSeconds -
-          (isOnBreak ? (breakElapsed ?? 0) : 0) -
-          (isInWashroom ? (washroomElapsed ?? 0) : 0)
+          creditedOpen(liveBreak) -
+          creditedOpen(liveWashroom)
       )
     : 0;
   const dailySeconds = accruedActiveSeconds + liveSlice;
-  const closedSlotTotal = closedBreakSeconds.TEA_1 + closedBreakSeconds.TEA_2 + closedBreakSeconds.LUNCH;
-  const liveBreak = isOnBreak ? (breakElapsed ?? 0) : 0;
-  const liveWashroom = isInWashroom ? (washroomElapsed ?? 0) : 0;
-  const poolLeft = remainingBreakPoolSeconds(
-    closedSlotTotal + closedWashroomSeconds + liveBreak + liveWashroom
-  );
   const openSlot = openBreakType ? breakSlot(openBreakType) : null;
-  const slotRemaining = (slot: BreakSlot) =>
-    slotRemainingInPool(
-      Math.max(
-        0,
-        slotBudgetSeconds(slot) -
-          closedBreakSeconds[slot] -
-          (openSlot === slot ? (breakElapsed ?? 0) : 0)
-      ),
-      poolLeft
-    );
+  const usedBySlot: Record<BreakSlot, number> = {
+    TEA_1: closedBreakSeconds.TEA_1 + (openSlot === "TEA_1" ? liveBreak : 0),
+    TEA_2: closedBreakSeconds.TEA_2 + (openSlot === "TEA_2" ? liveBreak : 0),
+    LUNCH: closedBreakSeconds.LUNCH + (openSlot === "LUNCH" ? liveBreak : 0),
+  };
+  const washroomUsed = closedWashroomSeconds + liveWashroom;
+  const excess = breakExcess(usedBySlot, washroomUsed);
+  const poolLeft = breakPoolLeftSeconds(usedBySlot, washroomUsed);
+  const slotRemaining = (slot: BreakSlot) => Math.max(0, slotBudgetSeconds(slot) - usedBySlot[slot]);
   const tea1Remaining = slotRemaining("TEA_1");
   const tea2Remaining = slotRemaining("TEA_2");
   const lunchRemaining = slotRemaining("LUNCH");
-  const openSlotClosedSeconds = openSlot ? closedBreakSeconds[openSlot] : 0;
-  const poolLeftWithoutOpen = remainingBreakPoolSeconds(
-    closedSlotTotal + closedWashroomSeconds + (isInWashroom ? 0 : liveWashroom)
-  );
-  const breakBudget = openBreakType
-    ? openBreakLimitSeconds(openBreakType, openSlotClosedSeconds, poolLeftWithoutOpen)
-    : isInWashroom
-      ? remainingBreakPoolSeconds(closedSlotTotal + closedWashroomSeconds)
-      : 0;
-  const breakRemaining = isInWashroom
-    ? Math.max(0, breakBudget - liveWashroom)
-    : Math.max(0, breakBudget - liveBreak);
+  const openBreakOver = openSlot ? excess[openSlot] : 0;
   const shiftPct = Math.min(100, (dailySeconds / SHIFT_WORKING_SECONDS) * 100);
   const poolUsedPct = Math.min(
     100,
     ((BREAK_TOTAL_SECONDS - poolLeft) / BREAK_TOTAL_SECONDS) * 100
   );
-  const breakPct =
-    (isOnBreak || isInWashroom) && breakBudget > 0
-      ? Math.min(100, ((breakBudget - breakRemaining) / breakBudget) * 100)
-      : poolUsedPct;
 
   useEffect(() => {
     setMounted(true);
   }, []);
-
-  useEffect(() => {
-    if (readOnly || !isOnBreak || !openBreakStartedAt || !openBreakType) return;
-    const remainingAtStart = openBreakLimitSeconds(
-      openBreakType,
-      openSlotClosedSeconds,
-      remainingBreakPoolSeconds(closedSlotTotal + closedWashroomSeconds)
-    );
-    const delay = Math.max(
-      0,
-      new Date(openBreakStartedAt).getTime() + remainingAtStart * 1000 - Date.now()
-    );
-    const timer = window.setTimeout(() => {
-      startTransition(async () => {
-        const res = await postPresence(0, true).catch(() => null);
-        if (!res?.expired) {
-          router.refresh();
-          return;
-        }
-        sessionStorage.removeItem(SESSION_STARTED_FLAG);
-        const supabase = createClient();
-        await supabase.auth.signOut();
-        window.location.assign(autoLogoutUrl(res.reason ?? "break", res.at ?? Date.now()));
-      });
-    }, delay);
-    return () => window.clearTimeout(timer);
-  }, [readOnly, isOnBreak, openBreakStartedAt, openBreakType, openSlotClosedSeconds, closedSlotTotal, closedWashroomSeconds, router]);
-
-  useEffect(() => {
-    if (readOnly || !isInWashroom || !washroomStartedAt) return;
-    const remainingAtStart = remainingBreakPoolSeconds(closedSlotTotal + closedWashroomSeconds);
-    const delay = Math.max(
-      0,
-      new Date(washroomStartedAt).getTime() + remainingAtStart * 1000 - Date.now()
-    );
-    const timer = window.setTimeout(() => {
-      startTransition(async () => {
-        await endWashroom();
-        router.refresh();
-      });
-    }, delay);
-    return () => window.clearTimeout(timer);
-  }, [readOnly, isInWashroom, washroomStartedAt, closedSlotTotal, closedWashroomSeconds, router]);
 
   useEffect(() => {
     if (readOnly || !meetingPending) return;
@@ -271,9 +207,9 @@ export function ClockWidget({
               <StatusBadge status={status} />
               {sessionStartedAt ? (
                 <span className="text-xs text-muted-foreground">
-                  Since {mounted ? formatTime(sessionStartedAt) : "—"}
+                  Logged in {mounted ? formatTime(sessionStartedAt) : "—"}
                   {mounted && countedFrom && countedFrom > sessionStartedAt
-                    ? " · counted from 6:30 PM"
+                    ? " · productive time counts from 6:30 PM"
                     : ""}
                 </span>
               ) : onLeave ? (
@@ -298,12 +234,27 @@ export function ClockWidget({
               {mounted ? formatClock(dailySeconds) : "—"}
             </p>
             {isOnBreak ? (
-              <p className="text-xs font-medium text-muted-foreground">
-                {formatBreakType(openBreakType ?? "TEA")} remaining · {formatDuration(breakRemaining)} left
-              </p>
+              openBreakOver > 0 ? (
+                <p className="text-xs font-semibold text-destructive">
+                  {formatBreakType(openBreakType ?? "TEA")} excess · +{formatExcess(openBreakOver)} over
+                </p>
+              ) : (
+                <p className="text-xs font-medium text-muted-foreground">
+                  {formatBreakType(openBreakType ?? "TEA")} remaining ·{" "}
+                  {formatDuration(openSlot ? slotRemaining(openSlot) : 0)} left
+                </p>
+              )
             ) : isInWashroom ? (
-              <p className="text-xs font-medium text-muted-foreground">
-                This washroom visit · {formatDuration(washroomElapsed ?? 0)} · break total {formatDuration(poolLeft)} left
+              <p
+                className={cn(
+                  "text-xs font-medium",
+                  excess.washroom > 0 ? "text-destructive" : "text-muted-foreground"
+                )}
+              >
+                This washroom visit · {formatDuration(washroomElapsed ?? 0)} ·{" "}
+                {excess.washroom > 0
+                  ? `excess +${formatExcess(excess.washroom)}`
+                  : `break total ${formatDuration(poolLeft)} left`}
               </p>
             ) : isInMeeting ? (
               <p className="text-xs font-medium text-muted-foreground">
@@ -323,12 +274,18 @@ export function ClockWidget({
             <span className="break-chip break-chip-tea">Tea 2 {formatDuration(tea2Remaining)} left</span>
             <span className="break-chip break-chip-lunch">Lunch {formatDuration(lunchRemaining)} left</span>
             <span className="break-chip">Total {formatDuration(poolLeft)} left</span>
+            {excess.total > 0 ? (
+              <span className="break-chip text-destructive">Excess +{formatExcess(excess.total)}</span>
+            ) : null}
           </div>
         ) : (
         <div className={cn("flex flex-col gap-2.5 sm:items-end", compact ? "min-w-0" : "min-w-[12rem]")}>
           {isClockedIn ? (
             <span className="text-[11px] font-medium text-muted-foreground">
               Break total {formatDuration(poolLeft)} left of {formatDuration(BREAK_TOTAL_SECONDS)}
+              {excess.total > 0 ? (
+                <span className="text-destructive"> · Excess today +{formatExcess(excess.total)}</span>
+              ) : null}
             </span>
           ) : null}
           <div className="flex flex-wrap items-center gap-2 sm:justify-end">
@@ -391,7 +348,7 @@ export function ClockWidget({
                       variant="outline"
                       size={compact ? "sm" : "lg"}
                       className={compact ? "h-8" : "h-10"}
-                      disabled={isPending || poolLeft === 0}
+                      disabled={isPending}
                       onClick={() => run(startWashroom)}
                     >
                       {isPending ? <Loader2 className="size-4 animate-spin" /> : <Bath className="size-4" />}

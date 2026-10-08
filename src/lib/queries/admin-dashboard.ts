@@ -5,7 +5,17 @@ import { todayIso } from "@/lib/format";
 import { SUPER_ADMIN_ROLE } from "@/lib/permissions/roles";
 import { weekendOrRecordedStatus } from "@/lib/attendance-weekend";
 import { dailyActiveSeconds } from "@/lib/live-time";
-import { shiftAccountingWindowUtc } from "@/lib/shift";
+import {
+  breakDurationSeconds,
+  breakExcess,
+  breakSecondsBySlot,
+  creditedAwaySeconds,
+  emptyExcess,
+  shiftAccountingWindowUtc,
+  type BreakExcess,
+} from "@/lib/shift";
+
+const NO_EXCESS: BreakExcess = emptyExcess();
 
 const loadSuperAdminEmployeeIds = cache(async (): Promise<string[]> => {
   const supabase = await createClient();
@@ -72,6 +82,8 @@ export type TeamTodayRow = {
   washroomSeconds: number;
   sessionClosedWashroomSeconds: number;
   openWashroomStartedAt: string | null;
+  /** Today's time over Tea 1 / Tea 2 / Lunch / washroom allowance. */
+  breakExcess: BreakExcess;
   /** Set when today's latest session was closed automatically (break time over). */
   autoLoggedOutAt: string | null;
 };
@@ -84,6 +96,7 @@ export async function liveSessionSlices(
     string,
     {
       sessionStartedAt: string | null;
+      breakExcess: BreakExcess;
       sessionClosedBreakSeconds: number;
       openBreakStartedAt: string | null;
       inMeeting: boolean;
@@ -108,6 +121,7 @@ export async function liveSessionSlices(
     if (slices.has(row.employee_id)) continue;
     slices.set(row.employee_id, {
       sessionStartedAt: null,
+      breakExcess: NO_EXCESS,
       sessionClosedBreakSeconds: 0,
       openBreakStartedAt: null,
       inMeeting: false,
@@ -127,17 +141,15 @@ export async function liveSessionSlices(
     .eq("status", "ACTIVE")
     .in("employee_id", employeeIds);
 
-  const sessionIds = (sessions ?? []).map((session) => session.id);
-  const { data: breaks } =
-    sessionIds.length > 0
-      ? await supabase
-          .from("breaks")
-          .select("session_id, started_at, ended_at, duration_seconds")
-          .in("session_id", sessionIds)
-      : { data: [] };
   const { start, end } = shiftAccountingWindowUtc(todayIso());
   const service = createServiceClient();
-  const [{ data: meetings }, { data: washrooms }] = await Promise.all([
+  const [{ data: shiftBreaks }, { data: meetings }, { data: washrooms }] = await Promise.all([
+    supabase
+      .from("breaks")
+      .select("employee_id, session_id, break_type, started_at, ended_at, duration_seconds")
+      .in("employee_id", employeeIds)
+      .gte("started_at", start.toISOString())
+      .lt("started_at", end.toISOString()),
     service
       .from("meetings")
       .select("employee_id, started_at")
@@ -157,12 +169,23 @@ export async function liveSessionSlices(
     (meetings ?? []).filter((row) => !row.started_at).map((row) => row.employee_id)
   );
 
+  const now = Date.now();
+  const excessFor = (employeeId: string) => {
+    const used = breakSecondsBySlot(
+      (shiftBreaks ?? []).filter((row) => row.employee_id === employeeId)
+    );
+    const washroomUsed = (washrooms ?? [])
+      .filter((row) => row.employee_id === employeeId)
+      .reduce((sum, row) => sum + breakDurationSeconds(row, now), 0);
+    return breakExcess(used, washroomUsed);
+  };
+
   for (const session of sessions ?? []) {
-    const rows = (breaks ?? []).filter((row) => row.session_id === session.id);
+    const rows = (shiftBreaks ?? []).filter((row) => row.session_id === session.id);
     const open = rows.find((row) => row.ended_at == null);
     const closed = rows
       .filter((row) => row.ended_at != null)
-      .reduce((sum, row) => sum + (row.duration_seconds ?? 0), 0);
+      .reduce((sum, row) => sum + creditedAwaySeconds(session.started_at, row), 0);
     const visits = (washrooms ?? []).filter((row) => row.employee_id === session.employee_id);
     const openWashrooms = visits
       .filter((row) => row.ended_at == null)
@@ -173,9 +196,10 @@ export async function liveSessionSlices(
       .reduce((sum, row) => sum + (row.duration_seconds ?? 0), 0);
     const sessionClosedWashroom = visits
       .filter((row) => row.session_id === session.id && row.ended_at != null)
-      .reduce((sum, row) => sum + (row.duration_seconds ?? 0), 0);
+      .reduce((sum, row) => sum + creditedAwaySeconds(session.started_at, row), 0);
     slices.set(session.employee_id, {
       sessionStartedAt: session.started_at,
+      breakExcess: excessFor(session.employee_id),
       sessionClosedBreakSeconds: closed,
       openBreakStartedAt: open?.started_at ?? null,
       inMeeting: !open && !openWashroom && inMeeting.has(session.employee_id),
@@ -191,6 +215,7 @@ export async function liveSessionSlices(
 
   for (const [employeeId, slice] of slices) {
     if (slice.sessionStartedAt) continue;
+    slice.breakExcess = excessFor(employeeId);
     const visits = (washrooms ?? []).filter((row) => row.employee_id === employeeId);
     slice.washroomVisitCount = visits.length;
     slice.washroomSeconds = visits
@@ -241,6 +266,7 @@ export async function getTodayTeamReport(
       washroomSeconds: live?.washroomSeconds ?? 0,
       sessionClosedWashroomSeconds: live?.sessionClosedWashroomSeconds ?? 0,
       openWashroomStartedAt: live?.openWashroomStartedAt ?? null,
+      breakExcess: live?.breakExcess ?? NO_EXCESS,
       autoLoggedOutAt: live?.autoLoggedOutAt ?? null,
     };
   });
@@ -364,6 +390,7 @@ export async function getAdminDashboardData(): Promise<{
       washroomSeconds: liveByEmployee.get(person.id)?.washroomSeconds ?? 0,
       sessionClosedWashroomSeconds: liveByEmployee.get(person.id)?.sessionClosedWashroomSeconds ?? 0,
       openWashroomStartedAt: liveByEmployee.get(person.id)?.openWashroomStartedAt ?? null,
+      breakExcess: liveByEmployee.get(person.id)?.breakExcess ?? NO_EXCESS,
       autoLoggedOutAt: liveByEmployee.get(person.id)?.autoLoggedOutAt ?? null,
     };
   });

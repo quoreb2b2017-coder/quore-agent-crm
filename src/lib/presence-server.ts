@@ -2,14 +2,7 @@ import { createServiceClient } from "@/lib/supabase/service";
 import { getCurrentEmployeeContext, isSuperAdmin } from "@/lib/permissions/server";
 import { closeWorkSession } from "@/lib/actions/attendance";
 import { shiftDateIso } from "@/lib/format";
-import {
-  breakSecondsBySlot,
-  breakSlot,
-  openBreakLimitSeconds,
-  shiftAccountingWindowUtc,
-} from "@/lib/shift";
-
-type ServiceClient = ReturnType<typeof createServiceClient>;
+import { shiftWindowUtc } from "@/lib/shift";
 
 export type PresenceResult = {
   expired: boolean;
@@ -25,27 +18,16 @@ export type PresenceResult = {
 const SWEEP_EVERY_MS = 60_000;
 let lastSweepAt = 0;
 
-type OpenBreak = { id: string; employee_id: string; started_at: string; break_type: string };
+type OpenBreak = { started_at: string };
 
-/** When the open break's slot time runs out. */
-async function openBreakEndsAt(service: ServiceClient, openBreak: OpenBreak): Promise<Date> {
-  const { start, end } = shiftAccountingWindowUtc(shiftDateIso(new Date(openBreak.started_at)));
-  const { data: rows } = await service
-    .from("breaks")
-    .select("id, break_type, started_at, ended_at, duration_seconds")
-    .eq("employee_id", openBreak.employee_id)
-    .gte("started_at", start.toISOString())
-    .lt("started_at", end.toISOString());
-  const closed = breakSecondsBySlot(rows ?? [], { closedOnly: true, excludeId: openBreak.id })[
-    breakSlot(openBreak.break_type)
-  ];
-  const limit = openBreakLimitSeconds(openBreak.break_type, closed);
-  return new Date(new Date(openBreak.started_at).getTime() + limit * 1000);
+/** A break may run over its slot (counted as excess); it is closed at 3:30 AM shift end. */
+function openBreakEndsAt(openBreak: OpenBreak): Date {
+  return shiftWindowUtc(shiftDateIso(new Date(openBreak.started_at))).end;
 }
 
 /**
  * Heartbeat from an open CRM tab.
- * Keyboard / mouse idle no longer signs anyone out. Only a finished tea/lunch break does.
+ * Keyboard / mouse idle does not sign anyone out; a break still open at shift end does.
  */
 export async function runPresenceHeartbeat(_input: {
   idleMs: number;
@@ -80,7 +62,7 @@ export async function runPresenceHeartbeat(_input: {
     .maybeSingle();
 
   if (openBreak) {
-    const endsAt = await openBreakEndsAt(service, openBreak);
+    const endsAt = openBreakEndsAt(openBreak);
     if (endsAt.getTime() <= now) {
       await closeWorkSession(ctx.employeeId, "TIMED_OUT", { endedAt: endsAt });
       return { expired: true, reason: "break", at: endsAt.getTime() };
@@ -94,7 +76,7 @@ export async function runPresenceHeartbeat(_input: {
 }
 
 /**
- * Closes sessions whose tea/lunch time has run out. Does not log anyone out for idle time.
+ * Closes sessions whose break is still open at shift end. Does not log anyone out for idle time.
  */
 export async function sweepIdleSessions(options?: { force?: boolean }) {
   const now = Date.now();
@@ -108,7 +90,7 @@ export async function sweepIdleSessions(options?: { force?: boolean }) {
     .is("ended_at", null);
 
   for (const openBreak of openBreaks ?? []) {
-    const endsAt = await openBreakEndsAt(service, openBreak);
+    const endsAt = openBreakEndsAt(openBreak);
     if (endsAt.getTime() <= now) {
       await closeWorkSession(openBreak.employee_id, "TIMED_OUT", { revalidate: false, endedAt: endsAt });
     }

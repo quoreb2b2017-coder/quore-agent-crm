@@ -89,6 +89,65 @@ export function creditedWorkBounds(startedAt: string | Date, endedAt: Date | num
   };
 }
 
+/** Part of a break / washroom visit that falls inside the session's credited 6:30 PM–3:30 AM window. */
+export function creditedAwaySeconds(
+  sessionStartedAt: string | Date,
+  row: { started_at: string; ended_at: string | null; duration_seconds?: number | null },
+  now = Date.now()
+) {
+  const sessionStart = typeof sessionStartedAt === "string" ? new Date(sessionStartedAt) : sessionStartedAt;
+  const { start: official, end } = shiftWindowUtc(shiftDateIso(sessionStart));
+  const windowFrom = Math.max(sessionStart.getTime(), official.getTime());
+  const startedAt = new Date(row.started_at).getTime();
+  const endedAt = startedAt + breakDurationSeconds(row, now) * 1000;
+  const from = Math.max(startedAt, windowFrom);
+  const to = Math.min(endedAt, end.getTime());
+  return Math.max(0, Math.floor((to - from) / 1000));
+}
+
+export type BreakExcess = Record<BreakSlot, number> & { washroom: number; total: number };
+
+/**
+ * Time over each slot (Tea 1 / Tea 2 15 min, Lunch 45 min). Washroom uses whatever is left of the
+ * 1 hr 15 min total; washroom beyond that is excess too.
+ */
+export function breakExcess(used: Record<BreakSlot, number>, washroomSeconds = 0): BreakExcess {
+  let withinSlots = 0;
+  const excess = { TEA_1: 0, TEA_2: 0, LUNCH: 0, washroom: 0, total: 0 };
+  for (const slot of BREAK_SLOTS) {
+    const seconds = Math.max(0, used[slot]);
+    const budget = slotBudgetSeconds(slot);
+    withinSlots += Math.min(seconds, budget);
+    excess[slot] = Math.max(0, seconds - budget);
+  }
+  excess.washroom = Math.max(0, withinSlots + Math.max(0, washroomSeconds) - BREAK_TOTAL_SECONDS);
+  excess.total = excess.TEA_1 + excess.TEA_2 + excess.LUNCH + excess.washroom;
+  return excess;
+}
+
+export function emptyExcess(): BreakExcess {
+  return { TEA_1: 0, TEA_2: 0, LUNCH: 0, washroom: 0, total: 0 };
+}
+
+export function addExcess(sum: BreakExcess, next: BreakExcess): BreakExcess {
+  return {
+    TEA_1: sum.TEA_1 + next.TEA_1,
+    TEA_2: sum.TEA_2 + next.TEA_2,
+    LUNCH: sum.LUNCH + next.LUNCH,
+    washroom: sum.washroom + next.washroom,
+    total: sum.total + next.total,
+  };
+}
+
+/** Break allowance not yet used: slot time within budget plus washroom, out of 1 hr 15 min. */
+export function breakPoolLeftSeconds(used: Record<BreakSlot, number>, washroomSeconds = 0) {
+  const withinSlots = BREAK_SLOTS.reduce(
+    (sum, slot) => sum + Math.min(Math.max(0, used[slot]), slotBudgetSeconds(slot)),
+    0
+  );
+  return Math.max(0, BREAK_TOTAL_SECONDS - withinSlots - Math.max(0, washroomSeconds));
+}
+
 export function isLateClockIn(at: Date | string = new Date()) {
   const date = typeof at === "string" ? new Date(at) : at;
   const shiftDate = shiftDateIso(date);

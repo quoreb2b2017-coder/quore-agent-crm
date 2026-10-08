@@ -25,6 +25,7 @@ import {
 import {
   eachDateInclusive,
   formatDuration,
+  formatExcess,
   formatIsoDate,
   initials,
   isWeekendIso,
@@ -33,7 +34,8 @@ import {
   weekdayShortIst,
 } from "@/lib/format";
 import { requireViewer } from "@/lib/permissions/server";
-import { PRODUCTIVE_HOURS_LABEL, PRODUCTIVE_SECONDS, TRACKING_START_DATE } from "@/lib/shift";
+import { emptyExcess, PRODUCTIVE_HOURS_LABEL, PRODUCTIVE_SECONDS, TRACKING_START_DATE } from "@/lib/shift";
+import { BreakExcessCell } from "@/components/attendance/break-excess";
 import { listWatchableEmployees } from "@/lib/queries/admin-dashboard";
 import { parseProductivityQuery, workingDatesInRange } from "@/lib/productivity-period";
 import { getProductivityReport, type ProductivityRow } from "@/lib/queries/productivity-report";
@@ -169,7 +171,7 @@ function DailyView({ rows, date, today }: { rows: ProductivityRow[]; date: strin
     (sum, { day }) => sum + Math.max(0, PRODUCTIVE_SECONDS - day.productiveSeconds),
     0
   );
-  const idle = days.reduce((sum, { day }) => sum + (day?.idleSeconds ?? 0), 0);
+  const excess = days.reduce((sum, { day }) => sum + (day?.breakExcess.total ?? 0), 0);
   const isToday = date === today;
 
   return (
@@ -189,7 +191,13 @@ function DailyView({ rows, date, today }: { rows: ProductivityRow[]; date: strin
           tone={deficit > 0 ? "destructive" : "success"}
           hint={isToday ? "Shift in progress" : formatIsoDate(date)}
         />
-        <StatCard label="Idle" value={formatDuration(idle)} icon={PauseCircle} tone="info" hint="Auto logout after 10 min" />
+        <StatCard
+          label="Excess break"
+          value={excess > 0 ? `+${formatExcess(excess)}` : "0m"}
+          icon={PauseCircle}
+          tone={excess > 0 ? "destructive" : "success"}
+          hint="Over Tea 15m · Lunch 45m · total 1h 15m"
+        />
       </div>
 
       <Card className="gap-0 overflow-hidden py-0">
@@ -199,7 +207,7 @@ function DailyView({ rows, date, today }: { rows: ProductivityRow[]; date: strin
             <TableRow className="bg-muted/40 hover:bg-muted/40">
               <TableHead className="pl-5">Employee</TableHead>
               <TableHead>Break</TableHead>
-              <TableHead>Idle</TableHead>
+              <TableHead>Excess break</TableHead>
               <TableHead>Productive hours</TableHead>
               <TableHead className="pr-5">Deficit</TableHead>
             </TableRow>
@@ -211,7 +219,9 @@ function DailyView({ rows, date, today }: { rows: ProductivityRow[]; date: strin
                   <EmployeeCell employee={row.employee} />
                 </TableCell>
                 <TableCell className="tabular-nums">{formatDuration(day?.breakSeconds ?? 0)}</TableCell>
-                <TableCell className="tabular-nums">{formatDuration(day?.idleSeconds ?? 0)}</TableCell>
+                <TableCell>
+                  <BreakExcessCell excess={day?.breakExcess ?? emptyExcess()} />
+                </TableCell>
                 <TableCell>
                   <div className="flex flex-col gap-1.5">
                     <span className="flex items-center gap-1.5 font-semibold tabular-nums">
@@ -316,7 +326,7 @@ function PeriodView({
               <TableHead>Days met</TableHead>
               <TableHead>Productive hours</TableHead>
               <TableHead>Break</TableHead>
-              <TableHead>Idle</TableHead>
+              <TableHead>Excess break</TableHead>
               <TableHead>Deficit so far</TableHead>
               <TableHead className="pr-5">{periodName} end</TableHead>
             </TableRow>
@@ -352,7 +362,9 @@ function PeriodView({
                   </div>
                 </TableCell>
                 <TableCell className="tabular-nums">{formatDuration(row.breakSeconds)}</TableCell>
-                <TableCell className="tabular-nums">{formatDuration(row.idleSeconds)}</TableCell>
+                <TableCell>
+                  <BreakExcessCell excess={row.breakExcess} />
+                </TableCell>
                 <TableCell>
                   <BalancePill
                     seconds={row.balanceSeconds}

@@ -1,7 +1,12 @@
 import { createDataClient as createClient } from "@/lib/supabase/data";
 import { createServiceClient } from "@/lib/supabase/service";
 import { isWeekendIso, shiftDateIso, todayIso } from "@/lib/format";
-import { breakSecondsBySlot, shiftAccountingWindowUtc, type BreakSlot } from "@/lib/shift";
+import {
+  breakSecondsBySlot,
+  creditedAwaySeconds,
+  shiftAccountingWindowUtc,
+  type BreakSlot,
+} from "@/lib/shift";
 import type { CommonDashboardData } from "@/lib/queries/employee-dashboard";
 
 export type MySessionState = {
@@ -54,7 +59,7 @@ async function openAwayState(employeeId: string) {
 async function shiftWashroomSeconds(employeeId: string, startIso: string, endIso: string) {
   const { data } = await createServiceClient()
     .from("washroom_visits")
-    .select("session_id, ended_at, duration_seconds")
+    .select("session_id, started_at, ended_at, duration_seconds")
     .eq("employee_id", employeeId)
     .gte("started_at", startIso)
     .lt("started_at", endIso);
@@ -64,11 +69,18 @@ async function shiftWashroomSeconds(employeeId: string, startIso: string, endIso
     .reduce((sum, row) => sum + (row.duration_seconds ?? 0), 0);
   return {
     closedWashroomSeconds,
-    sessionClosedSeconds: (sessionId: string) =>
-      rows
-        .filter((row) => row.session_id === sessionId && row.ended_at != null)
-        .reduce((sum, row) => sum + (row.duration_seconds ?? 0), 0),
+    sessionClosedSeconds: (session: { id: string; started_at: string }) =>
+      sessionClosedCredited(rows, session),
   };
+}
+
+function sessionClosedCredited(
+  rows: { session_id: string | null; started_at: string; ended_at: string | null; duration_seconds: number | null }[],
+  session: { id: string; started_at: string }
+) {
+  return rows
+    .filter((row) => row.session_id === session.id && row.ended_at != null)
+    .reduce((sum, row) => sum + creditedAwaySeconds(session.started_at, row), 0);
 }
 
 export type EmployeeDashboardBundle = {
@@ -161,9 +173,7 @@ export async function getEmployeeDashboardBundle(employeeId: string): Promise<Em
       isOnBreak: !!openBreak,
       sessionStartedAt: session.started_at,
       accruedActiveSeconds: attendance?.total_active_seconds ?? 0,
-      sessionClosedBreakSeconds: breaks
-        .filter((row) => row.session_id === session.id && row.ended_at != null)
-        .reduce((sum, row) => sum + (row.duration_seconds ?? 0), 0),
+      sessionClosedBreakSeconds: sessionClosedCredited(breaks, session),
       closedBreakSeconds,
       openBreakType: openBreak?.break_type ?? null,
       openBreakStartedAt: openBreak?.started_at ?? null,
@@ -171,7 +181,7 @@ export async function getEmployeeDashboardBundle(employeeId: string): Promise<Em
       meetingRequestedAt: away.meetingRequestedAt,
       washroomStartedAt: away.washroomStartedAt,
       closedWashroomSeconds: washroom.closedWashroomSeconds,
-      sessionClosedWashroomSeconds: washroom.sessionClosedSeconds(session.id),
+      sessionClosedWashroomSeconds: washroom.sessionClosedSeconds(session),
       onLeave: attendance?.status === "ON_LEAVE",
       weekOff,
     },
@@ -245,9 +255,7 @@ export async function getMySessionState(employeeId: string): Promise<MySessionSt
     isOnBreak: !!openBreak,
     sessionStartedAt: session.started_at,
     accruedActiveSeconds: attendance?.total_active_seconds ?? 0,
-    sessionClosedBreakSeconds: breaks
-      .filter((row) => row.session_id === session.id && row.ended_at != null)
-      .reduce((sum, row) => sum + (row.duration_seconds ?? 0), 0),
+    sessionClosedBreakSeconds: sessionClosedCredited(breaks, session),
     closedBreakSeconds,
     openBreakType: openBreak?.break_type ?? null,
     openBreakStartedAt: openBreak?.started_at ?? null,
@@ -255,7 +263,7 @@ export async function getMySessionState(employeeId: string): Promise<MySessionSt
     meetingRequestedAt: away.meetingRequestedAt,
     washroomStartedAt: away.washroomStartedAt,
     closedWashroomSeconds: washroom.closedWashroomSeconds,
-    sessionClosedWashroomSeconds: washroom.sessionClosedSeconds(session.id),
+    sessionClosedWashroomSeconds: washroom.sessionClosedSeconds(session),
     onLeave: attendance?.status === "ON_LEAVE",
     weekOff,
   };

@@ -1,5 +1,6 @@
-import { creditedWorkBounds } from "@/lib/shift";
+import { creditedAwaySeconds, creditedWorkBounds } from "@/lib/shift";
 
+/** `sessionClosed*Seconds` must already be limited to the credited window (see `creditedAwaySeconds`). */
 export function dailyActiveSeconds(input: {
   storedActiveSeconds: number;
   sessionStartedAt: string | null;
@@ -12,16 +13,21 @@ export function dailyActiveSeconds(input: {
   if (!input.sessionStartedAt) return input.storedActiveSeconds;
   const now = input.now ?? Date.now();
   const elapsed = creditedWorkBounds(input.sessionStartedAt, now).seconds;
-  const openBreak = input.openBreakStartedAt
-    ? Math.max(0, Math.floor((now - new Date(input.openBreakStartedAt).getTime()) / 1000))
-    : 0;
-  const openWashroom = input.openWashroomStartedAt
-    ? Math.max(0, Math.floor((now - new Date(input.openWashroomStartedAt).getTime()) / 1000))
-    : 0;
+  const openAway = (startedAt: string | null | undefined) =>
+    startedAt
+      ? creditedAwaySeconds(input.sessionStartedAt as string, { started_at: startedAt, ended_at: null }, now)
+      : 0;
   const closedAway = input.sessionClosedWashroomSeconds ?? 0;
   return (
     input.storedActiveSeconds +
-    Math.max(0, elapsed - input.sessionClosedBreakSeconds - closedAway - openBreak - openWashroom)
+    Math.max(
+      0,
+      elapsed -
+        input.sessionClosedBreakSeconds -
+        closedAway -
+        openAway(input.openBreakStartedAt) -
+        openAway(input.openWashroomStartedAt)
+    )
   );
 }
 

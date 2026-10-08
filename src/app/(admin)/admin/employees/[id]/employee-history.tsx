@@ -24,14 +24,17 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { BreakExcessCell } from "@/components/attendance/break-excess";
 import {
   formatDuration,
+  formatExcess,
   formatInr,
   formatIsoDate,
   formatTime,
 } from "@/lib/format";
 import {
   BREAK_POLICY_LABEL,
+  emptyExcess,
   PRODUCTIVE_HOURS_LABEL,
   PRODUCTIVE_SECONDS,
 } from "@/lib/shift";
@@ -83,8 +86,12 @@ export function EmployeeHistory({
           label="Breaks (30 days)"
           value={formatDuration(data.breakSeconds)}
           icon={Coffee}
-          tone="warning"
-          hint={BREAK_POLICY_LABEL}
+          tone={data.excessBreakSeconds > 0 ? "destructive" : "warning"}
+          hint={
+            data.excessBreakSeconds > 0
+              ? `Excess break +${formatExcess(data.excessBreakSeconds)}`
+              : BREAK_POLICY_LABEL
+          }
         />
       </section>
 
@@ -153,7 +160,7 @@ export function EmployeeHistory({
                   <TableHead>Check out</TableHead>
                   <TableHead>Productive</TableHead>
                   <TableHead>Break</TableHead>
-                  <TableHead className="pr-5">Idle</TableHead>
+                  <TableHead className="pr-5">Excess break</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -171,7 +178,9 @@ export function EmployeeHistory({
                     </TableCell>
                     <TableCell className="tabular-nums">{formatDuration(row.total_active_seconds)}</TableCell>
                     <TableCell className="tabular-nums">{formatDuration(row.total_break_seconds)}</TableCell>
-                    <TableCell className="pr-5 tabular-nums">{formatDuration(row.total_idle_seconds)}</TableCell>
+                    <TableCell className="pr-5">
+                      <BreakExcessCell excess={data.excessByDate[row.attendance_date] ?? emptyExcess()} />
+                    </TableCell>
                   </TableRow>
                 ))}
               </TableBody>

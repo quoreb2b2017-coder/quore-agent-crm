@@ -41,6 +41,17 @@ export function formatDuration(totalSeconds: number): string {
   return `${h}h ${m}m`;
 }
 
+/** Short over-time label, e.g. "2m 30s", "45s", "1h 5m". */
+export function formatExcess(totalSeconds: number): string {
+  const safe = Math.max(0, Math.floor(totalSeconds));
+  const h = Math.floor(safe / 3600);
+  const m = Math.floor((safe % 3600) / 60);
+  const s = safe % 60;
+  if (h > 0) return `${h}h ${m}m`;
+  if (m === 0) return `${s}s`;
+  return s ? `${m}m ${s}s` : `${m}m`;
+}
+
 export const INDIA_TIME_ZONE = "Asia/Kolkata";
 export const US_TIME_ZONE = "America/New_York";
 export const INDIA_LOGIN_TIME = "6:30 PM";

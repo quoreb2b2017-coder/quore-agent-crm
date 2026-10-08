@@ -3,7 +3,14 @@ import { createDataClient as createClient } from "@/lib/supabase/data";
 import { StatCard } from "@/components/dashboard/stat-card";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ProductivityChart } from "@/components/dashboard/productivity-chart";
-import { addDaysIso, eachDateInclusive, formatDuration, todayIso, weekdayShortIst } from "@/lib/format";
+import {
+  addDaysIso,
+  eachDateInclusive,
+  formatDuration,
+  formatExcess,
+  todayIso,
+  weekdayShortIst,
+} from "@/lib/format";
 import { dailyActiveSeconds } from "@/lib/live-time";
 import { PRODUCTIVE_SECONDS } from "@/lib/shift";
 import { liveSessionSlices } from "@/lib/queries/admin-dashboard";
@@ -43,6 +50,7 @@ export async function EmployeeProductivityOverview({
     openWashroomStartedAt: slice?.openWashroomStartedAt ?? null,
   });
   const totalBreak = todayRow?.total_break_seconds ?? 0;
+  const excessToday = slice?.breakExcess.total ?? 0;
 
   const chartData = eachDateInclusive(sinceIso, today).map((iso) => {
     const seconds = iso === today ? totalActive : (byDate.get(iso)?.total_active_seconds ?? 0);
@@ -61,7 +69,13 @@ export async function EmployeeProductivityOverview({
           tone="success"
           hint={`of ${formatDuration(PRODUCTIVE_SECONDS)}`}
         />
-        <StatCard label="Break today" value={formatDuration(totalBreak)} icon={Coffee} tone="warning" />
+        <StatCard
+          label="Break today"
+          value={formatDuration(totalBreak)}
+          icon={Coffee}
+          tone={excessToday > 0 ? "destructive" : "warning"}
+          hint={excessToday > 0 ? `Excess break +${formatExcess(excessToday)}` : "No excess break"}
+        />
       </div>
 
       <Card>

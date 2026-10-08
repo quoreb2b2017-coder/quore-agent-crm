@@ -3,10 +3,19 @@ import { createServiceClient } from "@/lib/supabase/service";
 import {
   addDaysIso,
   eachDateInclusive,
+  shiftDateIso,
   todayIso,
   weekdayShortIst,
 } from "@/lib/format";
-import { istLocalToUtc, productivityPercent, shiftAccountingWindowUtc } from "@/lib/shift";
+import {
+  breakDurationSeconds,
+  breakExcess,
+  breakSecondsBySlot,
+  istLocalToUtc,
+  productivityPercent,
+  shiftAccountingWindowUtc,
+  type BreakExcess,
+} from "@/lib/shift";
 import { setupAsOf } from "@/lib/payroll";
 import { isUndecidedLeaveType, unpackLeaveNote } from "@/lib/leave";
 import type { BreakRow } from "@/lib/queries/employee-status";
@@ -46,6 +55,9 @@ export type EmployeeHistoryPayload = {
   breaks: BreakRow[];
   timeline: { time: string; label: string }[];
   todayWashroomVisits: number;
+  /** Shift date → time over Tea / Lunch / washroom allowance. */
+  excessByDate: Record<string, BreakExcess>;
+  excessBreakSeconds: number;
   leaves: EmployeeHistoryLeave[];
   payroll: {
     base: number;
@@ -104,8 +116,8 @@ export async function getEmployeeHistory(employeeId: string): Promise<EmployeeHi
       .from("washroom_visits")
       .select("started_at, ended_at, duration_seconds")
       .eq("employee_id", employeeId)
-      .gte("started_at", start.toISOString())
-      .lt("started_at", end.toISOString())
+      .gte("started_at", rangeStart)
+      .lt("started_at", rangeEnd)
       .order("started_at"),
     service
       .from("meetings")
@@ -153,7 +165,10 @@ export async function getEmployeeHistory(employeeId: string): Promise<EmployeeHi
     timeline.push({ time: row.started_at, label: `${formatBreakLabel(row.break_type)} started` });
     if (row.ended_at) timeline.push({ time: row.ended_at, label: "Break ended" });
   }
-  for (const row of washroomRows ?? []) {
+  const todayWashroom = (washroomRows ?? []).filter(
+    (row) => row.started_at >= start.toISOString() && row.started_at < end.toISOString()
+  );
+  for (const row of todayWashroom) {
     timeline.push({ time: row.started_at, label: "Washroom started" });
     if (row.ended_at) timeline.push({ time: row.ended_at, label: "Washroom ended" });
   }
@@ -166,6 +181,25 @@ export async function getEmployeeHistory(employeeId: string): Promise<EmployeeHi
     }
   }
   timeline.sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime());
+
+  const breaksByDate = new Map<string, NonNullable<typeof breakRows>>();
+  for (const row of breakRows ?? []) {
+    const date = shiftDateIso(new Date(row.started_at));
+    breaksByDate.set(date, [...(breaksByDate.get(date) ?? []), row]);
+  }
+  const washroomByDate = new Map<string, number>();
+  for (const row of washroomRows ?? []) {
+    const date = shiftDateIso(new Date(row.started_at));
+    washroomByDate.set(date, (washroomByDate.get(date) ?? 0) + breakDurationSeconds(row));
+  }
+  const excessByDate: Record<string, BreakExcess> = {};
+  for (const date of new Set([...breaksByDate.keys(), ...washroomByDate.keys()])) {
+    if (date < since) continue;
+    excessByDate[date] = breakExcess(
+      breakSecondsBySlot(breaksByDate.get(date) ?? []),
+      washroomByDate.get(date) ?? 0
+    );
+  }
 
   const payroll = setupAsOf(salaryRecords ?? [], employeeId, today, employee?.salary ?? null);
 
@@ -191,7 +225,9 @@ export async function getEmployeeHistory(employeeId: string): Promise<EmployeeHi
       durationSeconds: row.duration_seconds,
     })),
     timeline,
-    todayWashroomVisits: (washroomRows ?? []).length,
+    todayWashroomVisits: todayWashroom.length,
+    excessByDate,
+    excessBreakSeconds: Object.values(excessByDate).reduce((sum, item) => sum + item.total, 0),
     leaves: (leaveRows ?? []).map((row) => ({
       id: row.id,
       start_date: row.start_date,

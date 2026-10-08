@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { AttendanceStatusBadge } from "@/components/attendance/attendance-status-badge";
+import { BreakExcessCell } from "@/components/attendance/break-excess";
 import { StatusBadge } from "@/components/dashboard/status-badge";
 import type { TeamTodayRow } from "@/lib/queries/admin-dashboard";
 import { dailyActiveSeconds, formatClock } from "@/lib/live-time";
@@ -32,6 +33,7 @@ export function TeamTodayReport({ rows }: { rows: TeamTodayRow[] }) {
             <th className="px-4 py-2 font-medium">Employee</th>
             <th className="px-3 py-2 font-medium">Status</th>
             <th className="px-3 py-2 font-medium">Washroom</th>
+            <th className="px-3 py-2 font-medium">Excess break</th>
             <th className="px-4 py-2 text-right font-medium">Hours</th>
           </tr>
         </thead>
@@ -85,6 +87,9 @@ export function TeamTodayReport({ rows }: { rows: TeamTodayRow[] }) {
                       {now == null ? "" : ` · ${formatDuration(washroomTotal)}`}
                     </span>
                   )}
+                </td>
+                <td className="px-3 py-2.5">
+                  <BreakExcessCell excess={row.breakExcess} />
                 </td>
                 <td className="px-4 py-2.5 text-right font-mono tabular-nums">
                   {now == null ? "—" : formatClock(seconds)}

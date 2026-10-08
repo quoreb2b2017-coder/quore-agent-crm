@@ -11,12 +11,10 @@ import { ensureWeekendOff } from "@/lib/attendance-weekend";
 import {
   BREAK_SLOTS,
   breakSecondsBySlot,
-  breakSlot,
   formatBreakType,
   fromDatetimeLocalIst,
-  openBreakLimitSeconds,
-  remainingBreakPoolSeconds,
   shiftAccountingWindowUtc,
+  creditedAwaySeconds,
   creditedWorkBounds,
   isLateClockIn,
   slotBudgetSeconds,
@@ -144,46 +142,6 @@ async function usedShiftBreakSeconds(
   return breakSecondsBySlot(data ?? []);
 }
 
-function slotTotal(used: Record<"TEA_1" | "TEA_2" | "LUNCH", number>) {
-  return used.TEA_1 + used.TEA_2 + used.LUNCH;
-}
-
-async function usedShiftWashroomSeconds(
-  employeeId: string,
-  shiftDate: string,
-  options?: { excludeId?: string }
-) {
-  const { start, end } = shiftAccountingWindowUtc(shiftDate);
-  const { data } = await createServiceClient()
-    .from("washroom_visits")
-    .select("id, started_at, ended_at, duration_seconds")
-    .eq("employee_id", employeeId)
-    .gte("started_at", start.toISOString())
-    .lt("started_at", end.toISOString());
-  return (data ?? [])
-    .filter((row) => row.ended_at != null && row.id !== options?.excludeId)
-    .reduce((sum, row) => {
-      if (row.duration_seconds != null) return sum + Math.max(0, row.duration_seconds);
-      return (
-        sum +
-        Math.max(0, Math.floor((new Date(row.ended_at as string).getTime() - new Date(row.started_at).getTime()) / 1000))
-      );
-    }, 0);
-}
-
-async function usedShiftPoolSeconds(
-  supabase: Awaited<ReturnType<typeof createClient>>,
-  employeeId: string,
-  shiftDate: string,
-  options?: { excludeWashroomId?: string }
-) {
-  const slots = await usedShiftBreakSeconds(supabase, employeeId, shiftDate);
-  const washroom = await usedShiftWashroomSeconds(employeeId, shiftDate, {
-    excludeId: options?.excludeWashroomId,
-  });
-  return slotTotal(slots) + washroom;
-}
-
 async function closeOpenMeeting(employeeId: string, at = new Date()) {
   const service = createServiceClient();
   const { data: meeting } = await service
@@ -215,15 +173,10 @@ async function closeOpenWashroom(employeeId: string, at = new Date()) {
     .limit(1)
     .maybeSingle();
   if (!visit) return;
-  const shiftDate = shiftDateIso(new Date(visit.started_at));
-  const poolUsed = await usedShiftPoolSeconds(service as never, employeeId, shiftDate, {
-    excludeWashroomId: visit.id,
-  });
-  let durationSeconds = Math.max(
+  const durationSeconds = Math.max(
     0,
     Math.floor((at.getTime() - new Date(visit.started_at).getTime()) / 1000)
   );
-  durationSeconds = Math.min(durationSeconds, remainingBreakPoolSeconds(poolUsed));
   await service
     .from("washroom_visits")
     .update({
@@ -391,18 +344,11 @@ export async function closeWorkSession(
     .maybeSingle();
 
   if (openBreak) {
-    let durationSeconds = Math.max(
+    const durationSeconds = Math.max(
       0,
       Math.floor((now.getTime() - new Date(openBreak.started_at).getTime()) / 1000)
     );
     const shiftDate = shiftDateIso(new Date(openBreak.started_at));
-    const used = await usedShiftBreakSeconds(supabase as never, employeeId, shiftDate);
-    const rawUsed = used[breakSlot(openBreak.break_type)];
-    const closedUsed = Math.max(0, rawUsed - durationSeconds);
-    durationSeconds = Math.min(
-      durationSeconds,
-      openBreakLimitSeconds(openBreak.break_type, closedUsed)
-    );
     await supabase
       .from("breaks")
       .update({ ended_at: now.toISOString(), duration_seconds: durationSeconds })
@@ -424,14 +370,19 @@ export async function closeWorkSession(
 
   const sessionSeconds = creditedWorkBounds(session.started_at, now).seconds;
   const [{ data: sessionBreaks }, { data: sessionWashroom }] = await Promise.all([
-    supabase.from("breaks").select("duration_seconds").eq("session_id", session.id),
-    supabase.from("washroom_visits").select("duration_seconds").eq("session_id", session.id),
+    supabase
+      .from("breaks")
+      .select("started_at, ended_at, duration_seconds")
+      .eq("session_id", session.id),
+    supabase
+      .from("washroom_visits")
+      .select("started_at, ended_at, duration_seconds")
+      .eq("session_id", session.id),
   ]);
-  const breakSeconds = (sessionBreaks ?? []).reduce((sum, row) => sum + (row.duration_seconds ?? 0), 0);
-  const washroomSeconds = (sessionWashroom ?? []).reduce(
-    (sum, row) => sum + (row.duration_seconds ?? 0),
-    0
-  );
+  const creditedSum = (rows: { started_at: string; ended_at: string | null; duration_seconds: number | null }[]) =>
+    rows.reduce((sum, row) => sum + creditedAwaySeconds(session.started_at, row, now.getTime()), 0);
+  const breakSeconds = creditedSum(sessionBreaks ?? []);
+  const washroomSeconds = creditedSum(sessionWashroom ?? []);
   const activeSeconds = Math.max(0, sessionSeconds - breakSeconds - washroomSeconds);
   const shiftDate = shiftDateIso(new Date(session.started_at));
 
@@ -502,10 +453,6 @@ export async function startBreak(breakType: PolicyBreakType): Promise<Result> {
   if (used[breakType] >= slotBudgetSeconds(breakType)) {
     return { error: `${formatBreakType(breakType)} time is finished for this shift.` };
   }
-  const washroomUsed = await usedShiftWashroomSeconds(ctx.employeeId, shiftDate);
-  if (remainingBreakPoolSeconds(slotTotal(used) + washroomUsed) === 0) {
-    return { error: "No break time left this shift." };
-  }
 
   const { error } = await supabase.from("breaks").insert({
     employee_id: ctx.employeeId,
@@ -534,34 +481,11 @@ export async function endBreak(): Promise<Result> {
   if (!openBreak) return {};
 
   const now = new Date();
-  let durationSeconds = Math.max(
+  const durationSeconds = Math.max(
     0,
     Math.floor((now.getTime() - new Date(openBreak.started_at).getTime()) / 1000)
   );
-
   const shiftDate = shiftDateIso(new Date(openBreak.started_at));
-  const { start, end } = shiftAccountingWindowUtc(shiftDate);
-  const { data: shiftBreaks } = await supabase
-    .from("breaks")
-    .select("id, break_type, started_at, ended_at, duration_seconds")
-    .eq("employee_id", ctx.employeeId)
-    .gte("started_at", start.toISOString())
-    .lt("started_at", end.toISOString());
-
-  const closedSlots = breakSecondsBySlot(shiftBreaks ?? [], {
-    closedOnly: true,
-    excludeId: openBreak.id,
-  });
-  const closedUsed = closedSlots[breakSlot(openBreak.break_type)];
-  const washroomUsed = await usedShiftWashroomSeconds(ctx.employeeId, shiftDate);
-  durationSeconds = Math.min(
-    durationSeconds,
-    openBreakLimitSeconds(
-      openBreak.break_type,
-      closedUsed,
-      remainingBreakPoolSeconds(slotTotal(closedSlots) + washroomUsed)
-    )
-  );
 
   const { error } = await supabase
     .from("breaks")
@@ -776,12 +700,6 @@ export async function startWashroom(): Promise<Result> {
     return { error: "Washroom tracking is not set up yet. Run migration 0019_washroom_and_meeting_approval.sql." };
   }
   if (open) return {};
-
-  const shiftDate = shiftDateIso();
-  const poolUsed = await usedShiftPoolSeconds(service as never, ctx.employeeId, shiftDate);
-  if (remainingBreakPoolSeconds(poolUsed) === 0) {
-    return { error: "No break time left this shift." };
-  }
 
   const { error } = await service.from("washroom_visits").insert({
     employee_id: ctx.employeeId,
