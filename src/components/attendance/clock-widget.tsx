@@ -30,6 +30,7 @@ import {
   creditedWorkBounds,
   type BreakSlot,
 } from "@/lib/shift";
+import { formatMinutesLabel, getWorkSettings } from "@/lib/work-settings";
 import type { MySessionState } from "@/lib/queries/employee-status";
 import { cn } from "@/lib/utils";
 
@@ -209,7 +210,7 @@ export function ClockWidget({
                 <span className="text-xs text-muted-foreground">
                   Logged in {mounted ? formatTime(sessionStartedAt) : "—"}
                   {mounted && countedFrom && countedFrom > sessionStartedAt
-                    ? " · productive time counts from 6:30 PM"
+                    ? ` · productive time counts from ${formatMinutesLabel(getWorkSettings().loginMinutes)}`
                     : ""}
                 </span>
               ) : onLeave ? (

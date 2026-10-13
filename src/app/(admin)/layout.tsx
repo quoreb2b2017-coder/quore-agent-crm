@@ -1,4 +1,5 @@
 import { Suspense } from "react";
+import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { getAuthUser } from "@/lib/supabase/server";
 import { getCurrentEmployeeContext, isAdminLike } from "@/lib/permissions/server";
@@ -31,6 +32,7 @@ export default async function AdminLayout({
   }
 
   const modules = filterModules(ADMIN_MODULES, ctx);
+  const sidebarOpen = (await cookies()).get("sidebar_state")?.value !== "false";
 
   return (
     <AppShell
@@ -40,6 +42,7 @@ export default async function AdminLayout({
       ctx={ctx}
       profileHref="/admin/settings"
       notificationsHref="/admin/notifications"
+      defaultSidebarOpen={sidebarOpen}
     >
       <Suspense fallback={<DashboardPageSkeleton />}>{children}</Suspense>
     </AppShell>

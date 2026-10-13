@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { Plus } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -13,11 +14,13 @@ import { applyForLeave } from "./actions";
 
 export function ApplyLeaveDialog() {
   const [open, setOpen] = useState(false);
+  const router = useRouter();
   const { handleSubmit, isPending, error } = useActionForm(
     (formData) => applyForLeave({}, formData),
     () => {
       toast.success("Leave request submitted");
       setOpen(false);
+      router.refresh();
     }
   );
 

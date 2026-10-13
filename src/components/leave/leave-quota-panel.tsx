@@ -1,7 +1,6 @@
 import type { ReactNode } from "react";
 import { CalendarDays, CheckCircle2, Clock3, Wallet } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { ANNUAL_PAID_LEAVE_DAYS } from "@/lib/leave";
 
 type Tile = {
   label: string;
@@ -40,7 +39,7 @@ export function LeaveQuotaPanel({
     {
       label: "Available",
       value: available,
-      hint: `${ANNUAL_PAID_LEAVE_DAYS} paid days / year`,
+      hint: "Quota minus approved leave",
       icon: Wallet,
       tone: "info",
     },

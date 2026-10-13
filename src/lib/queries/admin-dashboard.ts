@@ -51,7 +51,7 @@ export async function isSuperAdminEmployee(
   return ids.includes(employeeId);
 }
 
-export async function listWatchableEmployees() {
+export const listWatchableEmployees = cache(async function listWatchableEmployees() {
   const supabase = await createClient();
   const adminIds = await superAdminEmployeeIds(supabase);
   let query = supabase
@@ -63,7 +63,7 @@ export async function listWatchableEmployees() {
   if (skip) query = query.not("id", "in", skip);
   const { data } = await query;
   return data ?? [];
-}
+});
 
 export type TeamTodayRow = {
   id: string;

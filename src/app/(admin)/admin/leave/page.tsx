@@ -12,12 +12,13 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { calendarDateIsoIst, formatDate } from "@/lib/format";
+import { formatDate, todayIso } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { isUuid } from "@/lib/attendance-period";
 import { listWatchableEmployees } from "@/lib/queries/admin-dashboard";
 import { isUndecidedLeaveType, unpackLeaveNote } from "@/lib/leave";
-import { getPaidLeaveQuota } from "@/lib/queries/leave";
+import { getLeaveBalanceRows, getPaidLeaveQuota } from "@/lib/queries/leave";
+import { LeaveBalances } from "./leave-balances";
 import { LeaveQuotaPanel } from "@/components/leave/leave-quota-panel";
 import { LeaveAdminActions } from "./leave-actions";
 import { LeaveFilters } from "./leave-filters";
@@ -41,7 +42,7 @@ export default async function AdminLeavePage({
   const requested = Array.isArray(params.employee) ? params.employee[0] : params.employee;
   const requestedId = requested && isUuid(requested) ? requested : null;
   const supabase = await createClient();
-  const year = Number(calendarDateIsoIst().slice(0, 4));
+  const year = Number(todayIso().slice(0, 4));
 
   const employees = seesAll ? await listWatchableEmployees() : [];
   const employeeId =
@@ -63,10 +64,11 @@ export default async function AdminLeavePage({
   const people = Math.max(1, quotaIds.length);
   const selectedName = employees.find((employee) => employee.id === employeeId)?.full_name;
 
-  const [{ data: requests }, { data: leaveTypes }, quota] = await Promise.all([
+  const [{ data: requests }, { data: leaveTypes }, quota, balanceRows] = await Promise.all([
     requestsQuery,
     supabase.from("leave_types").select("id, name, is_paid").order("name"),
     getPaidLeaveQuota({ employeeIds: quotaIds, year, people }),
+    seesAll ? getLeaveBalanceRows(employees, year) : Promise.resolve([]),
   ]);
 
   const employeeIds = Array.from(new Set((requests ?? []).map((row) => row.employee_id)));
@@ -89,7 +91,7 @@ export default async function AdminLeavePage({
             ? employeeId
               ? `Paid leave balance and requests for ${selectedName}.`
               : "Team paid leave quota, requests, and approvals."
-            : "18 paid days each year. Weekends stay week off and are not deducted."
+            : `${quota.available} paid days this year. Weekends stay week off and are not deducted.`
         }
         actions={seesAll ? undefined : <ApplyLeaveDialog />}
       />
@@ -109,6 +111,14 @@ export default async function AdminLeavePage({
           seesAll ? <LeaveFilters employees={employees} employeeId={employeeId} /> : undefined
         }
       />
+
+      {seesAll ? (
+        <Card className="gap-0 overflow-hidden py-0">
+          <CardContent className="p-0">
+            <LeaveBalances year={year} rows={balanceRows} />
+          </CardContent>
+        </Card>
+      ) : null}
 
       <Card className="gap-0 overflow-hidden py-0">
         <CardContent className="p-0">

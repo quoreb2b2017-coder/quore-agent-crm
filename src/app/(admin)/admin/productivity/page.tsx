@@ -23,30 +23,28 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import {
-  eachDateInclusive,
   formatDuration,
   formatExcess,
   formatIsoDate,
+  formatMonthLabel,
   initials,
-  isWeekendIso,
   todayIso,
-  weekdayIndexIst,
   weekdayShortIst,
 } from "@/lib/format";
 import { requireViewer } from "@/lib/permissions/server";
 import { emptyExcess, PRODUCTIVE_HOURS_LABEL, PRODUCTIVE_SECONDS, TRACKING_START_DATE } from "@/lib/shift";
 import { BreakExcessCell } from "@/components/attendance/break-excess";
+import { monthStartEnd } from "@/lib/attendance-period";
+import { MonthCalendar } from "@/components/attendance/month-calendar";
 import { listWatchableEmployees } from "@/lib/queries/admin-dashboard";
 import { parseProductivityQuery, workingDatesInRange } from "@/lib/productivity-period";
 import { getProductivityReport, type ProductivityRow } from "@/lib/queries/productivity-report";
 import { ProductivityFilters } from "./productivity-filters";
 import {
   BalancePill,
-  DayHeatCell,
   DayStatusPill,
   PeriodEndCell,
   Pill,
-  StatusLegend,
   TargetBar,
 } from "./productivity-ui";
 
@@ -85,6 +83,14 @@ export default async function ProductivityPage({
   const rows = (await getProductivityReport(people, query.start, query.end)).sort(
     (a, b) => b.productiveSeconds - a.productiveSeconds
   );
+  const monthKey = query.view === "monthly" ? query.month : query.date.slice(0, 7);
+  const monthBounds = monthStartEnd(monthKey);
+  const calendarSource =
+    people.length === 1
+      ? query.view === "monthly"
+        ? rows[0]
+        : (await getProductivityReport(people, monthBounds.start, monthBounds.end))[0]
+      : null;
   const isDaily = query.view === "daily";
   const workingDays = workingDatesInRange(query.start, query.end);
   const periodName = query.view === "monthly" ? "Month" : query.view === "weekly" ? "Week" : "Period";
@@ -154,13 +160,30 @@ export default async function ProductivityPage({
           workingDays={workingDays}
           today={today}
           periodName={periodName}
-          start={query.start}
           end={query.end}
-          showBreakdown={rows.length === 1}
         />
       )}
+
+      {calendarSource ? (
+        <MonthCalendar
+          title={`${formatMonthLabel(monthKey)} — ${calendarSource.employee.full_name}`}
+          start={monthBounds.start}
+          end={monthBounds.end}
+          days={calendarSource.days}
+          trackingStart={calendarSource.trackingStart}
+          today={today}
+          prevHref={`${BASE_PATH}?view=monthly&employee=${calendarSource.employee.id}&month=${shiftMonth(monthKey, -1)}`}
+          nextHref={`${BASE_PATH}?view=monthly&employee=${calendarSource.employee.id}&month=${shiftMonth(monthKey, 1)}`}
+        />
+      ) : null}
     </div>
   );
+}
+
+function shiftMonth(yyyyMm: string, delta: number) {
+  const [year, month] = yyyyMm.split("-").map(Number);
+  const date = new Date(Date.UTC(year, month - 1 + delta, 1));
+  return date.toISOString().slice(0, 7);
 }
 
 function DailyView({ rows, date, today }: { rows: ProductivityRow[]; date: string; today: string }) {
@@ -258,17 +281,13 @@ function PeriodView({
   workingDays,
   today,
   periodName,
-  start,
   end,
-  showBreakdown,
 }: {
   rows: ProductivityRow[];
   workingDays: string[];
   today: string;
   periodName: string;
-  start: string;
   end: string;
-  showBreakdown: boolean;
 }) {
   const elapsed = workingDays.filter((date) => date <= today).length;
   const productive = rows.reduce((sum, row) => sum + row.productiveSeconds, 0);
@@ -385,67 +404,14 @@ function PeriodView({
         </Table>
       </Card>
 
-      {showBreakdown ? <DayBreakdown row={rows[0]} start={start} end={end} /> : null}
     </>
-  );
-}
-
-function DayBreakdown({ row, start, end }: { row: ProductivityRow; start: string; end: string }) {
-  const byDate = new Map(row.days.map((day) => [day.date, day]));
-  const dates = eachDateInclusive(start, end);
-  const leadingBlanks = (weekdayIndexIst(start) + 6) % 7;
-  return (
-    <Card className="gap-0 overflow-hidden py-0">
-      <ReportHeader title={`Day by day — ${row.employee.full_name}`} />
-      <div className="p-4 sm:p-5">
-        <div className="grid grid-cols-7 gap-2">
-          {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((label) => (
-            <div
-              key={label}
-              className="pb-1 text-center text-[11px] font-medium tracking-wide text-muted-foreground uppercase"
-            >
-              {label}
-            </div>
-          ))}
-          {Array.from({ length: leadingBlanks }, (_, index) => (
-            <div key={`blank-${index}`} />
-          ))}
-          {dates.map((date) => {
-            const day = byDate.get(date);
-            const weekend = isWeekendIso(date);
-            const untracked = !weekend && date < row.trackingStart;
-            return (
-              <DayHeatCell
-                key={date}
-                dayOfMonth={Number(date.slice(8, 10))}
-                weekdayLabel={weekdayShortIst(date)}
-                status={weekend || untracked ? "weekend" : (day?.status ?? "upcoming")}
-                productiveSeconds={day?.productiveSeconds ?? 0}
-                offLabel={
-                  weekend
-                    ? "Week off"
-                    : untracked
-                      ? "Not tracked"
-                      : day?.offStatus === "HOLIDAY"
-                      ? "Holiday"
-                      : day?.offStatus
-                        ? "On leave"
-                        : undefined
-                }
-              />
-            );
-          })}
-        </div>
-      </div>
-    </Card>
   );
 }
 
 function ReportHeader({ title }: { title: string }) {
   return (
-    <div className="flex flex-col gap-2 border-b px-5 py-3.5 sm:flex-row sm:items-center sm:justify-between">
+    <div className="border-b px-5 py-3.5">
       <h3 className="text-[15px] font-semibold">{title}</h3>
-      <StatusLegend />
     </div>
   );
 }

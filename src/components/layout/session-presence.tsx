@@ -77,7 +77,8 @@ export function SessionPresence({ enableClockIn = true }: { enableClockIn?: bool
     };
     const mark = () => {
       const now = Date.now();
-      gapSinceSync = Math.max(gapSinceSync, now - latestActivity());
+      if (now - lastActivity < 250) return;
+      gapSinceSync = Math.max(gapSinceSync, now - lastActivity);
       lastActivity = now;
       if (now - lastShared >= SHARE_THROTTLE_MS) share(now);
     };

@@ -6,13 +6,15 @@ import { DashboardHero } from "@/components/dashboard/dashboard-hero";
 import { DashboardPanel } from "@/components/dashboard/dashboard-panel";
 import { StaffDashboard } from "@/components/dashboards/staff-dashboard";
 import { requireViewer } from "@/lib/permissions/server";
-import { greetingForNow, INDIA_TIME_ZONE, todayIso } from "@/lib/format";
+import { formatMonthLabel, greetingForNow, INDIA_TIME_ZONE, todayIso } from "@/lib/format";
 import { AdminLogoutButton } from "@/components/attendance/admin-logout-button";
 import { getAdminDashboardData } from "@/lib/queries/admin-dashboard";
 import { sweepIdleSessions } from "@/lib/presence-server";
 import { getEmployeeDashboardBundle, getMySessionState } from "@/lib/queries/employee-status";
 import { ClockWidget } from "@/components/attendance/clock-widget";
-import { isUuid } from "@/lib/attendance-period";
+import { isUuid, monthStartEnd } from "@/lib/attendance-period";
+import { MonthCalendar } from "@/components/attendance/month-calendar";
+import { getProductivityReport } from "@/lib/queries/productivity-report";
 import { EmployeeWatchSelect } from "./employee-watch-select";
 import { TeamTodayReport } from "./team-today-report";
 import { MeetingRequests } from "./meeting-requests";
@@ -31,18 +33,42 @@ export async function AdminDashboardBody({
   });
 
   if (!seesAll) {
-    const { sessionState, commonData } = await getEmployeeDashboardBundle(ctx.employeeId);
+    const monthKey = todayIso().slice(0, 7);
+    const bounds = monthStartEnd(monthKey);
+    const [{ sessionState, commonData }, calendarRow] = await Promise.all([
+      getEmployeeDashboardBundle(ctx.employeeId),
+      getProductivityReport(
+        [{ id: ctx.employeeId, full_name: ctx.fullName, employee_code: ctx.employeeCode }],
+        bounds.start,
+        bounds.end
+      ).then((rows) => rows[0]),
+    ]);
 
     return (
-      <StaffDashboard
-        compact
-        greeting={greetingForNow()}
-        firstName={ctx.fullName.split(" ")[0] ?? "there"}
-        roleLabel={ctx.roleDisplayName}
-        subtitle={todayLabel}
-        sessionState={sessionState}
-        commonData={commonData}
-      />
+      <>
+        <StaffDashboard
+          compact
+          greeting={greetingForNow()}
+          firstName={ctx.fullName.split(" ")[0] ?? "there"}
+          roleLabel={ctx.roleDisplayName}
+          subtitle={todayLabel}
+          sessionState={sessionState}
+          commonData={commonData}
+        />
+        {calendarRow ? (
+          <div className="pt-4 pb-6">
+            <MonthCalendar
+              title={`${formatMonthLabel(monthKey)} — ${ctx.fullName}`}
+              start={bounds.start}
+              end={bounds.end}
+              days={calendarRow.days}
+              trackingStart={calendarRow.trackingStart}
+              prevHref={`/admin/productivity?view=monthly&employee=${ctx.employeeId}&month=${shiftMonth(monthKey, -1)}`}
+              nextHref={`/admin/productivity?view=monthly&employee=${ctx.employeeId}&month=${shiftMonth(monthKey, 1)}`}
+            />
+          </div>
+        ) : null}
+      </>
     );
   }
 
@@ -57,6 +83,17 @@ export async function AdminDashboardBody({
   const { stats, employees, teamReport, pendingMeetings } = dashboard;
 
   const selected = employees.find((employee) => employee.id === requestedId) ?? null;
+  const monthKey = todayIso().slice(0, 7);
+  const monthBounds = monthStartEnd(monthKey);
+  const calendarRow = selected
+    ? (
+        await getProductivityReport(
+          [{ id: selected.id, full_name: selected.full_name, employee_code: selected.employee_code }],
+          monthBounds.start,
+          monthBounds.end
+        )
+      )[0]
+    : null;
   const session = selected ? watchedSession : null;
   const reportRows = requestedId ? [] : teamReport;
 
@@ -74,6 +111,7 @@ export async function AdminDashboardBody({
   );
 
   return (
+    <>
     <div className="dash-board flex flex-col">
       <DashboardPanel
         hero={
@@ -190,5 +228,25 @@ export async function AdminDashboardBody({
         }
       />
     </div>
+      {calendarRow ? (
+        <div className="pb-6">
+          <MonthCalendar
+            title={`${formatMonthLabel(monthKey)} — ${calendarRow.employee.full_name}`}
+            start={monthBounds.start}
+            end={monthBounds.end}
+            days={calendarRow.days}
+            trackingStart={calendarRow.trackingStart}
+            prevHref={`/admin/productivity?view=monthly&employee=${calendarRow.employee.id}&month=${shiftMonth(monthKey, -1)}`}
+            nextHref={`/admin/productivity?view=monthly&employee=${calendarRow.employee.id}&month=${shiftMonth(monthKey, 1)}`}
+          />
+        </div>
+      ) : null}
+    </>
   );
+}
+
+function shiftMonth(yyyyMm: string, delta: number) {
+  const [year, month] = yyyyMm.split("-").map(Number);
+  const date = new Date(Date.UTC(year, month - 1 + delta, 1));
+  return date.toISOString().slice(0, 7);
 }

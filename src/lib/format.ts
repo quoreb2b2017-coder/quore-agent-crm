@@ -1,3 +1,5 @@
+import { formatMinutesLabel, getWorkSettings, shiftSpansMidnight, timeZoneShort } from "@/lib/work-settings";
+
 export function initials(name: string) {
   return name
     .split(" ")
@@ -87,8 +89,9 @@ export function usShiftWindowLabel(date = new Date()) {
   return `${formatTimeInZone(start, US_TIME_ZONE)} – ${formatTimeInZone(end, US_TIME_ZONE)} ET`;
 }
 
-export function shiftWindowLabel(date = new Date()) {
-  return `${usShiftWindowLabel(date)} · ${SHIFT_WINDOW_IST_LABEL}`;
+export function shiftWindowLabel(_date = new Date()) {
+  const settings = getWorkSettings();
+  return `${formatMinutesLabel(settings.loginMinutes)} – ${formatMinutesLabel(settings.logoutMinutes)} · ${timeZoneShort(settings.timeZone)}`;
 }
 
 export function formatDate(value: string | Date): string {
@@ -103,16 +106,22 @@ export function formatDate(value: string | Date): string {
 
 export function formatDateTime(value: string | Date): string {
   const date = asDate(value);
-  return `${date.toLocaleDateString("en-US", {
+  const zone = getWorkSettings().timeZone;
+  const main = `${date.toLocaleDateString("en-US", {
     month: "short",
     day: "numeric",
-    timeZone: US_TIME_ZONE,
-  })}, ${formatTimeInZone(date, US_TIME_ZONE)} ET · ${formatTimeInZone(date, INDIA_TIME_ZONE)} IST`;
+    timeZone: zone,
+  })}, ${formatTimeInZone(date, zone)} ${timeZoneShort(zone)}`;
+  if (zone === US_TIME_ZONE) return main;
+  return `${main} · ${formatTimeInZone(date, US_TIME_ZONE)} ET`;
 }
 
 export function formatTime(value: string | Date): string {
   const date = asDate(value);
-  return `${formatTimeInZone(date, US_TIME_ZONE)} ET · ${formatTimeInZone(date, INDIA_TIME_ZONE)} IST`;
+  const zone = getWorkSettings().timeZone;
+  const main = `${formatTimeInZone(date, zone)} ${timeZoneShort(zone)}`;
+  if (zone === US_TIME_ZONE) return main;
+  return `${main} · ${formatTimeInZone(date, US_TIME_ZONE)} ET`;
 }
 
 export function formatCompactTime(value: string | Date): string {
@@ -223,11 +232,21 @@ export function formatMonthLabel(yyyyMm: string): string {
   });
 }
 
-/** Shift date in IST: 12:00 AM–3:29 AM still belongs to the previous day's 6:30 PM shift. */
+export function calendarDateInZone(date: Date, timeZone: string): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(date);
+}
+
+/** Shift date: before logout on an overnight shift still belongs to the previous day. */
 export function todayIso(date = new Date()): string {
-  const minutes = minutesInTimeZone(date, INDIA_TIME_ZONE);
-  const calendar = calendarDateIsoIst(date);
-  if (minutes < INDIA_LOGOUT_MINUTES) return addDaysIso(calendar, -1);
+  const settings = getWorkSettings();
+  const minutes = minutesInTimeZone(date, settings.timeZone);
+  const calendar = calendarDateInZone(date, settings.timeZone);
+  if (shiftSpansMidnight(settings) && minutes < settings.logoutMinutes) return addDaysIso(calendar, -1);
   return calendar;
 }
 

@@ -1,6 +1,7 @@
 import { createDataClient as createClient } from "@/lib/supabase/data";
 import { createServiceClient } from "@/lib/supabase/service";
 import { shiftDateIso, todayIso } from "@/lib/format";
+import { formatMinutesLabel, getWorkSettings } from "@/lib/work-settings";
 import { dailyActiveSeconds } from "@/lib/live-time";
 import {
   breakDurationSeconds,
@@ -8,6 +9,7 @@ import {
   breakSecondsBySlot,
   addExcess,
   emptyExcess,
+  isLateClockIn,
   PRODUCTIVE_SECONDS,
   shiftAccountingWindowUtc,
   TRACKING_START_DATE,
@@ -32,6 +34,8 @@ export type ProductivityDay = {
   status: DayStatus;
   /** Off reason when status is "off" (leave or holiday). */
   offStatus: string | null;
+  /** Stored attendance status, including LATE. */
+  attendanceStatus: string | null;
 };
 
 export type ProductivityRow = {
@@ -150,6 +154,31 @@ async function loadAttendance(employeeIds: string[], start: string, end: string)
   return rows;
 }
 
+/** Marks Present rows whose clock-in is after the shift login time as Late. */
+async function syncLateClockIns(employeeIds: string[], start: string, end: string) {
+  if (employeeIds.length === 0) return;
+  const service = createServiceClient();
+  const { data } = await service
+    .from("attendance")
+    .select("id, first_check_in")
+    .in("employee_id", employeeIds)
+    .gte("attendance_date", start)
+    .lte("attendance_date", end)
+    .eq("status", "PRESENT")
+    .not("first_check_in", "is", null);
+  const lateIds = (data ?? [])
+    .filter((row) => row.first_check_in && isLateClockIn(row.first_check_in))
+    .map((row) => row.id);
+  if (lateIds.length === 0) return;
+  await service
+    .from("attendance")
+    .update({
+      status: "LATE",
+      notes: `Late after ${formatMinutesLabel(getWorkSettings().loginMinutes)}`,
+    })
+    .in("id", lateIds);
+}
+
 export async function getProductivityReport(
   employees: { id: string; full_name: string; employee_code: string }[],
   start: string,
@@ -158,6 +187,7 @@ export async function getProductivityReport(
   if (employees.length === 0) return [];
   const today = todayIso();
   const ids = employees.map((employee) => employee.id);
+  await syncLateClockIns(ids, start, end);
   const supabase = await createClient();
   const [attendance, live, { data: joining }, excessByEmployee] = await Promise.all([
     loadAttendance(ids, start, end),
@@ -212,6 +242,7 @@ export async function getProductivityReport(
         breakExcess: excessByDate?.get(date) ?? emptyExcess(),
         status,
         offStatus: off,
+        attendanceStatus: row?.status ?? null,
       };
     });
 

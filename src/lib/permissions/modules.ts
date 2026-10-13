@@ -111,6 +111,14 @@ export const ADMIN_MODULES: ModuleDefinition[] = [
   },
   { key: "leave", label: "Leave Management", href: "/admin/leave", icon: "calendar", group: "hr" },
   { key: "notifications", label: "Notifications", href: "/admin/notifications", icon: "bell", group: "account" },
+  {
+    key: "work-settings",
+    label: "Work settings",
+    href: "/admin/work-settings",
+    icon: "settings",
+    group: "account",
+    rolesOnly: ["SUPER_ADMIN"],
+  },
   { key: "profile", label: "Profile", href: "/admin/settings", icon: "user", group: "account" },
   { key: "password", label: "Update password", href: "/admin/password", icon: "key", group: "account" },
 ];

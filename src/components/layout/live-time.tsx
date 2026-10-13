@@ -5,14 +5,12 @@ import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import {
   greetingForNow,
-  INDIA_LOGIN_TIME,
   INDIA_TIME_ZONE,
-  SHIFT_WINDOW_IST_LABEL,
   US_TIME_ZONE,
   shiftWindowLabel,
-  usShiftWindowLabel,
 } from "@/lib/format";
 import { shiftCountdown } from "@/lib/shift";
+import { formatMinutesLabel, getWorkSettings, shiftLengthMinutes, timeZoneShort } from "@/lib/work-settings";
 
 function formatTime(now: Date, timeZone: string, withSeconds = true) {
   return now.toLocaleTimeString("en-IN", {
@@ -80,7 +78,9 @@ export function DualOfficeClocks({
   pills?: boolean;
 }) {
   const now = useNow();
-  const india = now ? formatTime(now, INDIA_TIME_ZONE, !pills) : pills ? "--:--" : "--:--:--";
+  const shiftZone = getWorkSettings().timeZone;
+  const shiftLabel = timeZoneShort(shiftZone);
+  const india = now ? formatTime(now, shiftZone, !pills) : pills ? "--:--" : "--:--:--";
   const us = now ? formatTime(now, US_TIME_ZONE, !pills) : pills ? "--:--" : "--:--:--";
 
   async function copy(label: string, value: string) {
@@ -98,12 +98,12 @@ export function DualOfficeClocks({
       <div className={cn("flex items-center gap-1.5", className)}>
         <button
           type="button"
-          onClick={() => copy("India", `${india} IST`)}
+          onClick={() => copy(shiftLabel, `${india} ${shiftLabel}`)}
           disabled={!now}
           className="hidden items-center gap-1.5 rounded-md px-1.5 py-1 text-xs text-muted-foreground transition hover:bg-muted hover:text-foreground disabled:opacity-70 sm:inline-flex"
-          title="Copy India time"
+          title={`Copy ${shiftLabel} time`}
         >
-          <span className="font-medium">IST</span>
+          <span className="font-medium">{shiftLabel}</span>
           <span className="font-medium tabular-nums text-foreground">{india}</span>
         </button>
         <button
@@ -125,11 +125,11 @@ export function DualOfficeClocks({
       <div className={cn("grid grid-cols-2 gap-3", className)}>
         <button
           type="button"
-          onClick={() => copy("India", `${india} IST`)}
+          onClick={() => copy(shiftLabel, `${india} ${shiftLabel}`)}
           disabled={!now}
           className="rounded-xl border border-white/10 bg-white/8 p-3 text-left transition hover:-translate-y-0.5 hover:bg-white/14 hover:shadow-lg disabled:hover:translate-y-0"
         >
-          <p className="text-[10px] font-medium tracking-wide text-white/55 uppercase">India · IST</p>
+          <p className="text-[10px] font-medium tracking-wide text-white/55 uppercase">Shift · {shiftLabel}</p>
           <p className="mt-1 text-lg font-semibold tracking-tight tabular-nums">{india}</p>
         </button>
         <button
@@ -153,10 +153,10 @@ export function DualOfficeClocks({
       )}
     >
       {stacked ? (
-        <p className="text-xs opacity-80">{now ? formatDate(now, INDIA_TIME_ZONE) : "—"}</p>
+        <p className="text-xs opacity-80">{now ? formatDate(now, getWorkSettings().timeZone) : "—"}</p>
       ) : null}
       <p className="tabular-nums">
-        <span className="font-medium">India</span> {india} IST
+        <span className="font-medium">{timeZoneShort(getWorkSettings().timeZone)}</span> {india}
       </p>
       {stacked ? null : <span className="hidden text-current/40 sm:inline">·</span>}
       <p className="tabular-nums">
@@ -174,24 +174,25 @@ export function ShiftCountdown({ className }: { className?: string }) {
   const hours = Math.floor(minutesRemaining / 60);
   const minutes = minutesRemaining % 60;
   const until = hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m`;
+  const shiftMinutes = shiftLengthMinutes();
   const pct = !now
     ? 0
     : open
-      ? Math.min(100, ((9 * 60 - minutesRemaining) / (9 * 60)) * 100)
+      ? Math.min(100, ((shiftMinutes - minutesRemaining) / shiftMinutes) * 100)
       : 0;
 
   return (
     <div className={cn("rounded-xl border border-white/10 bg-white/8 p-3", className)}>
       <div className="flex items-center justify-between gap-3 text-sm">
-        <span className="text-white/70">US office hours</span>
-        <span className="font-semibold text-white">{usShiftWindowLabel(now ?? undefined)}</span>
+        <span className="text-white/70">Shift hours</span>
+        <span className="font-semibold text-white">{shiftWindowLabel(now ?? undefined)}</span>
       </div>
       <p className="mt-1.5 text-xs text-white/60">
         {!now
-          ? `${usShiftWindowLabel()} · ${SHIFT_WINDOW_IST_LABEL}`
+          ? shiftWindowLabel()
           : open
             ? `Shift is open — ${shiftWindowLabel(now)} · ${until} left`
-            : `Shift starts in ${until} (${INDIA_LOGIN_TIME} IST / ${usShiftWindowLabel(now)} start)`}
+            : `Shift starts in ${until} (${formatMinutesLabel(getWorkSettings().loginMinutes)})`}
       </p>
       <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-white/15">
         <div

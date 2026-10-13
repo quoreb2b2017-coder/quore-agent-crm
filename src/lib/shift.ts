@@ -1,12 +1,16 @@
 import {
   addDaysIso,
-  INDIA_LOGIN_MINUTES,
-  INDIA_LOGOUT_MINUTES,
-  INDIA_TIME_ZONE,
   minutesInTimeZone,
   shiftDateIso,
   todayIso,
 } from "@/lib/format";
+import {
+  formatMinutesLabel,
+  getWorkSettings,
+  shiftSpansMidnight,
+  wallToUtc,
+  zonedWallToUtc,
+} from "@/lib/work-settings";
 
 /** Productivity targets are counted from this shift date onward. */
 export const TRACKING_START_DATE = "2026-10-01";
@@ -55,21 +59,21 @@ export function breakSecondsBySlot(
   return totals;
 }
 
-const IST_OFFSET_MS = (5 * 60 + 30) * 60 * 1000;
-
+/** Wall time on a shift calendar date, in the admin's time zone. */
 export function istLocalToUtc(dateIso: string, hour: number, minute: number, second = 0): Date {
-  const [year, month, day] = dateIso.slice(0, 10).split("-").map(Number);
-  return new Date(Date.UTC(year, month - 1, day, hour, minute, second) - IST_OFFSET_MS);
+  return zonedWallToUtc(dateIso, hour, minute, getWorkSettings().timeZone, second);
 }
 
 export function shiftWindowUtc(shiftDate = todayIso()): { start: Date; end: Date } {
+  const settings = getWorkSettings();
+  const endDate = shiftSpansMidnight(settings) ? addDaysIso(shiftDate, 1) : shiftDate;
   return {
-    start: istLocalToUtc(shiftDate, 18, 30),
-    end: istLocalToUtc(addDaysIso(shiftDate, 1), 3, 30),
+    start: wallToUtc(shiftDate, settings.loginMinutes, settings.timeZone),
+    end: wallToUtc(endDate, settings.logoutMinutes, settings.timeZone),
   };
 }
 
-/** After 7:00 PM IST the employee is late; they can still log in. */
+/** Kept for older labels. Prefer `formatMinutesLabel(getWorkSettings().lateMinutes)`. */
 export const INDIA_LATE_MINUTES = 19 * 60;
 export const INDIA_LATE_TIME = "7:00 PM";
 
@@ -148,36 +152,58 @@ export function breakPoolLeftSeconds(used: Record<BreakSlot, number>, washroomSe
   return Math.max(0, BREAK_TOTAL_SECONDS - withinSlots - Math.max(0, washroomSeconds));
 }
 
+/** True when the clock-in is after the shift login time in the configured time zone. */
 export function isLateClockIn(at: Date | string = new Date()) {
   const date = typeof at === "string" ? new Date(at) : at;
+  const settings = getWorkSettings();
   const shiftDate = shiftDateIso(date);
-  return date.getTime() > istLocalToUtc(shiftDate, 19, 0).getTime();
+  return date.getTime() > wallToUtc(shiftDate, settings.loginMinutes, settings.timeZone).getTime();
 }
 
-/** 3:30 AM on the shift date through 3:30 AM the next day — includes early login. */
+/** From logout (or midnight) on the shift date through the next boundary — includes early login. */
 export function shiftAccountingWindowUtc(shiftDate = todayIso()): { start: Date; end: Date } {
+  const settings = getWorkSettings();
+  if (!shiftSpansMidnight(settings)) {
+    return {
+      start: wallToUtc(shiftDate, 0, settings.timeZone),
+      end: wallToUtc(addDaysIso(shiftDate, 1), 0, settings.timeZone),
+    };
+  }
   return {
-    start: istLocalToUtc(shiftDate, 3, 30),
-    end: istLocalToUtc(addDaysIso(shiftDate, 1), 3, 30),
+    start: wallToUtc(shiftDate, settings.logoutMinutes, settings.timeZone),
+    end: wallToUtc(addDaysIso(shiftDate, 1), settings.logoutMinutes, settings.timeZone),
   };
 }
 
 export function isInShiftWindow(date = new Date()): boolean {
-  const minutes = minutesInTimeZone(date, INDIA_TIME_ZONE);
-  return minutes >= INDIA_LOGIN_MINUTES || minutes < INDIA_LOGOUT_MINUTES;
+  const settings = getWorkSettings();
+  const minutes = minutesInTimeZone(date, settings.timeZone);
+  if (shiftSpansMidnight(settings)) {
+    return minutes >= settings.loginMinutes || minutes < settings.logoutMinutes;
+  }
+  return minutes >= settings.loginMinutes && minutes < settings.logoutMinutes;
 }
 
 export function shiftCountdown(date = new Date()): { open: boolean; minutesRemaining: number } {
-  const minutes = minutesInTimeZone(date, INDIA_TIME_ZONE);
-  const open = minutes >= INDIA_LOGIN_MINUTES || minutes < INDIA_LOGOUT_MINUTES;
+  const settings = getWorkSettings();
+  const minutes = minutesInTimeZone(date, settings.timeZone);
+  const { loginMinutes: login, logoutMinutes: logout } = settings;
+  const overnight = shiftSpansMidnight(settings);
+  const open = overnight ? minutes >= login || minutes < logout : minutes >= login && minutes < logout;
   if (open) {
-    const minutesRemaining =
-      minutes >= INDIA_LOGIN_MINUTES
-        ? 24 * 60 - minutes + INDIA_LOGOUT_MINUTES
-        : INDIA_LOGOUT_MINUTES - minutes;
+    const minutesRemaining = overnight
+      ? minutes >= login
+        ? 24 * 60 - minutes + logout
+        : logout - minutes
+      : logout - minutes;
     return { open, minutesRemaining };
   }
-  return { open, minutesRemaining: INDIA_LOGIN_MINUTES - minutes };
+  const minutesRemaining = minutes < login ? login - minutes : 24 * 60 - minutes + login;
+  return { open, minutesRemaining };
+}
+
+export function shiftLengthLabel() {
+  return formatMinutesLabel(getWorkSettings().loginMinutes);
 }
 
 export function allottedBreakSeconds(breakType: string, remainingSeconds?: number): number {
@@ -250,7 +276,7 @@ export function toDatetimeLocalIst(iso: string | null | undefined): string {
   if (!iso) return "";
   const date = new Date(iso);
   const parts = new Intl.DateTimeFormat("en-CA", {
-    timeZone: INDIA_TIME_ZONE,
+    timeZone: getWorkSettings().timeZone,
     year: "numeric",
     month: "2-digit",
     day: "2-digit",

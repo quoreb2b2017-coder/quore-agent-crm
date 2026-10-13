@@ -6,9 +6,12 @@ import { createDataClient as createClient } from "@/lib/supabase/data";
 import { getCurrentEmployeeContext, isSuperAdmin } from "@/lib/permissions/server";
 import { insertAndEmitNotification } from "@/lib/realtime/notify";
 import { eachDateInclusive, isWeekendIso, todayIso } from "@/lib/format";
-import { ANNUAL_PAID_LEAVE_DAYS, isUndecidedLeaveType, leaveDaysCount, packLeaveNote, UNDECIDED_LEAVE_TYPE } from "@/lib/leave";
-import { getPaidLeaveQuota } from "@/lib/queries/leave";
+import { isUndecidedLeaveType, leaveDaysCount, packLeaveNote, UNDECIDED_LEAVE_TYPE } from "@/lib/leave";
+import { getLeaveBalanceRows, getPaidLeaveQuota, primaryPaidLeaveTypeId } from "@/lib/queries/leave";
+import { listWatchableEmployees } from "@/lib/queries/admin-dashboard";
+import { loadWorkSettings } from "@/lib/work-settings-server";
 import { ensureWeekendOff } from "@/lib/attendance-weekend";
+import { closeWorkSession } from "@/lib/actions/attendance";
 
 function revalidateLeave() {
   revalidatePath("/admin/leave");
@@ -17,43 +20,6 @@ function revalidateLeave() {
   revalidatePath("/portal/attendance");
   revalidatePath("/admin/dashboard");
   revalidatePath("/portal/dashboard");
-}
-
-async function endOpenSession(
-  supabase: Awaited<ReturnType<typeof createClient>>,
-  employeeId: string
-) {
-  const { data: session } = await supabase
-    .from("employee_sessions")
-    .select("id")
-    .eq("employee_id", employeeId)
-    .eq("status", "ACTIVE")
-    .maybeSingle();
-  if (!session) return;
-
-  const now = new Date().toISOString();
-  const { data: openBreak } = await supabase
-    .from("breaks")
-    .select("id, started_at")
-    .eq("session_id", session.id)
-    .is("ended_at", null)
-    .maybeSingle();
-
-  if (openBreak) {
-    const durationSeconds = Math.max(
-      0,
-      Math.floor((Date.now() - new Date(openBreak.started_at).getTime()) / 1000)
-    );
-    await supabase
-      .from("breaks")
-      .update({ ended_at: now, duration_seconds: durationSeconds })
-      .eq("id", openBreak.id);
-  }
-
-  await supabase
-    .from("employee_sessions")
-    .update({ ended_at: now, status: "ENDED" })
-    .eq("id", session.id);
 }
 
 async function applyApprovedLeave(
@@ -78,6 +44,11 @@ async function applyApprovedLeave(
   const notes = `${payLabel}: ${typeName}`;
   const dates = eachDateInclusive(request.start_date, request.end_date);
 
+  if (dates.includes(todayIso())) {
+    const closed = await closeWorkSession(request.employee_id, "ENDED");
+    if (closed.error) return { error: closed.error, paid, typeName, payLabel };
+  }
+
   for (const attendanceDate of dates) {
     if (isWeekendIso(attendanceDate)) {
       await ensureWeekendOff(supabase, request.employee_id, attendanceDate);
@@ -92,18 +63,20 @@ async function applyApprovedLeave(
       .maybeSingle();
 
     if (existing) {
-      await supabase
+      const { error } = await supabase
         .from("attendance")
         .update({ status: "ON_LEAVE", notes, source: "AUTO" })
         .eq("id", existing.id);
+      if (error) return { error: error.message, paid, typeName, payLabel };
     } else {
-      await supabase.from("attendance").insert({
+      const { error } = await supabase.from("attendance").insert({
         employee_id: request.employee_id,
         attendance_date: attendanceDate,
         status: "ON_LEAVE",
         notes,
         source: "AUTO",
       });
+      if (error) return { error: error.message, paid, typeName, payLabel };
     }
   }
 
@@ -118,25 +91,25 @@ async function applyApprovedLeave(
     .maybeSingle();
 
   if (balance) {
-    await supabase
+    const { error } = await supabase
       .from("leave_balances")
       .update({ used_days: Number(balance.used_days) + days })
       .eq("id", balance.id);
+    if (error) return { error: error.message, paid, typeName, payLabel };
   } else {
-    await supabase.from("leave_balances").insert({
+    const { error } = await supabase.from("leave_balances").insert({
       employee_id: request.employee_id,
       leave_type_id: request.leave_type_id,
       year,
-      allocated_days: paid ? ANNUAL_PAID_LEAVE_DAYS : Number(leaveType?.default_annual_days ?? 0),
+      allocated_days: paid
+        ? (await loadWorkSettings()).annualPaidLeaveDays
+        : Number(leaveType?.default_annual_days ?? 0),
       used_days: days,
     });
+    if (error) return { error: error.message, paid, typeName, payLabel };
   }
 
-  if (dates.includes(todayIso())) {
-    await endOpenSession(supabase, request.employee_id);
-  }
-
-  return { paid, typeName, payLabel };
+  return { error: undefined, paid, typeName, payLabel };
 }
 
 export async function reviewLeaveRequest(
@@ -175,26 +148,13 @@ export async function reviewLeaveRequest(
         year,
         people: 1,
       });
-      if (quota.used + Number(request.days_count) > ANNUAL_PAID_LEAVE_DAYS) {
-        const left = Math.max(0, ANNUAL_PAID_LEAVE_DAYS - quota.used);
-        return { error: `Only ${left} of ${ANNUAL_PAID_LEAVE_DAYS} paid days remaining this year.` };
+      if (quota.used + Number(request.days_count) > quota.available) {
+        const left = Math.max(0, quota.available - quota.used);
+        return { error: `Only ${left} of ${quota.available} paid days remaining this year.` };
       }
     }
     assignedTypeId = leaveType.id;
   }
-
-  const { error } = await supabase
-    .from("leave_requests")
-    .update({
-      status: decision,
-      leave_type_id: assignedTypeId,
-      reviewed_by: ctx.employeeId,
-      reviewed_at: new Date().toISOString(),
-    })
-    .eq("id", requestId)
-    .eq("status", "PENDING");
-
-  if (error) return { error: error.message };
 
   let body = `Your leave request was ${decision.toLowerCase()}.`;
   let title = decision === "APPROVED" ? "Leave approved" : "Leave rejected";
@@ -204,16 +164,36 @@ export async function reviewLeaveRequest(
       ...request,
       leave_type_id: assignedTypeId,
     });
+    if (applied.error) return { error: applied.error };
     title = `${applied.payLabel} leave approved`;
     body = `Your ${applied.typeName} (${applied.payLabel.toLowerCase()}) was approved. Working days are marked on leave; Saturday and Sunday stay week off.`;
   }
 
-  await insertAndEmitNotification({
-    employeeId: request.employee_id,
-    type: "LEAVE_UPDATE",
-    title,
-    body,
-  });
+  const { data: updated, error } = await supabase
+    .from("leave_requests")
+    .update({
+      status: decision,
+      leave_type_id: assignedTypeId,
+      reviewed_by: ctx.employeeId,
+      reviewed_at: new Date().toISOString(),
+    })
+    .eq("id", requestId)
+    .eq("status", "PENDING")
+    .select("id");
+
+  if (error) return { error: error.message };
+  if (!updated?.length) return { error: "Could not save this decision. Refresh the page and try again." };
+
+  try {
+    await insertAndEmitNotification({
+      employeeId: request.employee_id,
+      type: "LEAVE_UPDATE",
+      title,
+      body,
+    });
+  } catch {
+    /* the decision is already saved */
+  }
 
   revalidateLeave();
   return {};
@@ -381,6 +361,91 @@ export async function deleteLeaveRequest(requestId: string) {
     body: "A Super Admin deleted your leave request.",
   });
 
+  revalidateLeave();
+  return {};
+}
+
+async function saveAllocatedDays(
+  rows: { employeeId: string; allocated: number }[],
+  year: number
+): Promise<{ error?: string }> {
+  const typeId = await primaryPaidLeaveTypeId();
+  if (!typeId) return { error: "Add a paid leave type before changing balances." };
+  if (rows.length === 0) return {};
+  const supabase = await createClient();
+  const ids = rows.map((row) => row.employeeId);
+  const { data: existing, error: loadError } = await supabase
+    .from("leave_balances")
+    .select("id, employee_id")
+    .eq("leave_type_id", typeId)
+    .eq("year", year)
+    .in("employee_id", ids);
+  if (loadError) return { error: loadError.message };
+
+  const byEmployee = new Map((existing ?? []).map((row) => [row.employee_id, row.id]));
+  for (const row of rows) {
+    const balanceId = byEmployee.get(row.employeeId);
+    if (balanceId) {
+      const { error } = await supabase
+        .from("leave_balances")
+        .update({ allocated_days: row.allocated })
+        .eq("id", balanceId);
+      if (error) return { error: error.message };
+    } else {
+      const { error } = await supabase.from("leave_balances").insert({
+        employee_id: row.employeeId,
+        leave_type_id: typeId,
+        year,
+        allocated_days: row.allocated,
+        used_days: 0,
+      });
+      if (error) return { error: error.message };
+    }
+  }
+  return {};
+}
+
+/** Sets how many paid days are left. Days already approved stay counted as used. */
+export async function setLeaveRemaining(
+  employeeId: string,
+  year: number,
+  remaining: number
+): Promise<{ error?: string }> {
+  const ctx = await getCurrentEmployeeContext();
+  if (!ctx || !isSuperAdmin(ctx.roleKey)) return { error: "Not authorized" };
+  if (!Number.isFinite(remaining) || remaining < 0 || remaining > 366) {
+    return { error: "Remaining days must be between 0 and 366." };
+  }
+  const [row] = await getLeaveBalanceRows(
+    [{ id: employeeId, full_name: "", employee_code: "" }],
+    year
+  );
+  const saved = await saveAllocatedDays(
+    [{ employeeId, allocated: (row?.used ?? 0) + remaining }],
+    year
+  );
+  if (saved.error) return saved;
+  revalidateLeave();
+  return {};
+}
+
+/** Gives every employee the same number of paid days left. */
+export async function setLeaveRemainingForAll(
+  year: number,
+  remaining: number
+): Promise<{ error?: string }> {
+  const ctx = await getCurrentEmployeeContext();
+  if (!ctx || !isSuperAdmin(ctx.roleKey)) return { error: "Not authorized" };
+  if (!Number.isFinite(remaining) || remaining < 0 || remaining > 366) {
+    return { error: "Remaining days must be between 0 and 366." };
+  }
+  const employees = await listWatchableEmployees();
+  const rows = await getLeaveBalanceRows(employees, year);
+  const saved = await saveAllocatedDays(
+    rows.map((row) => ({ employeeId: row.employeeId, allocated: row.used + remaining })),
+    year
+  );
+  if (saved.error) return saved;
   revalidateLeave();
   return {};
 }

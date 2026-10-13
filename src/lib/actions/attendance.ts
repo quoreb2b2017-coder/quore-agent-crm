@@ -21,6 +21,7 @@ import {
   type PolicyBreakType,
 } from "@/lib/shift";
 import { ADMIN_LOGOUT_TYPE, insertAndEmitNotification, notifySuperAdmins } from "@/lib/realtime/notify";
+import { formatMinutesLabel, getWorkSettings } from "@/lib/work-settings";
 
 type Result = { error?: string; activated?: boolean; skipped?: boolean };
 
@@ -83,9 +84,11 @@ async function markPresent(
   const row = await attendanceForShift(supabase, employeeId, shiftDate);
   if (row && BLOCKED_CLOCK_STATUSES.has(row.status)) return row;
   const now = new Date();
-  // Keep what is already recorded (e.g. Half day set by admin); only a new or Absent row is re-marked.
-  const status =
-    row && row.status !== "ABSENT" ? row.status : isLateClockIn(now) ? "LATE" : "PRESENT";
+  const checkInAt = row?.first_check_in ?? now.toISOString();
+  const late = isLateClockIn(checkInAt);
+  // Half day, leave, holiday, and week off stay as the admin set them.
+  const locked = row && row.status !== "ABSENT" && row.status !== "PRESENT" && row.status !== "LATE";
+  const status = locked ? row.status : late ? "LATE" : "PRESENT";
 
   if (!row) {
     const payload = {
@@ -93,7 +96,10 @@ async function markPresent(
       attendance_date: shiftDate,
       status,
       first_check_in: now.toISOString(),
-      notes: status === "LATE" ? "Late after 7:00 PM IST" : null,
+      notes:
+        status === "LATE"
+          ? `Late after ${formatMinutesLabel(getWorkSettings().loginMinutes)}`
+          : null,
     };
     const { data: created, error } = await supabase
       .from("attendance")
@@ -118,6 +124,9 @@ async function markPresent(
     .update({
       status,
       first_check_in: row.first_check_in ?? now.toISOString(),
+      ...(status === "LATE" && row.status !== "LATE"
+        ? { notes: `Late after ${formatMinutesLabel(getWorkSettings().loginMinutes)}` }
+        : {}),
     })
     .eq("id", row.id);
 
@@ -220,17 +229,18 @@ export async function clockIn(): Promise<Result> {
     return { skipped: true };
   }
 
-  const existingAttendance = await attendanceForShift(supabase, ctx.employeeId, shiftDate);
+  const [existingAttendance, { data: existingActive }] = await Promise.all([
+    attendanceForShift(supabase, ctx.employeeId, shiftDate),
+    supabase
+      .from("employee_sessions")
+      .select("id")
+      .eq("employee_id", ctx.employeeId)
+      .eq("status", "ACTIVE")
+      .maybeSingle(),
+  ]);
   if (existingAttendance && BLOCKED_CLOCK_STATUSES.has(existingAttendance.status)) {
     return { activated: false, skipped: true };
   }
-
-  const { data: existingActive } = await supabase
-    .from("employee_sessions")
-    .select("id")
-    .eq("employee_id", ctx.employeeId)
-    .eq("status", "ACTIVE")
-    .maybeSingle();
 
   if (existingActive) {
     try {
@@ -300,14 +310,17 @@ export async function clockOut(): Promise<Result> {
     .maybeSingle();
   if (!session) return {};
 
-  const { data: openBreak } = await supabase
-    .from("breaks")
-    .select("id")
-    .eq("session_id", session.id)
-    .is("ended_at", null)
-    .maybeSingle();
+  const [{ data: openBreak }, washroomOpen] = await Promise.all([
+    supabase
+      .from("breaks")
+      .select("id")
+      .eq("session_id", session.id)
+      .is("ended_at", null)
+      .maybeSingle(),
+    hasOpenWashroom(ctx.employeeId),
+  ]);
   if (openBreak) return { error: "End your current break before clocking out." };
-  if (await hasOpenWashroom(ctx.employeeId)) {
+  if (washroomOpen) {
     return { error: "End washroom before clocking out." };
   }
 
@@ -436,24 +449,25 @@ export async function startBreak(breakType: PolicyBreakType): Promise<Result> {
 
   if (!session) return { error: "Clock in before starting a break." };
 
-  const { data: openBreak } = await supabase
-    .from("breaks")
-    .select("id")
-    .eq("session_id", session.id)
-    .is("ended_at", null)
-    .maybeSingle();
+  const shiftDate = shiftDateIso(new Date(session.started_at));
+  const [{ data: openBreak }, openMeeting, washroomOpen, used] = await Promise.all([
+    supabase
+      .from("breaks")
+      .select("id")
+      .eq("session_id", session.id)
+      .is("ended_at", null)
+      .maybeSingle(),
+    openMeetingRow(ctx.employeeId),
+    hasOpenWashroom(ctx.employeeId),
+    usedShiftBreakSeconds(supabase, ctx.employeeId, shiftDate),
+  ]);
 
   if (openBreak) return { error: "You already have a break in progress." };
-
-  const openMeeting = await openMeetingRow(ctx.employeeId);
   if (openMeeting?.started_at) return { error: "End your meeting before starting a break." };
   if (openMeeting) return { error: "Cancel or wait for the meeting request before starting a break." };
-  if (await hasOpenWashroom(ctx.employeeId)) {
+  if (washroomOpen) {
     return { error: "End washroom before starting a break." };
   }
-
-  const shiftDate = shiftDateIso(new Date(session.started_at));
-  const used = await usedShiftBreakSeconds(supabase, ctx.employeeId, shiftDate);
   if (used[breakType] >= slotBudgetSeconds(breakType)) {
     return { error: `${formatBreakType(breakType)} time is finished for this shift.` };
   }
@@ -530,23 +544,26 @@ export async function startMeeting(): Promise<Result> {
     .maybeSingle();
   if (!session) return { error: "Clock in before starting a meeting." };
 
-  const { data: openBreak } = await service
-    .from("breaks")
-    .select("id")
-    .eq("session_id", session.id)
-    .is("ended_at", null)
-    .maybeSingle();
+  const [{ data: openBreak }, washroomOpen, { data: openMeeting, error: lookupError }] =
+    await Promise.all([
+      service
+        .from("breaks")
+        .select("id")
+        .eq("session_id", session.id)
+        .is("ended_at", null)
+        .maybeSingle(),
+      hasOpenWashroom(ctx.employeeId),
+      service
+        .from("meetings")
+        .select("id, started_at")
+        .eq("employee_id", ctx.employeeId)
+        .is("ended_at", null)
+        .maybeSingle(),
+    ]);
   if (openBreak) return { error: "End your break before requesting a meeting." };
-  if (await hasOpenWashroom(ctx.employeeId)) {
+  if (washroomOpen) {
     return { error: "End washroom before requesting a meeting." };
   }
-
-  const { data: openMeeting, error: lookupError } = await service
-    .from("meetings")
-    .select("id, started_at")
-    .eq("employee_id", ctx.employeeId)
-    .is("ended_at", null)
-    .maybeSingle();
   if (lookupError) {
     return { error: "Meeting tracking is not set up yet. Run migration 0018_meetings.sql and 0019_washroom_and_meeting_approval.sql." };
   }
@@ -680,26 +697,26 @@ export async function startWashroom(): Promise<Result> {
     .maybeSingle();
   if (!session) return { error: "Clock in before going to washroom." };
 
-  const { data: openBreak } = await service
-    .from("breaks")
-    .select("id")
-    .eq("session_id", session.id)
-    .is("ended_at", null)
-    .maybeSingle();
+  const [{ data: openBreak }, meeting, { data: open, error: lookupError }] = await Promise.all([
+    service
+      .from("breaks")
+      .select("id")
+      .eq("session_id", session.id)
+      .is("ended_at", null)
+      .maybeSingle(),
+    openMeetingRow(ctx.employeeId),
+    service
+      .from("washroom_visits")
+      .select("id")
+      .eq("employee_id", ctx.employeeId)
+      .is("ended_at", null)
+      .order("started_at", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+  ]);
   if (openBreak) return { error: "End your break before going to washroom." };
-
-  const meeting = await openMeetingRow(ctx.employeeId);
   if (meeting?.started_at) return { error: "End your meeting before going to washroom." };
   if (meeting) return { error: "Cancel or wait for the meeting request first." };
-
-  const { data: open, error: lookupError } = await service
-    .from("washroom_visits")
-    .select("id")
-    .eq("employee_id", ctx.employeeId)
-    .is("ended_at", null)
-    .order("started_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
   if (lookupError) {
     return { error: "Washroom tracking is not set up yet. Run migration 0019_washroom_and_meeting_approval.sql." };
   }

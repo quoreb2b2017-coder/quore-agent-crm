@@ -13,7 +13,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { calendarDateIsoIst, formatDate } from "@/lib/format";
+import { formatDate, todayIso } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { isUndecidedLeaveType, unpackLeaveNote } from "@/lib/leave";
 import { getPaidLeaveQuota } from "@/lib/queries/leave";
@@ -32,7 +32,7 @@ export default async function MyLeavePage() {
   if (!ctx) return null;
 
   const supabase = await createClient();
-  const year = Number(calendarDateIsoIst().slice(0, 4));
+  const year = Number(todayIso().slice(0, 4));
 
   const [{ data: leaveTypes }, { data: requests }, quota] = await Promise.all([
     supabase.from("leave_types").select("id, name, is_paid").order("name"),
@@ -50,7 +50,7 @@ export default async function MyLeavePage() {
     <div className="flex flex-col gap-6">
       <PageHeader
         title="Leave"
-        description="18 paid days each year. Saturday and Sunday are week off and are not deducted."
+        description={`${quota.available} paid days this year, ${quota.remaining} left. Saturday and Sunday are week off and are not deducted.`}
         actions={<ApplyLeaveDialog />}
       />
 

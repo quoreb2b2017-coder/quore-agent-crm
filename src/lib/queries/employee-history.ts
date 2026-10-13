@@ -75,7 +75,7 @@ export async function getEmployeeHistory(employeeId: string): Promise<EmployeeHi
   const chartSince = addDaysIso(today, -6);
   const { start, end } = shiftAccountingWindowUtc(today);
   const rangeStart = istLocalToUtc(since, 0, 0).toISOString();
-  const rangeEnd = istLocalToUtc(addDaysIso(today, 1), 3, 30).toISOString();
+  const rangeEnd = end.toISOString();
 
   const service = createServiceClient();
   const [

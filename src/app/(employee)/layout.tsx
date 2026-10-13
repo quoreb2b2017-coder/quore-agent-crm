@@ -1,4 +1,5 @@
 import { Suspense } from "react";
+import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { getAuthUser } from "@/lib/supabase/server";
 import { getCurrentEmployeeContext } from "@/lib/permissions/server";
@@ -27,6 +28,7 @@ export default async function EmployeeLayout({
   }
 
   const modules = filterModules(EMPLOYEE_MODULES, ctx);
+  const sidebarOpen = (await cookies()).get("sidebar_state")?.value !== "false";
 
   return (
     <AppShell
@@ -36,6 +38,7 @@ export default async function EmployeeLayout({
       ctx={ctx}
       profileHref="/portal/profile"
       notificationsHref="/portal/notifications"
+      defaultSidebarOpen={sidebarOpen}
     >
       <Suspense fallback={<DashboardPageSkeleton />}>{children}</Suspense>
     </AppShell>

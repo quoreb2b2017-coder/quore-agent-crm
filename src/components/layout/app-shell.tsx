@@ -20,6 +20,7 @@ export function AppShell({
   ctx,
   profileHref,
   notificationsHref,
+  defaultSidebarOpen = true,
   children,
 }: {
   modules: ModuleDefinition[];
@@ -28,6 +29,7 @@ export function AppShell({
   ctx: EmployeeContext;
   profileHref: string;
   notificationsHref: string;
+  defaultSidebarOpen?: boolean;
   children: ReactNode;
 }) {
   const pathname = usePathname();
@@ -38,6 +40,7 @@ export function AppShell({
     <PermissionsProvider value={ctx}>
       <AppSocketProvider employeeId={ctx.employeeId}>
         <SidebarProvider
+          defaultOpen={defaultSidebarOpen}
           style={{ "--sidebar-width": "17.5rem" } as CSSProperties}
         >
           <AppSidebar modules={modules} brand={brand} ctx={ctx} />

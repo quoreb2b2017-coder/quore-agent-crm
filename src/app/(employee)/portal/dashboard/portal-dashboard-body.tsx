@@ -1,14 +1,26 @@
 import { getCurrentEmployeeContext } from "@/lib/permissions/server";
 import { getEmployeeDashboardBundle } from "@/lib/queries/employee-status";
 import { getCampaignsDashboardData } from "@/lib/queries/employee-dashboard";
+import { getProductivityReport } from "@/lib/queries/productivity-report";
 import { StaffDashboard } from "@/components/dashboards/staff-dashboard";
-import { greetingForNow, INDIA_TIME_ZONE } from "@/lib/format";
+import { MonthCalendar } from "@/components/attendance/month-calendar";
+import { monthStartEnd } from "@/lib/attendance-period";
+import { formatMonthLabel, greetingForNow, INDIA_TIME_ZONE, todayIso } from "@/lib/format";
 
 export async function PortalDashboardBody() {
   const ctx = await getCurrentEmployeeContext();
   if (!ctx) return null;
 
-  const { sessionState, commonData } = await getEmployeeDashboardBundle(ctx.employeeId);
+  const monthKey = todayIso().slice(0, 7);
+  const bounds = monthStartEnd(monthKey);
+  const [{ sessionState, commonData }, calendarRow] = await Promise.all([
+    getEmployeeDashboardBundle(ctx.employeeId),
+    getProductivityReport(
+      [{ id: ctx.employeeId, full_name: ctx.fullName, employee_code: ctx.employeeCode }],
+      bounds.start,
+      bounds.end
+    ).then((rows) => rows[0]),
+  ]);
 
   const marketingData =
     ctx.roleKey === "EMAIL_MARKETING" ? await getCampaignsDashboardData(ctx.employeeId) : null;
@@ -21,6 +33,7 @@ export async function PortalDashboardBody() {
   });
 
   return (
+    <>
     <StaffDashboard
       compact
       greeting={greetingForNow()}
@@ -31,5 +44,25 @@ export async function PortalDashboardBody() {
       commonData={commonData}
       marketingData={marketingData}
     />
+    {calendarRow ? (
+      <div className="pt-4 pb-6">
+        <MonthCalendar
+          title={`${formatMonthLabel(monthKey)} — ${ctx.fullName}`}
+          start={bounds.start}
+          end={bounds.end}
+          days={calendarRow.days}
+          trackingStart={calendarRow.trackingStart}
+          prevHref={`/portal/productivity?month=${shiftMonth(monthKey, -1)}`}
+          nextHref={`/portal/productivity?month=${shiftMonth(monthKey, 1)}`}
+        />
+      </div>
+    ) : null}
+    </>
   );
+}
+
+function shiftMonth(yyyyMm: string, delta: number) {
+  const [year, month] = yyyyMm.split("-").map(Number);
+  const date = new Date(Date.UTC(year, month - 1 + delta, 1));
+  return date.toISOString().slice(0, 7);
 }

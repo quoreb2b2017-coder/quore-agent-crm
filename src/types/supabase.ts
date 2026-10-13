@@ -23,6 +23,26 @@ type Table<Row, Insert, Update = Partial<Insert>> = {
 export interface Database {
   public: {
     Tables: {
+      app_settings: Table<
+        {
+          id: number;
+          time_zone: string;
+          login_minutes: number;
+          logout_minutes: number;
+          late_minutes: number;
+          annual_paid_leave_days: number;
+          updated_at: string;
+        },
+        {
+          id?: number;
+          time_zone?: string;
+          login_minutes?: number;
+          logout_minutes?: number;
+          late_minutes?: number;
+          annual_paid_leave_days?: number;
+          updated_at?: string;
+        }
+      >;
       departments: Table<
         {
           id: string;

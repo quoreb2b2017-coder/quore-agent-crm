@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition, type FormEvent } from "react";
+import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Check, X, Loader2, Pencil, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -37,12 +38,15 @@ export function LeaveAdminActions({
 }) {
   const [open, setOpen] = useState(false);
   const [decideOpen, setDecideOpen] = useState(false);
+  const [decideError, setDecideError] = useState<string | undefined>();
   const [isPending, startTransition] = useTransition();
+  const router = useRouter();
   const { handleSubmit, isPending: isSaving, error } = useActionForm(
     (formData) => updateLeaveRequest(formData),
     () => {
       toast.success("Leave request updated");
       setOpen(false);
+      router.refresh();
     }
   );
 
@@ -50,20 +54,31 @@ export function LeaveAdminActions({
     startTransition(async () => {
       const res = await reviewLeaveRequest(request.id, "REJECTED");
       if (res.error) toast.error(res.error);
-      else toast.success("Leave rejected");
+      else {
+        toast.success("Leave rejected");
+        router.refresh();
+      }
     });
   }
 
   function approve(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const leaveTypeId = String(new FormData(event.currentTarget).get("leaveTypeId") || "");
+    if (!leaveTypeId) {
+      setDecideError("Select paid or unpaid before approving.");
+      return;
+    }
+    setDecideError(undefined);
     startTransition(async () => {
       const res = await reviewLeaveRequest(request.id, "APPROVED", leaveTypeId);
-      if (res.error) toast.error(res.error);
-      else {
-        toast.success("Leave approved");
-        setDecideOpen(false);
+      if (res.error) {
+        setDecideError(res.error);
+        toast.error(res.error);
+        return;
       }
+      toast.success("Leave approved");
+      setDecideOpen(false);
+      router.refresh();
     });
   }
 
@@ -74,7 +89,10 @@ export function LeaveAdminActions({
     startTransition(async () => {
       const res = await deleteLeaveRequest(request.id);
       if (res.error) toast.error(res.error);
-      else toast.success("Leave request deleted");
+      else {
+        toast.success("Leave request deleted");
+        router.refresh();
+      }
     });
   }
 
@@ -86,12 +104,16 @@ export function LeaveAdminActions({
         <>
           <FormSheet
             open={decideOpen}
-            onOpenChange={setDecideOpen}
+            onOpenChange={(next) => {
+              setDecideOpen(next);
+              if (!next) setDecideError(undefined);
+            }}
             title="Decide leave type"
             description="The employee sent a subject and reason. Choose paid or unpaid before approving."
             onSubmit={approve}
             submitLabel="Approve"
             isPending={isPending}
+            error={decideError}
             trigger={
               <Button size="icon-sm" variant="outline" disabled={busy} aria-label="Approve and set leave type">
                 {busy ? <Loader2 className="size-3.5 animate-spin" /> : <Check className="size-3.5 text-success" />}
@@ -107,13 +129,10 @@ export function LeaveAdminActions({
               <select
                 id={`decide-type-${request.id}`}
                 name="leaveTypeId"
-                required
                 defaultValue={request.leaveTypeId}
                 className={NATIVE_SELECT_CLASS}
               >
-                <option value="" disabled>
-                  Select paid or unpaid type
-                </option>
+                <option value="">Select paid or unpaid type</option>
                 {leaveTypes.map((type) => (
                   <option key={type.id} value={type.id}>
                     {type.name} ({type.is_paid ? "Paid" : "Unpaid"})
@@ -148,13 +167,10 @@ export function LeaveAdminActions({
           <select
             id={`leaveType-${request.id}`}
             name="leaveTypeId"
-            required
             defaultValue={request.leaveTypeId}
             className={NATIVE_SELECT_CLASS}
           >
-            <option value="" disabled>
-              Select paid or unpaid type
-            </option>
+            <option value="">Select paid or unpaid type</option>
             {leaveTypes.map((type) => (
               <option key={type.id} value={type.id}>
                 {type.name} ({type.is_paid ? "Paid" : "Unpaid"})
