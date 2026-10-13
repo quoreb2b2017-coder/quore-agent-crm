@@ -36,18 +36,18 @@ export function NotificationsWorkspace({
 
   if (!canManage) {
     return (
-      <div className="flex flex-col gap-6 pb-8">
-        <PageHeader title="Notifications" description="Updates and alerts for your account" />
+      <div className="flex flex-col gap-4 pb-8">
+        <PageHeader title="Notifications" description="Your alerts, meetings, and messages." />
         <NotificationInbox initialItems={inbox} />
       </div>
     );
   }
 
   return (
-    <div className="flex flex-col gap-6 pb-8">
+    <div className="flex flex-col gap-4 pb-8">
       <PageHeader
         title="Notifications"
-        description="Login alerts and messages for your team"
+        description="Logins, meetings, and messages. Filter the list, or send one to the team."
         actions={<SendNotificationDialog />}
       />
       <Tabs
@@ -65,25 +65,25 @@ export function NotificationsWorkspace({
         </TabsContent>
         <TabsContent value="sent" className="mt-4">
           {isPending && !sent ? (
-            <div className="flex items-center justify-center rounded-2xl border bg-card py-16 text-muted-foreground">
+            <div className="flex items-center justify-center rounded-xl border bg-card py-16 text-muted-foreground">
               <Loader2 className="size-5 animate-spin" />
             </div>
           ) : !sent || sent.length === 0 ? (
-            <div className="rounded-2xl border bg-card px-6 py-16 text-center text-sm text-muted-foreground shadow-sm">
+            <div className="rounded-xl border bg-card px-6 py-16 text-center text-sm text-muted-foreground">
               No messages sent yet
             </div>
           ) : (
-            <div className="overflow-hidden rounded-2xl border bg-card shadow-sm">
-              <div className="border-b bg-muted/30 px-5 py-3.5">
-                <p className="text-sm font-semibold tracking-tight">Sent messages</p>
+            <div className="overflow-hidden rounded-xl border bg-card">
+              <div className="border-b px-4 py-2.5">
+                <p className="text-sm font-semibold">Sent</p>
                 <p className="text-xs text-muted-foreground">{sent.length} recent</p>
               </div>
-              <ul className="divide-y">
+              <ul>
                 {sent.map((row) => (
-                  <li key={row.id} className="flex items-start justify-between gap-4 px-5 py-3.5">
+                  <li key={row.id} className="flex items-center justify-between gap-3 border-t px-4 py-2.5 first:border-t-0">
                     <div className="min-w-0">
                       <p className="truncate text-sm font-medium">{row.title}</p>
-                      <p className="mt-0.5 text-xs text-muted-foreground">To {row.recipient}</p>
+                      <p className="truncate text-xs text-muted-foreground">To {row.recipient}</p>
                     </div>
                     <span className="shrink-0 text-[11px] text-muted-foreground tabular-nums">
                       {formatRelativeTime(row.createdAt)}

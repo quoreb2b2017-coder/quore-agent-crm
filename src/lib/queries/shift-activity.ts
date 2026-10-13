@@ -1,5 +1,5 @@
 import { createServiceClient } from "@/lib/supabase/service";
-import { formatDuration, todayIso } from "@/lib/format";
+import { formatDuration, shiftDateIso, todayIso } from "@/lib/format";
 import { formatBreakType, shiftAccountingWindowUtc } from "@/lib/shift";
 
 export type ActivityTone = "login" | "logout" | "break" | "washroom" | "meeting";
@@ -13,6 +13,7 @@ export type ShiftActivityEvent = {
   label: string;
   detail: string | null;
   tone: ActivityTone;
+  shiftDate: string;
 };
 
 type Person = { id: string; fullName: string; employeeCode: string };
@@ -29,12 +30,16 @@ function durationLabel(startedAt: string, endedAt: string | null, stored: number
 
 export async function getShiftActivity(
   people: Person[],
-  shiftDate = todayIso()
+  shiftDate = todayIso(),
+  throughDate = shiftDate
 ): Promise<ShiftActivityEvent[]> {
   if (people.length === 0) return [];
   const ids = people.map((person) => person.id);
   const byId = new Map(people.map((person) => [person.id, person]));
-  const { start, end } = shiftAccountingWindowUtc(shiftDate);
+  const from = shiftDate <= throughDate ? shiftDate : throughDate;
+  const to = shiftDate <= throughDate ? throughDate : shiftDate;
+  const { start } = shiftAccountingWindowUtc(from);
+  const { end } = shiftAccountingWindowUtc(to);
   const startIso = start.toISOString();
   const endIso = end.toISOString();
   const service = createServiceClient();
@@ -88,6 +93,7 @@ export async function getShiftActivity(
       label,
       detail,
       tone,
+      shiftDate: shiftDateIso(new Date(at)),
     });
   };
 

@@ -56,21 +56,19 @@ export default async function AdminActivityPage() {
         <StatCard label="Meetings" value={meetings} icon={Users} />
       </div>
 
-      <Card className="gap-0 overflow-hidden py-0">
-        <CardContent className="p-0">
-          {events.length === 0 ? (
-            <div className="p-6">
-              <EmptyState
-                icon={Radio}
-                title="No activity this shift"
-                description="Logins, tea, lunch, washroom, and meetings show here in order."
-              />
-            </div>
-          ) : (
-            <ShiftTimeline events={events} showEmployee />
-          )}
-        </CardContent>
-      </Card>
+      {events.length === 0 ? (
+        <Card>
+          <CardContent>
+            <EmptyState
+              icon={Radio}
+              title="No activity this shift"
+              description="Logins, tea, lunch, washroom, and meetings show here in order."
+            />
+          </CardContent>
+        </Card>
+      ) : (
+        <ShiftTimeline events={events} showEmployee />
+      )}
     </div>
   );
 }

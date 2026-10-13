@@ -22,21 +22,19 @@ export default async function MyActivityPage() {
         title="My Activity"
         description={`${shiftWindowLabel()} · from login through every action`}
       />
-      <Card className="gap-0 overflow-hidden py-0">
-        <CardContent className="p-0">
-          {events.length === 0 ? (
-            <div className="p-6">
-              <EmptyState
-                icon={Radio}
-                title="No session recorded yet today"
-                description="Clock in from Attendance. Tea, lunch, washroom, and meetings will show here."
-              />
-            </div>
-          ) : (
-            <ShiftTimeline events={events} showEmployee={false} />
-          )}
-        </CardContent>
-      </Card>
+      {events.length === 0 ? (
+        <Card>
+          <CardContent>
+            <EmptyState
+              icon={Radio}
+              title="No session recorded yet today"
+              description="Clock in from Attendance. Tea, lunch, washroom, and meetings will show here."
+            />
+          </CardContent>
+        </Card>
+      ) : (
+        <ShiftTimeline events={events} showEmployee={false} />
+      )}
     </div>
   );
 }
