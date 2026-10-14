@@ -6,6 +6,7 @@ import { DashboardHero } from "@/components/dashboard/dashboard-hero";
 import { DashboardPanel } from "@/components/dashboard/dashboard-panel";
 import { StaffDashboard } from "@/components/dashboards/staff-dashboard";
 import { requireViewer } from "@/lib/permissions/server";
+import { trustedNowDate } from "@/lib/clock-anchor";
 import { formatMonthLabel, greetingForNow, INDIA_TIME_ZONE, todayIso } from "@/lib/format";
 import { AdminLogoutButton } from "@/components/attendance/admin-logout-button";
 import { getAdminDashboardData } from "@/lib/queries/admin-dashboard";
@@ -26,7 +27,7 @@ export async function AdminDashboardBody({
   searchParams: { [key: string]: string | string[] | undefined };
 }) {
   const { ctx, seesAll } = await requireViewer();
-  const todayLabel = new Date().toLocaleDateString("en-IN", {
+  const todayLabel = trustedNowDate().toLocaleDateString("en-IN", {
     weekday: "long",
     month: "long",
     day: "numeric",

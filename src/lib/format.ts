@@ -1,3 +1,4 @@
+import { trustedNowDate } from "@/lib/clock-anchor";
 import { formatMinutesLabel, getWorkSettings, shiftSpansMidnight, timeZoneShort } from "@/lib/work-settings";
 
 export function initials(name: string) {
@@ -247,7 +248,7 @@ export function calendarDateInZone(date: Date, timeZone: string): string {
 }
 
 /** Shift date: before logout on an overnight shift still belongs to the previous day. */
-export function todayIso(date = new Date()): string {
+export function todayIso(date = trustedNowDate()): string {
   const settings = getWorkSettings();
   const minutes = minutesInTimeZone(date, settings.timeZone);
   const calendar = calendarDateInZone(date, settings.timeZone);
@@ -284,7 +285,7 @@ export function hourInTimeZone(date: Date, timeZone: string): number {
 }
 
 export function greetingForNow(timeZone = INDIA_TIME_ZONE): string {
-  const hour = hourInTimeZone(new Date(), timeZone);
+  const hour = hourInTimeZone(trustedNowDate(), timeZone);
   if (hour < 12) return "Good morning";
   if (hour < 17) return "Good afternoon";
   return "Good evening";

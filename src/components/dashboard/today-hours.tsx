@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import { MeterRow } from "@/components/dashboard/mix-bar";
+import { useLiveNowMs } from "@/components/layout/trusted-clock";
 import { formatBreakDuration } from "@/lib/format";
 import { dailyActiveSeconds } from "@/lib/live-time";
 import type { MySessionState } from "@/lib/queries/employee-status";
@@ -21,15 +21,8 @@ export function TodayHours({
   idleSeconds: number;
   compact?: boolean;
 }) {
-  const [now, setNow] = useState<number | null>(null);
   const running = session.isClockedIn || !!session.openBreakStartedAt || !!session.washroomStartedAt;
-
-  useEffect(() => {
-    if (!running) return;
-    setNow(Date.now());
-    const id = window.setInterval(() => setNow(Date.now()), 1000);
-    return () => window.clearInterval(id);
-  }, [running, session.sessionStartedAt, session.openBreakStartedAt, session.washroomStartedAt]);
+  const now = useLiveNowMs(running);
 
   const status = session.halfDay ? "HALF_DAY" : null;
   const closedBreak =

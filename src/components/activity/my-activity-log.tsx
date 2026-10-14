@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Bath, Coffee, LogIn, LogOut, Radio, Users } from "lucide-react";
+import { useLiveNowMs } from "@/components/layout/trusted-clock";
 import { formatTimeInZone } from "@/lib/format";
 import { formatClock } from "@/lib/live-time";
 import type { ActivityDayLog, ActivityTone, ShiftActivityEvent } from "@/lib/queries/shift-activity";
@@ -51,17 +52,10 @@ export function MyActivityLog({
   subtitle?: string;
 }) {
   const [active, setActive] = useState(days[0]?.date ?? null);
-  const [now, setNow] = useState<number | null>(null);
   const selected = days.find((day) => day.date === active) ?? days[0] ?? null;
   const live = selected?.events.some((event) => event.detail === "In progress") ?? false;
+  const now = useLiveNowMs(live);
   const zone = getWorkSettings().timeZone;
-
-  useEffect(() => {
-    if (!live) return;
-    setNow(Date.now());
-    const id = window.setInterval(() => setNow(Date.now()), 1000);
-    return () => window.clearInterval(id);
-  }, [live, selected?.date]);
 
   if (!selected) return null;
   const counts = dayCounts(selected.events);

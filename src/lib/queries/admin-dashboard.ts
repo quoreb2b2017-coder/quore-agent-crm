@@ -1,6 +1,7 @@
 import { cache } from "react";
 import { createDataClient as createClient } from "@/lib/supabase/data";
 import { createServiceClient } from "@/lib/supabase/service";
+import { trustedNowMs } from "@/lib/clock-anchor";
 import { todayIso } from "@/lib/format";
 import { SUPER_ADMIN_ROLE } from "@/lib/permissions/roles";
 import { weekendOrRecordedStatus } from "@/lib/attendance-weekend";
@@ -177,7 +178,7 @@ export async function liveSessionSlices(
     (meetings ?? []).filter((row) => !row.started_at).map((row) => row.employee_id)
   );
 
-  const now = Date.now();
+  const now = trustedNowMs();
   const excessFor = (employeeId: string) => {
     const used = breakSecondsBySlot(
       (shiftBreaks ?? []).filter((row) => row.employee_id === employeeId)

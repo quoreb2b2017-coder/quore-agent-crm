@@ -1,3 +1,4 @@
+import { trustedNowMs } from "@/lib/clock-anchor";
 import { creditedAwaySeconds, creditedWorkBounds } from "@/lib/shift";
 
 /** `sessionClosed*Seconds` must already be limited to the credited window (see `creditedAwaySeconds`). */
@@ -11,7 +12,7 @@ export function dailyActiveSeconds(input: {
   now?: number;
 }) {
   if (!input.sessionStartedAt) return input.storedActiveSeconds;
-  const now = input.now ?? Date.now();
+  const now = input.now ?? trustedNowMs();
   const elapsed = creditedWorkBounds(input.sessionStartedAt, now).seconds;
   const openAway = (startedAt: string | null | undefined) =>
     startedAt

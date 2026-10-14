@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useActionForm } from "@/hooks/use-action-form";
+import { trustedNowDate } from "@/lib/clock-anchor";
 import { BREAK_BUDGET_LABEL, NATIVE_SELECT_CLASS, PRODUCTIVE_HOURS_LABEL } from "@/lib/shift";
 import {
   TIME_ZONE_OPTIONS,
@@ -44,8 +45,8 @@ export function WorkSettingsForm({ settings }: { settings: WorkSettings }) {
   }, [settings.timeZone, settings.loginMinutes, settings.logoutMinutes, settings.annualPaidLeaveDays]);
 
   useEffect(() => {
-    setNow(new Date());
-    const timer = setInterval(() => setNow(new Date()), 1000);
+    setNow(trustedNowDate());
+    const timer = setInterval(() => setNow(trustedNowDate()), 1000);
     return () => clearInterval(timer);
   }, []);
 

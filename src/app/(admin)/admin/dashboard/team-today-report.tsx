@@ -1,24 +1,18 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import { AttendanceStatusBadge } from "@/components/attendance/attendance-status-badge";
 import { AdminLogoutButton } from "@/components/attendance/admin-logout-button";
 import { BreakExcessCell } from "@/components/attendance/break-excess";
 import { EditAttendanceDialog } from "@/components/attendance/edit-attendance-dialog";
 import { StatusBadge } from "@/components/dashboard/status-badge";
+import { useLiveNowMs } from "@/components/layout/trusted-clock";
 import type { TeamTodayRow } from "@/lib/queries/admin-dashboard";
 import { dailyActiveSeconds, formatClock } from "@/lib/live-time";
 import { creditedProductiveSeconds } from "@/lib/shift";
 import { formatDuration, formatTimeInZone, INDIA_TIME_ZONE } from "@/lib/format";
 
 export function TeamTodayReport({ rows, attendanceDate }: { rows: TeamTodayRow[]; attendanceDate: string }) {
-  const [now, setNow] = useState<number | null>(null);
-
-  useEffect(() => {
-    setNow(Date.now());
-    const id = window.setInterval(() => setNow(Date.now()), 1000);
-    return () => window.clearInterval(id);
-  }, []);
+  const now = useLiveNowMs();
 
   if (rows.length === 0) {
     return (

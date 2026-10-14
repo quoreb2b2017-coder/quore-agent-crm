@@ -3,6 +3,7 @@ import { getCurrentEmployeeContext, isSuperAdmin } from "@/lib/permissions/serve
 import { closeWorkSession } from "@/lib/actions/attendance";
 import { shiftDateIso } from "@/lib/format";
 import { shiftWindowUtc } from "@/lib/shift";
+import { ensureGoogleTime, googleDate } from "@/lib/google-time";
 import { ADMIN_LOGOUT_TYPE } from "@/lib/realtime/notify";
 
 export type PresenceResult = {
@@ -37,8 +38,9 @@ export async function runPresenceHeartbeat(_input: {
   const ctx = await getCurrentEmployeeContext();
   if (!ctx || isSuperAdmin(ctx.roleKey)) return { expired: false };
 
+  await ensureGoogleTime();
   const service = createServiceClient();
-  const now = Date.now();
+  const now = googleDate().getTime();
 
   const { data: session } = await service
     .from("employee_sessions")

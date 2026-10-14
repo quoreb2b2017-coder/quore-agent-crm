@@ -10,6 +10,7 @@ import {
   shiftWindowLabel,
 } from "@/lib/format";
 import { shiftCountdown } from "@/lib/shift";
+import { useTrustedNow } from "@/components/layout/trusted-clock";
 import { formatMinutesLabel, getWorkSettings, shiftLengthMinutes, timeZoneShort } from "@/lib/work-settings";
 
 function formatTime(now: Date, timeZone: string, withSeconds = true) {
@@ -32,15 +33,7 @@ function formatDate(now: Date, timeZone: string) {
 }
 
 function useNow() {
-  const [now, setNow] = useState<Date | null>(null);
-
-  useEffect(() => {
-    setNow(new Date());
-    const id = setInterval(() => setNow(new Date()), 1000);
-    return () => clearInterval(id);
-  }, []);
-
-  return now;
+  return useTrustedNow();
 }
 
 export function LiveTime({

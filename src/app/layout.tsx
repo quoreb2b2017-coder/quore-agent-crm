@@ -7,6 +7,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { WorkSettingsBridge } from "@/components/layout/work-settings-bridge";
 import { loadWorkSettings } from "@/lib/work-settings-server";
 import { ensureFederalHolidaysMarked } from "@/lib/federal-holiday-sync";
+import { ensureGoogleTime } from "@/lib/google-time";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -24,7 +25,7 @@ export const metadata: Metadata = {
 };
 
 export default async function RootLayout({ children }: LayoutProps<"/">) {
-  const settings = await loadWorkSettings();
+  const [settings] = await Promise.all([loadWorkSettings(), ensureGoogleTime().catch(() => null)]);
   after(() => ensureFederalHolidaysMarked());
   return (
     <html

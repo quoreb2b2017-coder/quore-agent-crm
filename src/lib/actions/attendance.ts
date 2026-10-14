@@ -21,6 +21,7 @@ import {
   type PolicyBreakType,
 } from "@/lib/shift";
 import { ADMIN_LOGOUT_TYPE, insertAndEmitNotification, notifySuperAdmins } from "@/lib/realtime/notify";
+import { ensureGoogleTime, googleDate } from "@/lib/google-time";
 import { formatMinutesLabel, getWorkSettings } from "@/lib/work-settings";
 
 type Result = { error?: string; activated?: boolean; skipped?: boolean };
@@ -83,7 +84,7 @@ async function markPresent(
 ) {
   const row = await attendanceForShift(supabase, employeeId, shiftDate);
   if (row && BLOCKED_CLOCK_STATUSES.has(row.status)) return row;
-  const now = new Date();
+  const now = googleDate();
   const checkInAt = row?.first_check_in ?? now.toISOString();
   const late = isLateClockIn(checkInAt);
   // Half day, leave, holiday, and week off stay as the admin set them.
@@ -148,7 +149,7 @@ async function usedShiftBreakSeconds(
   return breakSecondsBySlot(data ?? []);
 }
 
-async function closeOpenMeeting(employeeId: string, at = new Date()) {
+async function closeOpenMeeting(employeeId: string, at = googleDate()) {
   const service = createServiceClient();
   const { data: meeting } = await service
     .from("meetings")
@@ -168,7 +169,7 @@ async function closeOpenMeeting(employeeId: string, at = new Date()) {
     .eq("id", meeting.id);
 }
 
-async function closeOpenWashroom(employeeId: string, at = new Date()) {
+async function closeOpenWashroom(employeeId: string, at = googleDate()) {
   const service = createServiceClient();
   const { data: visit } = await service
     .from("washroom_visits")
@@ -213,6 +214,7 @@ async function openMeetingRow(employeeId: string) {
 }
 
 export async function clockIn(): Promise<Result> {
+  await ensureGoogleTime();
   const ctx = await getCurrentEmployeeContext();
   if (!ctx) return { error: "Not authenticated" };
   if (isSuperAdmin(ctx.roleKey)) {
@@ -254,7 +256,7 @@ export async function clockIn(): Promise<Result> {
   const { error: sessionError } = await supabase.from("employee_sessions").insert({
     employee_id: ctx.employeeId,
     status: "ACTIVE",
-    app_last_seen_at: new Date().toISOString(),
+    app_last_seen_at: googleDate().toISOString(),
   });
   if (sessionError) {
     if (sessionError.code === "23505") {
@@ -337,6 +339,7 @@ export async function closeWorkSession(
   status: "ENDED" | "TIMED_OUT" = "ENDED",
   options?: { revalidate?: boolean; endedAt?: Date; idleSeconds?: number }
 ): Promise<Result> {
+  await ensureGoogleTime();
   const supabase = createServiceClient();
   const { data: session } = await supabase
     .from("employee_sessions")
@@ -346,7 +349,7 @@ export async function closeWorkSession(
     .maybeSingle();
   if (!session) return {};
 
-  const current = Date.now();
+  const current = googleDate().getTime();
   const sessionStart = new Date(session.started_at).getTime();
   const now = new Date(
     Math.min(current, Math.max(sessionStart, options?.endedAt?.getTime() ?? current))
@@ -432,7 +435,7 @@ export async function closeWorkSession(
 
 /** Click time, kept only when it is within a minute of the server clock. */
 function startedAtFromClick(clientIso?: string) {
-  const now = Date.now();
+  const now = googleDate().getTime();
   const parsed = clientIso ? new Date(clientIso).getTime() : Number.NaN;
   if (!Number.isFinite(parsed) || parsed > now + 2000 || now - parsed > 60_000) {
     return new Date(now).toISOString();
@@ -441,6 +444,7 @@ function startedAtFromClick(clientIso?: string) {
 }
 
 export async function startBreak(breakType: PolicyBreakType, clickedAt?: string): Promise<Result> {
+  await ensureGoogleTime();
   const ctx = await getCurrentEmployeeContext();
   if (!ctx) return { error: "Not authenticated" };
   if (isSuperAdmin(ctx.roleKey)) return { skipped: true };
@@ -495,6 +499,7 @@ export async function startBreak(breakType: PolicyBreakType, clickedAt?: string)
 }
 
 export async function endBreak(): Promise<Result> {
+  await ensureGoogleTime();
   const ctx = await getCurrentEmployeeContext();
   if (!ctx) return { error: "Not authenticated" };
   if (isSuperAdmin(ctx.roleKey)) return { skipped: true };
@@ -509,7 +514,7 @@ export async function endBreak(): Promise<Result> {
 
   if (!openBreak) return {};
 
-  const now = new Date();
+  const now = googleDate();
   const durationSeconds = Math.max(
     0,
     Math.floor((now.getTime() - new Date(openBreak.started_at).getTime()) / 1000)
@@ -542,6 +547,7 @@ export async function endBreak(): Promise<Result> {
 
 /** Employee asks to go to a meeting. The timer starts only after Super Admin accepts. */
 export async function startMeeting(): Promise<Result> {
+  await ensureGoogleTime();
   const ctx = await getCurrentEmployeeContext();
   if (!ctx) return { error: "Not authenticated" };
   if (isSuperAdmin(ctx.roleKey)) return { skipped: true };
@@ -586,7 +592,7 @@ export async function startMeeting(): Promise<Result> {
     session_id: session.id,
     started_at: null,
     status: "PENDING",
-    requested_at: new Date().toISOString(),
+    requested_at: googleDate().toISOString(),
   });
   if (error && error.code !== "23505") return { error: error.message };
 
@@ -606,6 +612,7 @@ export async function startMeeting(): Promise<Result> {
 }
 
 export async function endMeeting(): Promise<Result> {
+  await ensureGoogleTime();
   const ctx = await getCurrentEmployeeContext();
   if (!ctx) return { error: "Not authenticated" };
   if (isSuperAdmin(ctx.roleKey)) return { skipped: true };
@@ -613,7 +620,7 @@ export async function endMeeting(): Promise<Result> {
   await closeOpenMeeting(ctx.employeeId);
   await createServiceClient()
     .from("employee_sessions")
-    .update({ app_last_seen_at: new Date().toISOString() })
+    .update({ app_last_seen_at: googleDate().toISOString() })
     .eq("employee_id", ctx.employeeId)
     .eq("status", "ACTIVE");
 
@@ -622,6 +629,7 @@ export async function endMeeting(): Promise<Result> {
 }
 
 export async function acceptMeeting(meetingId: string): Promise<Result> {
+  await ensureGoogleTime();
   const ctx = await getCurrentEmployeeContext();
   if (!ctx || !isSuperAdmin(ctx.roleKey)) return { error: "Not authorized" };
   const service = createServiceClient();
@@ -633,7 +641,7 @@ export async function acceptMeeting(meetingId: string): Promise<Result> {
   if (!meeting || meeting.ended_at) return { error: "This meeting request is no longer open." };
   if (meeting.started_at) return {};
 
-  const now = new Date().toISOString();
+  const now = googleDate().toISOString();
   const { error } = await service
     .from("meetings")
     .update({
@@ -661,6 +669,7 @@ export async function acceptMeeting(meetingId: string): Promise<Result> {
 }
 
 export async function rejectMeeting(meetingId: string): Promise<Result> {
+  await ensureGoogleTime();
   const ctx = await getCurrentEmployeeContext();
   if (!ctx || !isSuperAdmin(ctx.roleKey)) return { error: "Not authorized" };
   const service = createServiceClient();
@@ -672,7 +681,7 @@ export async function rejectMeeting(meetingId: string): Promise<Result> {
   if (!meeting || meeting.ended_at) return { error: "This meeting request is no longer open." };
   if (meeting.started_at) return { error: "This meeting already started. Ask the employee to end it." };
 
-  const now = new Date().toISOString();
+  const now = googleDate().toISOString();
   const { error } = await service
     .from("meetings")
     .update({ ended_at: now, duration_seconds: 0, status: "REJECTED" })
@@ -695,6 +704,7 @@ export async function rejectMeeting(meetingId: string): Promise<Result> {
 }
 
 export async function startWashroom(): Promise<Result> {
+  await ensureGoogleTime();
   const ctx = await getCurrentEmployeeContext();
   if (!ctx) return { error: "Not authenticated" };
   if (isSuperAdmin(ctx.roleKey)) return { skipped: true };
@@ -736,7 +746,7 @@ export async function startWashroom(): Promise<Result> {
   const { error } = await service.from("washroom_visits").insert({
     employee_id: ctx.employeeId,
     session_id: session.id,
-    started_at: new Date().toISOString(),
+    started_at: googleDate().toISOString(),
   });
   if (error && error.code !== "23505") return { error: error.message };
 
@@ -745,6 +755,7 @@ export async function startWashroom(): Promise<Result> {
 }
 
 export async function endWashroom(): Promise<Result> {
+  await ensureGoogleTime();
   const ctx = await getCurrentEmployeeContext();
   if (!ctx) return { error: "Not authenticated" };
   if (isSuperAdmin(ctx.roleKey)) return { skipped: true };

@@ -1,3 +1,4 @@
+import { trustedNowDate, trustedNowMs } from "@/lib/clock-anchor";
 import {
   addDaysIso,
   minutesInTimeZone,
@@ -97,7 +98,7 @@ export function creditedWorkBounds(startedAt: string | Date, endedAt: Date | num
 export function creditedAwaySeconds(
   sessionStartedAt: string | Date,
   row: { started_at: string; ended_at: string | null; duration_seconds?: number | null },
-  now = Date.now()
+  now = trustedNowMs()
 ) {
   const sessionStart = typeof sessionStartedAt === "string" ? new Date(sessionStartedAt) : sessionStartedAt;
   const { start: official, end } = shiftWindowUtc(shiftDateIso(sessionStart));
@@ -153,7 +154,7 @@ export function breakPoolLeftSeconds(used: Record<BreakSlot, number>, washroomSe
 }
 
 /** True when the clock-in is after the shift login time in the configured time zone. */
-export function isLateClockIn(at: Date | string = new Date()) {
+export function isLateClockIn(at: Date | string = trustedNowDate()) {
   const date = typeof at === "string" ? new Date(at) : at;
   const settings = getWorkSettings();
   const shiftDate = shiftDateIso(date);
@@ -175,7 +176,7 @@ export function shiftAccountingWindowUtc(shiftDate = todayIso()): { start: Date;
   };
 }
 
-export function isInShiftWindow(date = new Date()): boolean {
+export function isInShiftWindow(date = trustedNowDate()): boolean {
   const settings = getWorkSettings();
   const minutes = minutesInTimeZone(date, settings.timeZone);
   if (shiftSpansMidnight(settings)) {
@@ -184,7 +185,7 @@ export function isInShiftWindow(date = new Date()): boolean {
   return minutes >= settings.loginMinutes && minutes < settings.logoutMinutes;
 }
 
-export function shiftCountdown(date = new Date()): { open: boolean; minutesRemaining: number } {
+export function shiftCountdown(date = trustedNowDate()): { open: boolean; minutesRemaining: number } {
   const settings = getWorkSettings();
   const minutes = minutesInTimeZone(date, settings.timeZone);
   const { loginMinutes: login, logoutMinutes: logout } = settings;
@@ -238,7 +239,7 @@ export function openBreakLimitSeconds(
 
 export function breakDurationSeconds(
   row: { started_at: string; ended_at: string | null; duration_seconds?: number | null },
-  now = Date.now()
+  now = trustedNowMs()
 ) {
   if (row.ended_at) {
     if (row.duration_seconds != null) return Math.max(0, row.duration_seconds);

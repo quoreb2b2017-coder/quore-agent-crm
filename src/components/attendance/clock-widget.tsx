@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { LogIn, LogOut, Coffee, Play, Loader2, Clock as ClockIcon, UtensilsCrossed, Users, Bath } from "lucide-react";
@@ -17,6 +17,8 @@ import {
   endWashroom,
 } from "@/lib/actions/attendance";
 import { RESET_IDLE_EVENT } from "@/components/layout/session-presence";
+import { hasTrustedClock, subscribeClock, trustedNowDate, trustedNowMs } from "@/lib/clock-anchor";
+import { syncTrustedClock } from "@/components/layout/trusted-clock";
 import { formatBreakDuration, formatDuration, formatExcess, formatTime } from "@/lib/format";
 import { formatClock } from "@/lib/live-time";
 import {
@@ -35,21 +37,60 @@ import { formatMinutesLabel, getWorkSettings } from "@/lib/work-settings";
 import type { MySessionState } from "@/lib/queries/employee-status";
 import { cn } from "@/lib/utils";
 
+/** Counts up from the click with a monotonic clock, so a Google time sync cannot freeze it. */
 function useElapsed(startedAt: string | null, running: boolean) {
-  const [now, setNow] = useState<number | null>(null);
+  const [seconds, setSeconds] = useState<number | null>(null);
+  const shownRef = useRef(0);
 
   useEffect(() => {
     if (!running || !startedAt) {
-      setNow(null);
+      shownRef.current = 0;
+      setSeconds(null);
       return;
     }
-    setNow(Date.now());
-    const id = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(id);
+    const startedMs = new Date(startedAt).getTime();
+    let originPerf = performance.now();
+    const trustedSeconds =
+      hasTrustedClock() && Number.isFinite(startedMs)
+        ? Math.max(0, Math.floor((trustedNowMs() - startedMs) / 1000))
+        : 0;
+    // Never step backward when Google time lands behind the click.
+    let originSeconds = Math.max(shownRef.current, trustedSeconds);
+    const tick = () => {
+      const next = originSeconds + Math.floor((performance.now() - originPerf) / 1000);
+      if (next === shownRef.current) return;
+      shownRef.current = next;
+      setSeconds(next);
+    };
+    const onSync = () => {
+      if (!hasTrustedClock() || !Number.isFinite(startedMs)) return;
+      const trustedSeconds = Math.max(0, Math.floor((trustedNowMs() - startedMs) / 1000));
+      const shown = originSeconds + (performance.now() - originPerf) / 1000;
+      if (trustedSeconds > shown + 0.5) {
+        originSeconds = trustedSeconds;
+        originPerf = performance.now();
+        shownRef.current = -1;
+      }
+      tick();
+    };
+    shownRef.current = -1;
+    tick();
+    let raf = 0;
+    const frame = () => {
+      tick();
+      raf = window.requestAnimationFrame(frame);
+    };
+    raf = window.requestAnimationFrame(frame);
+    const id = window.setInterval(tick, 1000);
+    const unsub = subscribeClock(onSync);
+    return () => {
+      window.cancelAnimationFrame(raf);
+      window.clearInterval(id);
+      unsub();
+    };
   }, [running, startedAt]);
 
-  if (now == null || !startedAt || !running) return null;
-  return Math.max(0, Math.floor((now - new Date(startedAt).getTime()) / 1000));
+  return seconds;
 }
 
 function BreakRing({ elapsed, budget }: { elapsed: number; budget: number }) {
@@ -195,9 +236,12 @@ export function ClockWidget({
   }
 
   function beginBreak(slot: BreakSlot) {
-    const startedAt = new Date().toISOString();
-    setLocalBreak({ slot, startedAt });
+    const clickPerf = performance.now();
+    setLocalBreak({ slot, startedAt: trustedNowDate().toISOString() });
     startTransition(async () => {
+      if (!hasTrustedClock()) await syncTrustedClock();
+      const startedAt = new Date(trustedNowMs() - (performance.now() - clickPerf)).toISOString();
+      setLocalBreak({ slot, startedAt });
       const res = await startBreak(slot, startedAt);
       if (res.error || res.skipped) {
         setLocalBreak(null);

@@ -6,6 +6,7 @@ import { StaffDashboard } from "@/components/dashboards/staff-dashboard";
 import { MyActivityLog } from "@/components/activity/my-activity-log";
 import { MonthCalendar } from "@/components/attendance/month-calendar";
 import { monthStartEnd } from "@/lib/attendance-period";
+import { trustedNowDate } from "@/lib/clock-anchor";
 import { formatMonthLabel, greetingForNow, INDIA_TIME_ZONE, todayIso } from "@/lib/format";
 import { buildActivityDays } from "@/lib/queries/shift-activity";
 
@@ -29,7 +30,7 @@ export async function PortalDashboardBody() {
   const marketingData =
     ctx.roleKey === "EMAIL_MARKETING" ? await getCampaignsDashboardData(ctx.employeeId) : null;
 
-  const todayLabel = new Date().toLocaleDateString("en-IN", {
+  const todayLabel = trustedNowDate().toLocaleDateString("en-IN", {
     weekday: "long",
     month: "long",
     day: "numeric",
