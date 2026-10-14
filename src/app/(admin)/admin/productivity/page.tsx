@@ -105,9 +105,11 @@ export default async function ProductivityPage({
             sum +
             (isDaily
               ? row.days[0] && row.days[0].status !== "off" && row.days[0].status !== "upcoming"
-                ? PRODUCTIVE_SECONDS
+                ? row.days[0].targetSeconds
                 : 0
-              : row.countedDays * PRODUCTIVE_SECONDS),
+              : row.days
+                  .filter((day) => day.date <= today && day.status !== "off" && day.status !== "upcoming")
+                  .reduce((daySum, day) => daySum + day.targetSeconds, 0)),
           0
         )}
         who={rows.length === 1 ? rows[0].employee.full_name : `${rows.length} employees`}
@@ -191,7 +193,7 @@ function DailyView({ rows, date, today }: { rows: ProductivityRow[]; date: strin
   const counted = days.filter(({ day }) => day && day.status !== "off");
   const productive = counted.reduce((sum, { day }) => sum + day.productiveSeconds, 0);
   const deficit = counted.reduce(
-    (sum, { day }) => sum + Math.max(0, PRODUCTIVE_SECONDS - day.productiveSeconds),
+    (sum, { day }) => sum + Math.max(0, day.targetSeconds - day.productiveSeconds),
     0
   );
   const excess = days.reduce((sum, { day }) => sum + (day?.breakExcess.total ?? 0), 0);
@@ -205,7 +207,11 @@ function DailyView({ rows, date, today }: { rows: ProductivityRow[]; date: strin
           value={formatDuration(productive)}
           icon={Timer}
           tone="success"
-          hint={`Target ${PRODUCTIVE_HOURS_LABEL} each`}
+          hint={
+            counted.length > 0 && counted.every(({ day }) => day.attendanceStatus === "HALF_DAY")
+              ? `Half day target ${formatDuration(counted[0].day.targetSeconds)}`
+              : `Target ${PRODUCTIVE_HOURS_LABEL} each`
+          }
         />
         <StatCard
           label={isToday ? "Still to go" : "Total deficit"}
@@ -251,7 +257,7 @@ function DailyView({ rows, date, today }: { rows: ProductivityRow[]; date: strin
                       {formatDuration(day?.productiveSeconds ?? 0)}
                       {day?.status === "met" ? <CheckCircle2 className="size-4 text-success" /> : null}
                     </span>
-                    <TargetBar seconds={day?.productiveSeconds ?? 0} />
+                    <TargetBar seconds={day?.productiveSeconds ?? 0} target={day?.targetSeconds} />
                   </div>
                 </TableCell>
                 <TableCell className="pr-5">
@@ -259,6 +265,7 @@ function DailyView({ rows, date, today }: { rows: ProductivityRow[]; date: strin
                     <DayStatusPill
                       status={day.status}
                       productiveSeconds={day.productiveSeconds}
+                      targetSeconds={day.targetSeconds}
                       offStatus={day.offStatus}
                     />
                   ) : date < row.trackingStart ? (
@@ -290,6 +297,11 @@ function PeriodView({
   end: string;
 }) {
   const elapsed = workingDays.filter((date) => date <= today).length;
+  const halfDays = rows.reduce(
+    (sum, row) =>
+      sum + row.days.filter((day) => day.date <= today && day.attendanceStatus === "HALF_DAY").length,
+    0
+  );
   const productive = rows.reduce((sum, row) => sum + row.productiveSeconds, 0);
   const deficit = rows.reduce((sum, row) => sum + Math.max(0, -row.balanceSeconds), 0);
   const onTrack = rows.filter(
@@ -317,7 +329,11 @@ function PeriodView({
           value={formatDuration(productive)}
           icon={Timer}
           tone="success"
-          hint={`${PRODUCTIVE_HOURS_LABEL} × working day target`}
+          hint={
+            halfDays > 0
+              ? `${PRODUCTIVE_HOURS_LABEL} per full day · half day is ${formatDuration(Math.floor(PRODUCTIVE_SECONDS / 2))}`
+              : `${PRODUCTIVE_HOURS_LABEL} × working day target`
+          }
         />
         <StatCard
           label="Deficit so far"

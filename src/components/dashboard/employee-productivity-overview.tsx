@@ -12,7 +12,7 @@ import {
   weekdayShortIst,
 } from "@/lib/format";
 import { dailyActiveSeconds } from "@/lib/live-time";
-import { PRODUCTIVE_SECONDS } from "@/lib/shift";
+import { creditedProductiveSeconds, productiveTargetSeconds } from "@/lib/shift";
 import { liveSessionSlices } from "@/lib/queries/admin-dashboard";
 
 /** Today's numbers and the last 7 shifts for one employee — the same view the employee sees. */
@@ -31,7 +31,7 @@ export async function EmployeeProductivityOverview({
   const [{ data: rows }, live] = await Promise.all([
     supabase
       .from("attendance")
-      .select("attendance_date, total_active_seconds, total_break_seconds")
+      .select("attendance_date, status, total_active_seconds, total_break_seconds")
       .eq("employee_id", employeeId)
       .gte("attendance_date", sinceIso)
       .order("attendance_date"),
@@ -52,9 +52,12 @@ export async function EmployeeProductivityOverview({
   const totalBreak = todayRow?.total_break_seconds ?? 0;
   const excessToday = slice?.breakExcess.total ?? 0;
 
+  const creditedToday = creditedProductiveSeconds(totalActive, todayRow?.status);
   const chartData = eachDateInclusive(sinceIso, today).map((iso) => {
-    const seconds = iso === today ? totalActive : (byDate.get(iso)?.total_active_seconds ?? 0);
-    return { day: weekdayShortIst(iso), activeHours: Math.round((seconds / 3600) * 10) / 10 };
+    const row = byDate.get(iso);
+    const seconds = iso === today ? totalActive : (row?.total_active_seconds ?? 0);
+    const credited = creditedProductiveSeconds(seconds, row?.status);
+    return { day: weekdayShortIst(iso), activeHours: Math.round((credited / 3600) * 10) / 10 };
   });
 
   const who = employeeName ? `${employeeName} — ` : "";
@@ -64,10 +67,10 @@ export async function EmployeeProductivityOverview({
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <StatCard
           label={`${who}Productive today`}
-          value={formatDuration(totalActive)}
+          value={formatDuration(creditedToday)}
           icon={Timer}
           tone="success"
-          hint={`of ${formatDuration(PRODUCTIVE_SECONDS)}`}
+          hint={`of ${formatDuration(productiveTargetSeconds(todayRow?.status))}${todayRow?.status === "HALF_DAY" ? " · half day" : ""}`}
         />
         <StatCard
           label="Break today"

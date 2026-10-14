@@ -267,9 +267,25 @@ export function isLunchBreak(breakType: string): boolean {
   return breakType === "LUNCH";
 }
 
-export function productivityPercent(activeSeconds: number): number {
-  if (PRODUCTIVE_SECONDS <= 0) return 0;
-  return Math.round((activeSeconds / PRODUCTIVE_SECONDS) * 100);
+/** Half day needs half the productive target and half the 9-hour shift. */
+export function productiveTargetSeconds(attendanceStatus?: string | null) {
+  return attendanceStatus === "HALF_DAY" ? Math.floor(PRODUCTIVE_SECONDS / 2) : PRODUCTIVE_SECONDS;
+}
+
+export function shiftTargetSeconds(attendanceStatus?: string | null) {
+  return attendanceStatus === "HALF_DAY" ? Math.floor(SHIFT_WORKING_SECONDS / 2) : SHIFT_WORKING_SECONDS;
+}
+
+/** A half day counts at most half a productive day, even if the person stayed longer. */
+export function creditedProductiveSeconds(activeSeconds: number, attendanceStatus?: string | null) {
+  const seconds = Math.max(0, activeSeconds);
+  if (attendanceStatus !== "HALF_DAY") return seconds;
+  return Math.min(seconds, productiveTargetSeconds("HALF_DAY"));
+}
+
+export function productivityPercent(activeSeconds: number, targetSeconds = PRODUCTIVE_SECONDS): number {
+  if (targetSeconds <= 0) return 0;
+  return Math.round((activeSeconds / targetSeconds) * 100);
 }
 
 export function toDatetimeLocalIst(iso: string | null | undefined): string {

@@ -29,6 +29,7 @@ export type MySessionState = {
   sessionClosedWashroomSeconds: number;
   onLeave: boolean;
   weekOff: boolean;
+  halfDay: boolean;
 };
 
 async function openAwayState(employeeId: string) {
@@ -134,6 +135,7 @@ export async function getEmployeeDashboardBundle(employeeId: string): Promise<Em
     activeSeconds: attendance?.total_active_seconds ?? 0,
     breakSeconds: attendance?.total_break_seconds ?? 0,
     idleSeconds: attendance?.total_idle_seconds ?? 0,
+    attendanceStatus: attendance?.status ?? null,
     assignedTasks: taskList.length,
     completedTasks: taskList.filter((t) => t.status === "DONE").length,
     pendingTasks: taskList.filter((t) => !["DONE", "CANCELLED"].includes(t.status)).length,
@@ -157,6 +159,7 @@ export async function getEmployeeDashboardBundle(employeeId: string): Promise<Em
         sessionClosedWashroomSeconds: 0,
         onLeave: attendance?.status === "ON_LEAVE",
         weekOff,
+        halfDay: attendance?.status === "HALF_DAY",
       },
       commonData,
     };
@@ -184,6 +187,7 @@ export async function getEmployeeDashboardBundle(employeeId: string): Promise<Em
       sessionClosedWashroomSeconds: washroom.sessionClosedSeconds(session),
       onLeave: attendance?.status === "ON_LEAVE",
       weekOff,
+      halfDay: attendance?.status === "HALF_DAY",
     },
     commonData,
   };
@@ -240,6 +244,7 @@ export async function getMySessionState(employeeId: string): Promise<MySessionSt
         sessionClosedWashroomSeconds: 0,
         onLeave: attendance?.status === "ON_LEAVE",
       weekOff,
+      halfDay: attendance?.status === "HALF_DAY",
     };
   }
 
@@ -266,6 +271,7 @@ export async function getMySessionState(employeeId: string): Promise<MySessionSt
     sessionClosedWashroomSeconds: washroom.sessionClosedSeconds(session),
     onLeave: attendance?.status === "ON_LEAVE",
     weekOff,
+    halfDay: attendance?.status === "HALF_DAY",
   };
 }
 

@@ -23,6 +23,16 @@ export function unpackLeaveNote(raw: string | null | undefined) {
   return { subject: match[1].trim(), reason: match[2].trim() };
 }
 
+/** Visible label plus the comment shown when the leave is hovered. */
+export function formatLeaveComment(raw: string | null | undefined) {
+  const note = unpackLeaveNote(raw);
+  const subject = note.subject.trim();
+  const reason = note.reason.trim();
+  if (subject && reason) return { subject, reason };
+  const text = reason || subject;
+  return { subject: text, reason: text };
+}
+
 export function workingDatesInclusive(start: string, end: string) {
   return eachDateInclusive(start, end).filter((date) => !isWeekendIso(date));
 }

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Loader2 } from "lucide-react";
@@ -9,7 +10,15 @@ import { Input } from "@/components/ui/input";
 import { setLeaveRemaining, setLeaveRemainingForAll } from "@/lib/actions/leave";
 import type { LeaveBalanceRow } from "@/lib/queries/leave";
 
-export function LeaveBalances({ year, rows }: { year: number; rows: LeaveBalanceRow[] }) {
+export function LeaveBalances({
+  year,
+  rows,
+  single = false,
+}: {
+  year: number;
+  rows: LeaveBalanceRow[];
+  single?: boolean;
+}) {
   const router = useRouter();
   const [allValue, setAllValue] = useState("");
   const [pendingId, setPendingId] = useState<string | null>(null);
@@ -60,9 +69,10 @@ export function LeaveBalances({ year, rows }: { year: number; rows: LeaveBalance
         <div>
           <h3 className="text-[15px] font-semibold">Leave left · {year}</h3>
           <p className="text-sm text-muted-foreground">
-            Approved days stay used. Set how many paid days each person still has.
+            Click a name for every leave they took. Used counts approved leave and days marked on leave.
           </p>
         </div>
+        {single ? null : (
         <div className="flex items-center gap-2">
           <Input
             type="number"
@@ -80,6 +90,7 @@ export function LeaveBalances({ year, rows }: { year: number; rows: LeaveBalance
             Set everyone
           </Button>
         </div>
+        )}
       </div>
       <div className="overflow-x-auto">
         <table className="w-full text-left text-sm">
@@ -124,7 +135,12 @@ function BalanceRow({
     <tr className="border-t">
       <td className="px-5 py-2.5">
         <div className="flex flex-col">
-          <span className="font-medium">{row.fullName}</span>
+          <Link
+            href={`/admin/leave?employee=${row.employeeId}`}
+            className="font-medium underline-offset-2 hover:text-primary hover:underline"
+          >
+            {row.fullName}
+          </Link>
           <span className="font-mono text-[11px] text-muted-foreground">{row.employeeCode}</span>
         </div>
       </td>

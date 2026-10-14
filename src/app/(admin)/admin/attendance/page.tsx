@@ -27,9 +27,12 @@ import {
 import { requireViewer } from "@/lib/permissions/server";
 import { excludeIds, superAdminEmployeeIds } from "@/lib/queries/admin-dashboard";
 import { ensureStaffWeekendOff, weekendOrRecordedStatus } from "@/lib/attendance-weekend";
+import { creditedProductiveSeconds } from "@/lib/shift";
+import { formatLeaveComment } from "@/lib/leave";
+import { leaveNotesByDay } from "@/lib/queries/leave";
 import { EditAttendanceDialog } from "@/components/attendance/edit-attendance-dialog";
 import { AttendanceFilters } from "@/components/attendance/attendance-filters";
-import { AttendanceStatusBadge } from "@/components/attendance/attendance-status-badge";
+import { AttendanceLeaveMark } from "@/components/leave/leave-reason-tip";
 import {
   addAttendanceRow,
   emptyAttendanceCounts,
@@ -79,6 +82,7 @@ export default async function AdminAttendancePage({
   const { ctx, seesAll } = await requireViewer();
   const params = await searchParams;
   const query = parseAttendanceQuery(params, seesAll ? null : ctx.employeeId);
+  const search = (Array.isArray(params.q) ? params.q[0] : params.q ?? "").trim();
   const supabase = await createClient();
   const adminIds = seesAll ? await superAdminEmployeeIds(supabase) : [];
   const adminSet = new Set(adminIds);
@@ -132,17 +136,38 @@ export default async function AdminAttendancePage({
 
   const { data: attendanceRows } = await attendanceQuery;
   const records = (attendanceRows ?? []) as AttendanceRecord[];
+  const leaveNotes = await leaveNotesByDay(
+    employees.map((employee) => employee.id),
+    query.start,
+    query.end
+  );
+
+  function leaveDetail(personId: string, date: string, notes: string | null | undefined) {
+    const request = leaveNotes.get(`${personId}|${date}`);
+    if (request?.reason) return { subject: request.subject, reason: request.reason };
+    return formatLeaveComment(notes);
+  }
 
   const scopedEmployees = employeeId
     ? employees.filter((employee) => employee.id === employeeId)
     : employees;
+  const needle = search.toLowerCase();
+  const visibleEmployees =
+    employeeId || !needle
+      ? scopedEmployees
+      : scopedEmployees.filter(
+          (employee) =>
+            employee.full_name.toLowerCase().includes(needle) ||
+            employee.employee_code.toLowerCase().includes(needle)
+        );
+  const visibleIds = new Set(visibleEmployees.map((employee) => employee.id));
 
   const titlePerson = selectedEmployee?.full_name ?? (seesAll ? "All employees" : ctx.fullName);
   const description = `${shiftWindowLabel()} · ${titlePerson} · ${periodLabel(query)}`;
 
   const dailyRoster =
     query.view === "daily"
-      ? scopedEmployees.map((employee) => ({
+      ? visibleEmployees.map((employee) => ({
           employee,
           attendance: records.find((row) => row.employee_id === employee.id),
         }))
@@ -162,12 +187,13 @@ export default async function AdminAttendancePage({
     }
   }
 
-  const rangeCounts = query.view === "daily" ? dailyCounts : countsFromRows(records);
+  const visibleRecords = records.filter((row) => visibleIds.has(row.employee_id));
+  const rangeCounts = query.view === "daily" ? dailyCounts : countsFromRows(visibleRecords);
   const byEmployee = new Map<string, AttendanceCounts>();
-  for (const employee of scopedEmployees) {
+  for (const employee of visibleEmployees) {
     byEmployee.set(employee.id, emptyAttendanceCounts());
   }
-  for (const row of records) {
+  for (const row of visibleRecords) {
     const current = byEmployee.get(row.employee_id) ?? emptyAttendanceCounts();
     addAttendanceRow(current, row);
     byEmployee.set(row.employee_id, current);
@@ -200,6 +226,7 @@ export default async function AdminAttendancePage({
         date={query.date}
         month={query.month}
         year={query.year}
+        search={search}
       />
 
       <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
@@ -219,7 +246,10 @@ export default async function AdminAttendancePage({
         dailyRoster.length === 0 ? (
           <Card className="gap-0 overflow-hidden py-0">
             <CardContent className="p-4">
-              <EmptyState icon={CalendarCheck} title="No employees in this view" />
+              <EmptyState
+                icon={CalendarCheck}
+                title={search ? "No employees match this search" : "No employees in this view"}
+              />
             </CardContent>
           </Card>
         ) : (
@@ -241,12 +271,16 @@ export default async function AdminAttendancePage({
                 <TableRow key={employee.id}>
                   {employeeId ? null : (
                     <TableCell>
-                      <EmployeeCell employee={employee} />
+                      <EmployeeCell
+                        employee={employee}
+                        href={seesAll ? employeeHistoryHref(employee.id, query) : undefined}
+                      />
                     </TableCell>
                   )}
                   <TableCell>
-                    <AttendanceStatusBadge
+                    <AttendanceLeaveMark
                       status={weekendOrRecordedStatus(query.date, attendance?.status)}
+                      {...leaveDetail(employee.id, query.date, attendance?.notes)}
                     />
                   </TableCell>
                   <TableCell>
@@ -255,7 +289,11 @@ export default async function AdminAttendancePage({
                   <TableCell>
                     {attendance?.last_check_out ? formatTime(attendance.last_check_out) : "—"}
                   </TableCell>
-                  <TableCell>{formatDuration(attendance?.total_active_seconds ?? 0)}</TableCell>
+                  <TableCell>
+                    {formatDuration(
+                      creditedProductiveSeconds(attendance?.total_active_seconds ?? 0, attendance?.status)
+                    )}
+                  </TableCell>
                   <TableCell>{formatDuration(attendance?.total_break_seconds ?? 0)}</TableCell>
                   {seesAll ? (
                     <TableCell className="text-right">
@@ -278,10 +316,11 @@ export default async function AdminAttendancePage({
       {query.view === "monthly" && !employeeId ? (
         <AttendanceTableCard emptyTitle="No employees yet">
           <TeamSummaryTable
-            employees={scopedEmployees}
+            employees={visibleEmployees}
             byEmployee={byEmployee}
             month={query.month}
             seesAll={seesAll}
+            emptyTitle={search ? "No employees match this search" : "No employees yet"}
           />
         </AttendanceTableCard>
       ) : null}
@@ -309,8 +348,9 @@ export default async function AdminAttendancePage({
                   <TableRow key={day}>
                     <TableCell>{formatIsoDate(day)}</TableCell>
                     <TableCell>
-                      <AttendanceStatusBadge
+                      <AttendanceLeaveMark
                         status={weekendOrRecordedStatus(day, attendance?.status, "NO_RECORD")}
+                        {...leaveDetail(employee.id, day, attendance?.notes)}
                       />
                     </TableCell>
                     <TableCell>
@@ -319,7 +359,11 @@ export default async function AdminAttendancePage({
                     <TableCell>
                       {attendance?.last_check_out ? formatTime(attendance.last_check_out) : "—"}
                     </TableCell>
-                    <TableCell>{formatDuration(attendance?.total_active_seconds ?? 0)}</TableCell>
+                    <TableCell>
+                    {formatDuration(
+                      creditedProductiveSeconds(attendance?.total_active_seconds ?? 0, attendance?.status)
+                    )}
+                  </TableCell>
                     <TableCell>{formatDuration(attendance?.total_break_seconds ?? 0)}</TableCell>
                     {seesAll ? (
                       <TableCell className="text-right">
@@ -342,10 +386,11 @@ export default async function AdminAttendancePage({
       {query.view === "yearly" && !employeeId ? (
         <AttendanceTableCard emptyTitle="No employees yet">
           <TeamSummaryTable
-            employees={scopedEmployees}
+            employees={visibleEmployees}
             byEmployee={byEmployee}
             year={query.year}
             seesAll={seesAll}
+            emptyTitle={search ? "No employees match this search" : "No employees yet"}
           />
         </AttendanceTableCard>
       ) : null}
@@ -392,10 +437,29 @@ export default async function AdminAttendancePage({
   );
 }
 
-function EmployeeCell({ employee }: { employee: EmployeeOption }) {
+function employeeHistoryHref(
+  employeeId: string,
+  query: { view: string; date: string; month: string; year: string }
+) {
+  const params = new URLSearchParams();
+  params.set("view", query.view);
+  params.set("employee", employeeId);
+  if (query.view === "daily") params.set("date", query.date);
+  if (query.view === "monthly") params.set("month", query.month);
+  if (query.view === "yearly") params.set("year", query.year);
+  return `/admin/attendance?${params.toString()}`;
+}
+
+function EmployeeCell({ employee, href }: { employee: EmployeeOption; href?: string }) {
   return (
     <div className="flex flex-col">
-      <span className="font-medium">{employee.full_name}</span>
+      {href ? (
+        <Link href={href} className="font-medium underline-offset-2 hover:text-primary hover:underline">
+          {employee.full_name}
+        </Link>
+      ) : (
+        <span className="font-medium">{employee.full_name}</span>
+      )}
       <span className="text-xs text-muted-foreground">{employee.employee_code}</span>
     </div>
   );
@@ -427,17 +491,19 @@ function TeamSummaryTable({
   month,
   year,
   seesAll,
+  emptyTitle = "No employees yet",
 }: {
   employees: EmployeeOption[];
   byEmployee: Map<string, AttendanceCounts>;
   month?: string;
   year?: string;
   seesAll: boolean;
+  emptyTitle?: string;
 }) {
   if (employees.length === 0) {
     return (
       <div className="p-4">
-        <EmptyState icon={CalendarCheck} title="No employees yet" />
+        <EmptyState icon={CalendarCheck} title={emptyTitle} />
       </div>
     );
   }
@@ -464,7 +530,7 @@ function TeamSummaryTable({
           return (
             <TableRow key={employee.id}>
               <TableCell>
-                <EmployeeCell employee={employee} />
+                <EmployeeCell employee={employee} href={seesAll ? href : undefined} />
               </TableCell>
               <TableCell>{counts.present}</TableCell>
               <TableCell>{counts.leave}</TableCell>

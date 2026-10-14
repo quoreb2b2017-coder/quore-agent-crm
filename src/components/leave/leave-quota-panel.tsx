@@ -39,14 +39,14 @@ export function LeaveQuotaPanel({
     {
       label: "Available",
       value: available,
-      hint: "Quota minus approved leave",
+      hint: "Paid days this year",
       icon: Wallet,
       tone: "info",
     },
     {
       label: "Used",
       value: used,
-      hint: "Approved this year",
+      hint: "Approved and marked leave",
       icon: CheckCircle2,
       tone: "used",
     },

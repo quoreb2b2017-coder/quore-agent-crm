@@ -4,8 +4,9 @@ import type { CommonDashboardData } from "@/lib/queries/employee-dashboard";
 import { formatDuration } from "@/lib/format";
 import {
   BREAK_TOTAL_SECONDS,
-  PRODUCTIVE_SECONDS,
-  SHIFT_WORKING_SECONDS,
+  creditedProductiveSeconds,
+  productiveTargetSeconds,
+  shiftTargetSeconds,
 } from "@/lib/shift";
 
 function pct(value: number, max: number) {
@@ -22,18 +23,21 @@ export function CommonStats({
   compact?: boolean;
   packed?: boolean;
 }) {
-  const shiftSeconds = data.activeSeconds + data.breakSeconds;
+  const productiveSeconds = creditedProductiveSeconds(data.activeSeconds, data.attendanceStatus);
+  const shiftSeconds = productiveSeconds + data.breakSeconds;
+  const productiveTarget = productiveTargetSeconds(data.attendanceStatus);
+  const shiftTarget = shiftTargetSeconds(data.attendanceStatus);
   return (
     <div className={packed ? "dash-stage-stats-3" : "grid grid-cols-1 gap-3 sm:grid-cols-3"}>
       <StatCard
         compact={compact}
         packed={packed}
         label="Productive"
-        value={formatDuration(data.activeSeconds)}
+        value={formatDuration(productiveSeconds)}
         icon={Timer}
         tone="success"
-        hint={`Target ${formatDuration(PRODUCTIVE_SECONDS)}`}
-        progress={pct(data.activeSeconds, PRODUCTIVE_SECONDS)}
+        hint={`Target ${formatDuration(productiveTarget)}${data.attendanceStatus === "HALF_DAY" ? " · half day" : ""}`}
+        progress={pct(productiveSeconds, productiveTarget)}
       />
       <StatCard
         compact={compact}
@@ -52,8 +56,8 @@ export function CommonStats({
         value={formatDuration(shiftSeconds)}
         icon={Briefcase}
         tone="info"
-        hint={`Target ${formatDuration(SHIFT_WORKING_SECONDS)}`}
-        progress={pct(shiftSeconds, SHIFT_WORKING_SECONDS)}
+        hint={`Target ${formatDuration(shiftTarget)}${data.attendanceStatus === "HALF_DAY" ? " · half day" : ""}`}
+        progress={pct(shiftSeconds, shiftTarget)}
       />
     </div>
   );

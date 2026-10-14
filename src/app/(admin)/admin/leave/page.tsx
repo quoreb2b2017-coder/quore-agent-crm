@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { CalendarDays } from "lucide-react";
 import { createDataClient as createClient } from "@/lib/supabase/data";
 import { PageHeader } from "@/components/dashboard/page-header";
@@ -16,20 +17,22 @@ import { formatDate, todayIso } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { isUuid } from "@/lib/attendance-period";
 import { listWatchableEmployees } from "@/lib/queries/admin-dashboard";
-import { isUndecidedLeaveType, unpackLeaveNote } from "@/lib/leave";
-import { getLeaveBalanceRows, getPaidLeaveQuota } from "@/lib/queries/leave";
+import { isUndecidedLeaveType } from "@/lib/leave";
+import { getLeaveBalanceRows, getPaidLeaveQuota, listLeaveHistory } from "@/lib/queries/leave";
 import { LeaveBalances } from "./leave-balances";
 import { LeaveQuotaPanel } from "@/components/leave/leave-quota-panel";
 import { LeaveAdminActions } from "./leave-actions";
 import { LeaveFilters } from "./leave-filters";
 import { requireViewer } from "@/lib/permissions/server";
 import { ApplyLeaveDialog } from "@/app/(employee)/portal/leave/apply-leave-dialog";
+import { LeaveReasonTip } from "@/components/leave/leave-reason-tip";
 
 const statusTone: Record<string, string> = {
   PENDING: "bg-warning/10 text-warning border-warning/20",
   APPROVED: "bg-success/10 text-success border-success/20",
   REJECTED: "bg-destructive/10 text-destructive border-destructive/20",
   CANCELLED: "bg-muted text-muted-foreground border-transparent",
+  ON_LEAVE: "bg-info/10 text-info border-info/20",
 };
 
 export default async function AdminLeavePage({
@@ -48,14 +51,6 @@ export default async function AdminLeavePage({
   const employeeId =
     requestedId && employees.some((employee) => employee.id === requestedId) ? requestedId : null;
 
-  let requestsQuery = supabase
-    .from("leave_requests")
-    .select("id, employee_id, leave_type_id, start_date, end_date, days_count, status, reason")
-    .order("created_at", { ascending: false })
-    .limit(200);
-  if (!seesAll) requestsQuery = requestsQuery.eq("employee_id", ctx.employeeId);
-  else if (employeeId) requestsQuery = requestsQuery.eq("employee_id", employeeId);
-
   const quotaIds = seesAll
     ? employeeId
       ? [employeeId]
@@ -64,23 +59,17 @@ export default async function AdminLeavePage({
   const people = Math.max(1, quotaIds.length);
   const selectedName = employees.find((employee) => employee.id === employeeId)?.full_name;
 
-  const [{ data: requests }, { data: leaveTypes }, quota, balanceRows] = await Promise.all([
-    requestsQuery,
+  const [{ data: leaveTypes }, quota, balanceRows, history] = await Promise.all([
     supabase.from("leave_types").select("id, name, is_paid").order("name"),
     getPaidLeaveQuota({ employeeIds: quotaIds, year, people }),
-    seesAll ? getLeaveBalanceRows(employees, year) : Promise.resolve([]),
+    seesAll ? getLeaveBalanceRows(employeeId ? employees.filter((person) => person.id === employeeId) : employees, year) : Promise.resolve([]),
+    listLeaveHistory(quotaIds, year),
   ]);
 
-  const employeeIds = Array.from(new Set((requests ?? []).map((row) => row.employee_id)));
-  const { data: namedEmployees } =
-    employeeIds.length > 0
-      ? await supabase.from("employees").select("id, full_name").in("id", employeeIds)
-      : { data: [] };
-
-  const nameById = new Map((namedEmployees ?? []).map((row) => [row.id, row.full_name]));
+  const nameById = new Map(employees.map((row) => [row.id, row.full_name]));
   const typeById = new Map((leaveTypes ?? []).map((row) => [row.id, row]));
   const assignableTypes = (leaveTypes ?? []).filter((row) => !isUndecidedLeaveType(row.name));
-  const rows = requests ?? [];
+  const rows = history;
 
   return (
     <div className="flex flex-col gap-6">
@@ -115,7 +104,7 @@ export default async function AdminLeavePage({
       {seesAll ? (
         <Card className="gap-0 overflow-hidden py-0">
           <CardContent className="p-0">
-            <LeaveBalances year={year} rows={balanceRows} />
+            <LeaveBalances year={year} rows={balanceRows} single={!!employeeId} />
           </CardContent>
         </Card>
       ) : null}
@@ -124,7 +113,10 @@ export default async function AdminLeavePage({
         <CardContent className="p-0">
           {rows.length === 0 ? (
             <div className="p-6">
-              <EmptyState icon={CalendarDays} title="No leave requests yet" />
+              <EmptyState
+                icon={CalendarDays}
+                title={employeeId ? "No leave taken this year" : "No leave taken yet"}
+              />
             </div>
           ) : (
             <Table>
@@ -142,19 +134,33 @@ export default async function AdminLeavePage({
               </TableHeader>
               <TableBody>
                 {rows.map((row) => {
-                  const note = unpackLeaveNote(row.reason);
-                  const type = typeById.get(row.leave_type_id);
+                  const type = row.leaveTypeId ? typeById.get(row.leaveTypeId) : undefined;
                   const decided = type && !isUndecidedLeaveType(type.name);
                   return (
-                  <TableRow key={row.id}>
-                    <TableCell>{nameById.get(row.employee_id) ?? "—"}</TableCell>
+                  <TableRow key={row.key}>
                     <TableCell>
-                      <div className="font-medium">{note.subject || "—"}</div>
-                      {note.reason ? (
-                        <p className="line-clamp-2 max-w-xs text-xs text-muted-foreground">{note.reason}</p>
-                      ) : null}
+                      {seesAll ? (
+                        <Link
+                          href={`/admin/leave?employee=${row.employeeId}`}
+                          className="font-medium underline-offset-2 hover:text-primary hover:underline"
+                        >
+                          {nameById.get(row.employeeId) ?? "—"}
+                        </Link>
+                      ) : (
+                        nameById.get(row.employeeId) ?? "—"
+                      )}
                     </TableCell>
-                    <TableCell>{decided ? type.name : "Not decided"}</TableCell>
+                    <TableCell>
+                      <LeaveReasonTip subject={row.subject} reason={row.reason}>
+                        <span className="block max-w-xs">
+                          <span className="block font-medium">{row.subject || "—"}</span>
+                          {row.reason && row.reason !== row.subject ? (
+                            <span className="line-clamp-2 text-xs text-muted-foreground">{row.reason}</span>
+                          ) : null}
+                        </span>
+                      </LeaveReasonTip>
+                    </TableCell>
+                    <TableCell>{decided ? type.name : row.requestId ? "Not decided" : "Marked"}</TableCell>
                     <TableCell>
                       {decided ? (
                         <Badge
@@ -168,35 +174,42 @@ export default async function AdminLeavePage({
                         >
                           {type.is_paid ? "Paid" : "Unpaid"}
                         </Badge>
-                      ) : (
+                      ) : row.requestId ? (
                         <Badge variant="outline" className="font-medium">
                           Pending
                         </Badge>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">—</span>
                       )}
                     </TableCell>
                     <TableCell>
-                      {formatDate(row.start_date)} – {formatDate(row.end_date)}
+                      {formatDate(row.startDate)}
+                      {row.endDate !== row.startDate ? ` – ${formatDate(row.endDate)}` : ""}
                     </TableCell>
-                    <TableCell>{row.days_count}</TableCell>
+                    <TableCell>{row.days}</TableCell>
                     <TableCell>
                       <Badge variant="outline" className={cn("font-medium", statusTone[row.status])}>
-                        {row.status}
+                        {row.status === "ON_LEAVE" ? "Taken" : row.status}
                       </Badge>
                     </TableCell>
                     {seesAll ? (
                       <TableCell className="text-right">
-                        <LeaveAdminActions
-                          leaveTypes={assignableTypes}
-                          request={{
-                            id: row.id,
-                            leaveTypeId: decided ? row.leave_type_id : "",
-                            startDate: row.start_date,
-                            endDate: row.end_date,
-                            subject: note.subject,
-                            reason: note.reason,
-                            status: row.status,
-                          }}
-                        />
+                        {row.requestId ? (
+                          <LeaveAdminActions
+                            leaveTypes={assignableTypes}
+                            request={{
+                              id: row.requestId,
+                              leaveTypeId: decided && row.leaveTypeId ? row.leaveTypeId : "",
+                              startDate: row.startDate,
+                              endDate: row.endDate,
+                              subject: row.subject,
+                              reason: row.reason === row.subject ? "" : row.reason,
+                              status: row.status,
+                            }}
+                          />
+                        ) : (
+                          <span className="text-xs text-muted-foreground">Attendance</span>
+                        )}
                       </TableCell>
                     ) : null}
                   </TableRow>

@@ -7,6 +7,7 @@ export type CommonDashboardData = {
   activeSeconds: number;
   breakSeconds: number;
   idleSeconds: number;
+  attendanceStatus: string | null;
   assignedTasks: number;
   completedTasks: number;
   pendingTasks: number;
@@ -25,7 +26,7 @@ export async function getCommonDashboardData(employeeId: string): Promise<Common
       .maybeSingle(),
     supabase
       .from("attendance")
-      .select("total_active_seconds, total_break_seconds, total_idle_seconds")
+      .select("status, total_active_seconds, total_break_seconds, total_idle_seconds")
       .eq("employee_id", employeeId)
       .eq("attendance_date", today)
       .maybeSingle(),
@@ -51,6 +52,7 @@ export async function getCommonDashboardData(employeeId: string): Promise<Common
     activeSeconds: attendance?.total_active_seconds ?? 0,
     breakSeconds: attendance?.total_break_seconds ?? 0,
     idleSeconds: attendance?.total_idle_seconds ?? 0,
+    attendanceStatus: attendance?.status ?? null,
     assignedTasks: taskList.length,
     completedTasks: taskList.filter((t) => t.status === "DONE").length,
     pendingTasks: taskList.filter((t) => !["DONE", "CANCELLED"].includes(t.status)).length,

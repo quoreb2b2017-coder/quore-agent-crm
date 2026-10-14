@@ -24,8 +24,9 @@ import {
   breakExcess,
   breakPoolLeftSeconds,
   breakSlot,
+  creditedProductiveSeconds,
   formatBreakType,
-  SHIFT_WORKING_SECONDS,
+  shiftTargetSeconds,
   slotBudgetSeconds,
   creditedWorkBounds,
   type BreakSlot,
@@ -75,6 +76,7 @@ export function ClockWidget({
     sessionClosedWashroomSeconds = 0,
     onLeave,
     weekOff = false,
+    halfDay = false,
   } = session;
   const [isPending, startTransition] = useTransition();
   const [mounted, setMounted] = useState(false);
@@ -104,6 +106,7 @@ export function ClockWidget({
       )
     : 0;
   const dailySeconds = accruedActiveSeconds + liveSlice;
+  const countedSeconds = creditedProductiveSeconds(dailySeconds, halfDay ? "HALF_DAY" : null);
   const openSlot = openBreakType ? breakSlot(openBreakType) : null;
   const usedBySlot: Record<BreakSlot, number> = {
     TEA_1: closedBreakSeconds.TEA_1 + (openSlot === "TEA_1" ? liveBreak : 0),
@@ -118,7 +121,8 @@ export function ClockWidget({
   const tea2Remaining = slotRemaining("TEA_2");
   const lunchRemaining = slotRemaining("LUNCH");
   const openBreakOver = openSlot ? excess[openSlot] : 0;
-  const shiftPct = Math.min(100, (dailySeconds / SHIFT_WORKING_SECONDS) * 100);
+  const shiftTarget = shiftTargetSeconds(halfDay ? "HALF_DAY" : null);
+  const shiftPct = Math.min(100, (Math.min(dailySeconds, shiftTarget) / shiftTarget) * 100);
   const poolUsedPct = Math.min(
     100,
     ((BREAK_TOTAL_SECONDS - poolLeft) / BREAK_TOTAL_SECONDS) * 100
@@ -232,7 +236,7 @@ export function ClockWidget({
                 status === "OFFLINE" && "text-muted-foreground"
               )}
             >
-              {mounted ? formatClock(isOnBreak ? liveBreak : isInWashroom ? liveWashroom : dailySeconds) : "—"}
+              {mounted ? formatClock(isOnBreak ? liveBreak : isInWashroom ? liveWashroom : countedSeconds) : "—"}
             </p>
             {isOnBreak ? (
               <>
@@ -247,7 +251,7 @@ export function ClockWidget({
                   </p>
                 )}
                 <p className="text-xs text-muted-foreground">
-                  Productive today {mounted ? formatClock(dailySeconds) : "—"} · paused during break
+                  Productive today {mounted ? formatClock(countedSeconds) : "—"} · paused during break
                 </p>
               </>
             ) : isInWashroom ? (
@@ -264,7 +268,7 @@ export function ClockWidget({
                     : `break total ${formatDuration(poolLeft)} left`}
                 </p>
                 <p className="text-xs text-muted-foreground">
-                  Productive today {mounted ? formatClock(dailySeconds) : "—"} · paused during washroom
+                  Productive today {mounted ? formatClock(countedSeconds) : "—"} · paused during washroom
                 </p>
               </>
             ) : isInMeeting ? (
@@ -433,7 +437,7 @@ export function ClockWidget({
           <span className="tabular-nums">
             {isOnBreak || isInWashroom
               ? `${formatDuration(BREAK_TOTAL_SECONDS - poolLeft)} / ${formatDuration(BREAK_TOTAL_SECONDS)}`
-              : `${Math.round(shiftPct)}% of 9 hrs`}
+              : `${Math.round(shiftPct)}% of ${halfDay ? formatDuration(shiftTarget) : "9 hrs"}`}
           </span>
         </div>
         <div className={cn("progress-track", compact ? "h-1.5" : "h-2")}>

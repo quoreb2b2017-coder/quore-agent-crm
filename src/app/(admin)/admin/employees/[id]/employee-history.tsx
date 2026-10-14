@@ -36,7 +36,7 @@ import {
   BREAK_POLICY_LABEL,
   emptyExcess,
   PRODUCTIVE_HOURS_LABEL,
-  PRODUCTIVE_SECONDS,
+  productiveTargetSeconds,
 } from "@/lib/shift";
 import { cn } from "@/lib/utils";
 import type { EmployeeHistoryPayload } from "@/lib/queries/employee-history";
@@ -80,7 +80,7 @@ export function EmployeeHistory({
           value={formatDuration(data.activeSeconds)}
           icon={Timer}
           tone="success"
-          hint={`Today ${formatDuration(data.todayActiveSeconds)} of ${formatDuration(PRODUCTIVE_SECONDS)}`}
+          hint={`Today ${formatDuration(data.todayActiveSeconds)} of ${formatDuration(productiveTargetSeconds(data.attendance.find((row) => row.attendance_date === data.today)?.status))}`}
         />
         <StatCard
           label="Breaks (30 days)"

@@ -8,6 +8,7 @@ import { EditAttendanceDialog } from "@/components/attendance/edit-attendance-di
 import { StatusBadge } from "@/components/dashboard/status-badge";
 import type { TeamTodayRow } from "@/lib/queries/admin-dashboard";
 import { dailyActiveSeconds, formatClock } from "@/lib/live-time";
+import { creditedProductiveSeconds } from "@/lib/shift";
 import { formatDuration, formatTimeInZone, INDIA_TIME_ZONE } from "@/lib/format";
 
 export function TeamTodayReport({ rows, attendanceDate }: { rows: TeamTodayRow[]; attendanceDate: string }) {
@@ -42,7 +43,7 @@ export function TeamTodayReport({ rows, attendanceDate }: { rows: TeamTodayRow[]
         </thead>
         <tbody>
           {rows.map((row) => {
-            const seconds = dailyActiveSeconds({
+            const seconds = creditedProductiveSeconds(dailyActiveSeconds({
               storedActiveSeconds: row.activeSeconds,
               sessionStartedAt: row.sessionStartedAt,
               sessionClosedBreakSeconds: row.sessionClosedBreakSeconds,
@@ -50,7 +51,7 @@ export function TeamTodayReport({ rows, attendanceDate }: { rows: TeamTodayRow[]
               sessionClosedWashroomSeconds: row.sessionClosedWashroomSeconds,
               openWashroomStartedAt: row.openWashroomStartedAt,
               now: now ?? undefined,
-            });
+            }), row.status);
             const washroomLive =
               row.inWashroom && row.openWashroomStartedAt && now != null
                 ? Math.max(0, Math.floor((now - new Date(row.openWashroomStartedAt).getTime()) / 1000))

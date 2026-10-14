@@ -7,8 +7,8 @@ import { cn } from "@/lib/utils";
 
 const WEEKDAYS = ["M", "T", "W", "T", "F", "S", "S"];
 
-function leftSeconds(worked: number) {
-  return Math.max(0, PRODUCTIVE_SECONDS - worked);
+function leftSeconds(worked: number, target = PRODUCTIVE_SECONDS) {
+  return Math.max(0, target - worked);
 }
 
 export function MonthCalendar({
@@ -39,8 +39,8 @@ export function MonthCalendar({
   const worked = counted.reduce((sum, day) => sum + day.productiveSeconds, 0);
   const missing = days
     .filter((day) => day.date < today && day.status !== "off" && day.status !== "upcoming")
-    .reduce((sum, day) => sum + leftSeconds(day.productiveSeconds), 0);
-  const target = counted.length * PRODUCTIVE_SECONDS;
+    .reduce((sum, day) => sum + leftSeconds(day.productiveSeconds, day.targetSeconds), 0);
+  const target = counted.reduce((sum, day) => sum + day.targetSeconds, 0);
 
   return (
     <section className="-mx-4 flex w-[calc(100%+2rem)] flex-col gap-2 md:-mx-8 md:w-[calc(100%+4rem)]">
@@ -148,15 +148,21 @@ function ProductiveGraph({
           />
         </div>
       )}
-      <p className="text-[10px] text-muted-foreground">Daily bars · dashed line is {PRODUCTIVE_HOURS_LABEL}</p>
+      <p className="text-[10px] text-muted-foreground">
+        Daily bars · dashed line is {PRODUCTIVE_HOURS_LABEL}
+        {days.some((day) => day.attendanceStatus === "HALF_DAY")
+          ? ` · half day is ${formatDuration(Math.floor(PRODUCTIVE_SECONDS / 2))}`
+          : ""}
+      </p>
     </aside>
   );
 }
 
 function barTitle(day: ProductivityDay) {
-  const left = leftSeconds(day.productiveSeconds);
+  const left = leftSeconds(day.productiveSeconds, day.targetSeconds);
+  const half = day.attendanceStatus === "HALF_DAY" ? ", half day" : "";
   const gap = left > 0 ? `, ${formatDuration(left)} ${day.status === "in_progress" ? "left" : "short"}` : ", on target";
-  return `${Number(day.date.slice(8, 10))}: ${formatDuration(day.productiveSeconds)}${gap}`;
+  return `${Number(day.date.slice(8, 10))}: ${formatDuration(day.productiveSeconds)}${half}${gap}`;
 }
 
 function MonthLink({ href, label, direction }: { href: string; label: string; direction: "prev" | "next" }) {
@@ -199,7 +205,8 @@ function CalendarDay({
   const late = day?.attendanceStatus === "LATE";
   const off = weekend || untracked || day?.status === "off";
   const worked = day?.productiveSeconds ?? 0;
-  const left = leftSeconds(worked);
+  const left = leftSeconds(worked, day?.targetSeconds);
+  const halfDay = day?.attendanceStatus === "HALF_DAY";
   const showTime = !off && day && (day.status === "met" || day.status === "short" || day.status === "in_progress");
   const label = weekend
     ? "Off"
@@ -225,9 +232,11 @@ function CalendarDay({
         !off && (day?.status === "upcoming" || !day) && "border-dashed bg-background"
       )}
       title={
-        showTime
-          ? `${weekdayShortIst(date)} ${dayNumber}: ${formatDuration(worked)}${left > 0 ? `, ${formatDuration(left)} ${day?.status === "in_progress" ? "left" : "short"}` : ""}`
-          : `${weekdayShortIst(date)} ${dayNumber}`
+        day?.offStatus === "ON_LEAVE" && day.leaveComment
+          ? `${weekdayShortIst(date)} ${dayNumber}: Leave — ${day.leaveComment}`
+          : showTime
+            ? `${weekdayShortIst(date)} ${dayNumber}${halfDay ? " half day" : ""}: ${formatDuration(worked)}${left > 0 ? `, ${formatDuration(left)} ${day?.status === "in_progress" ? "left" : "short"}` : ", on target"}`
+            : `${weekdayShortIst(date)} ${dayNumber}`
       }
     >
         <div className="flex items-center justify-between gap-0.5">
@@ -235,6 +244,11 @@ function CalendarDay({
           {dayNumber}
         </span>
         <span className="flex items-center gap-0.5">
+          {halfDay && !off ? (
+            <span className="text-[9px] leading-none font-semibold text-warning" title="Half day">
+              ½
+            </span>
+          ) : null}
           {late && !off ? <span className="size-1.5 shrink-0 rounded-full bg-warning" title="Late" /> : null}
           {!off && day?.status === "met" ? (
             <Check className="size-3 shrink-0 text-success" strokeWidth={3} aria-label="Target met" />

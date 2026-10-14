@@ -1,5 +1,6 @@
 import { createDataClient as createClient } from "@/lib/supabase/data";
-import { isUndecidedLeaveType, paidLeaveQuota } from "@/lib/leave";
+import { addDaysIso, eachDateInclusive, isWeekendIso } from "@/lib/format";
+import { formatLeaveComment, isUndecidedLeaveType, paidLeaveQuota, workingDatesInclusive } from "@/lib/leave";
 import { loadWorkSettings } from "@/lib/work-settings-server";
 
 type PaidType = { id: string; name: string; is_paid: boolean };
@@ -15,7 +16,7 @@ async function paidLeaveContext(employeeIds: string[], year: number) {
       ? Promise.resolve({ data: [] })
       : supabase
           .from("leave_requests")
-          .select("employee_id, leave_type_id, days_count, status")
+          .select("id, employee_id, leave_type_id, start_date, end_date, days_count, status, reason")
           .in("employee_id", employeeIds)
           .gte("start_date", start)
           .lte("start_date", end),
@@ -42,6 +43,28 @@ async function paidLeaveContext(employeeIds: string[], year: number) {
     if (row.status === "APPROVED") {
       usedByEmployee.set(row.employee_id, (usedByEmployee.get(row.employee_id) ?? 0) + days);
     }
+  }
+  const covered = new Set<string>();
+  for (const row of requests ?? []) {
+    if (row.status !== "APPROVED") continue;
+    for (const date of workingDatesInclusive(row.start_date, row.end_date)) {
+      covered.add(`${row.employee_id}|${date}`);
+    }
+  }
+  const { data: markedLeave } =
+    employeeIds.length === 0
+      ? { data: [] }
+      : await supabase
+          .from("attendance")
+          .select("employee_id, attendance_date")
+          .in("employee_id", employeeIds)
+          .eq("status", "ON_LEAVE")
+          .gte("attendance_date", start)
+          .lte("attendance_date", end);
+  for (const row of markedLeave ?? []) {
+    if (isWeekendIso(row.attendance_date)) continue;
+    if (covered.has(`${row.employee_id}|${row.attendance_date}`)) continue;
+    usedByEmployee.set(row.employee_id, (usedByEmployee.get(row.employee_id) ?? 0) + 1);
   }
   const allocatedByEmployee = new Map<string, number>();
   for (const row of balances ?? []) {
@@ -114,6 +137,140 @@ export async function getLeaveBalanceRows(
       remaining: Math.max(0, allocated - used),
     };
   });
+}
+
+export type LeaveDayNote = { subject: string; reason: string };
+
+/** Approved leave comment for each employee and date. Pending is used only when that day has no approval. */
+export async function leaveNotesByDay(employeeIds: string[], start: string, end: string) {
+  const map = new Map<string, LeaveDayNote & { approved: boolean }>();
+  if (employeeIds.length === 0) return map;
+  const supabase = await createClient();
+  const { data } = await supabase
+    .from("leave_requests")
+    .select("employee_id, start_date, end_date, status, reason")
+    .in("employee_id", employeeIds)
+    .lte("start_date", end)
+    .gte("end_date", start)
+    .in("status", ["APPROVED", "PENDING"]);
+
+  for (const row of data ?? []) {
+    const note = formatLeaveComment(row.reason);
+    if (!note.reason) continue;
+    const approved = row.status === "APPROVED";
+    for (const date of eachDateInclusive(row.start_date, row.end_date)) {
+      if (date < start || date > end) continue;
+      const key = `${row.employee_id}|${date}`;
+      const current = map.get(key);
+      if (current?.approved && !approved) continue;
+      map.set(key, { ...note, approved });
+    }
+  }
+  return map;
+}
+
+export type LeaveHistoryRow = {
+  key: string;
+  employeeId: string;
+  startDate: string;
+  endDate: string;
+  days: number;
+  status: string;
+  subject: string;
+  reason: string;
+  leaveTypeId: string | null;
+  requestId: string | null;
+};
+
+/** Every leave request, plus attendance days marked on leave that have no request. */
+export async function listLeaveHistory(employeeIds: string[], year: number): Promise<LeaveHistoryRow[]> {
+  if (employeeIds.length === 0) return [];
+  const supabase = await createClient();
+  const start = `${year}-01-01`;
+  const end = `${year}-12-31`;
+  const [{ data: requests }, { data: marked }] = await Promise.all([
+    supabase
+      .from("leave_requests")
+      .select("id, employee_id, leave_type_id, start_date, end_date, days_count, status, reason")
+      .in("employee_id", employeeIds)
+      .lte("start_date", end)
+      .gte("end_date", start),
+    supabase
+      .from("attendance")
+      .select("employee_id, attendance_date, notes")
+      .in("employee_id", employeeIds)
+      .eq("status", "ON_LEAVE")
+      .gte("attendance_date", start)
+      .lte("attendance_date", end)
+      .order("attendance_date"),
+  ]);
+
+  const covered = new Set<string>();
+  const rows: LeaveHistoryRow[] = (requests ?? []).map((row) => {
+    if (row.status === "APPROVED") {
+      for (const date of workingDatesInclusive(row.start_date, row.end_date)) {
+        covered.add(`${row.employee_id}|${date}`);
+      }
+    }
+    const note = formatLeaveComment(row.reason);
+    return {
+      key: row.id,
+      employeeId: row.employee_id,
+      startDate: row.start_date,
+      endDate: row.end_date,
+      days: Number(row.days_count) || workingDatesInclusive(row.start_date, row.end_date).length,
+      status: row.status,
+      subject: note.subject,
+      reason: note.reason,
+      leaveTypeId: row.leave_type_id,
+      requestId: row.id,
+    };
+  });
+
+  const loose = new Map<string, { date: string; notes: string }[]>();
+  for (const row of marked ?? []) {
+    if (isWeekendIso(row.attendance_date)) continue;
+    if (covered.has(`${row.employee_id}|${row.attendance_date}`)) continue;
+    const current = loose.get(row.employee_id) ?? [];
+    current.push({ date: row.attendance_date, notes: row.notes ?? "" });
+    loose.set(row.employee_id, current);
+  }
+  for (const [employeeId, entry] of loose) {
+    const sorted = [...entry].sort((a, b) => a.date.localeCompare(b.date));
+    let group: { start: string; end: string; days: number; notes: string } | null = null;
+    const flush = () => {
+      if (!group) return;
+      const note = formatLeaveComment(group.notes);
+      rows.push({
+        key: `attendance:${employeeId}:${group.start}`,
+        employeeId,
+        startDate: group.start,
+        endDate: group.end,
+        days: group.days,
+        status: "ON_LEAVE",
+        subject: note.subject,
+        reason: note.reason,
+        leaveTypeId: null,
+        requestId: null,
+      });
+      group = null;
+    };
+    for (const item of sorted) {
+      let cursor = group ? addDaysIso(group.end, 1) : "";
+      while (cursor && isWeekendIso(cursor)) cursor = addDaysIso(cursor, 1);
+      const sameNote = group && (group.notes || "") === (item.notes || "");
+      if (group && sameNote && cursor === item.date) {
+        group.end = item.date;
+        group.days += 1;
+      } else {
+        flush();
+        group = { start: item.date, end: item.date, days: 1, notes: item.notes };
+      }
+    }
+    flush();
+  }
+
+  return rows.sort((a, b) => b.startDate.localeCompare(a.startDate) || a.employeeId.localeCompare(b.employeeId));
 }
 
 export async function primaryPaidLeaveTypeId() {

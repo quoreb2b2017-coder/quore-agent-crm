@@ -8,7 +8,6 @@ import { PageHeader } from "@/components/dashboard/page-header";
 import { EmptyState } from "@/components/dashboard/empty-state";
 import { ClockWidget } from "@/components/attendance/clock-widget";
 import { Card, CardContent } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import {
   Table,
   TableBody,
@@ -18,18 +17,10 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { formatDate, formatDuration, formatTime, shiftWindowLabel } from "@/lib/format";
-import { BREAK_POLICY_LABEL } from "@/lib/shift";
-import { cn } from "@/lib/utils";
-
-const statusTone: Record<string, string> = {
-  PRESENT: "bg-success/10 text-success border-success/20",
-  LATE: "bg-warning/10 text-warning border-warning/20",
-  ABSENT: "bg-destructive/10 text-destructive border-destructive/20",
-  HALF_DAY: "bg-warning/10 text-warning border-warning/20",
-  ON_LEAVE: "bg-info/10 text-info border-info/20",
-  HOLIDAY: "bg-muted text-muted-foreground border-transparent",
-  WEEK_OFF: "bg-muted text-muted-foreground border-transparent",
-};
+import { BREAK_POLICY_LABEL, creditedProductiveSeconds } from "@/lib/shift";
+import { formatLeaveComment } from "@/lib/leave";
+import { leaveNotesByDay } from "@/lib/queries/leave";
+import { AttendanceLeaveMark } from "@/components/leave/leave-reason-tip";
 
 export default async function MyAttendancePage() {
   const ctx = await getCurrentEmployeeContext();
@@ -43,10 +34,15 @@ export default async function MyAttendancePage() {
 
   const { data: history } = await supabase
     .from("attendance")
-    .select("attendance_date, status, first_check_in, last_check_out, total_active_seconds, total_break_seconds")
+    .select("attendance_date, status, first_check_in, last_check_out, total_active_seconds, total_break_seconds, notes")
     .eq("employee_id", ctx.employeeId)
     .order("attendance_date", { ascending: false })
     .limit(30);
+  const dates = (history ?? []).map((row) => row.attendance_date).sort();
+  const leaveNotes =
+    dates.length > 0
+      ? await leaveNotesByDay([ctx.employeeId], dates[0], dates[dates.length - 1])
+      : new Map();
 
   return (
     <div className="flex flex-col gap-6">
@@ -80,9 +76,14 @@ export default async function MyAttendancePage() {
                   <TableRow key={h.attendance_date}>
                     <TableCell>{formatDate(h.attendance_date)}</TableCell>
                     <TableCell>
-                      <Badge variant="outline" className={cn("font-medium", statusTone[h.status])}>
-                        {h.status.replace("_", " ")}
-                      </Badge>
+                      <AttendanceLeaveMark
+                        status={h.status}
+                        {...(() => {
+                          const request = leaveNotes.get(`${ctx.employeeId}|${h.attendance_date}`);
+                          if (request?.reason) return { subject: request.subject, reason: request.reason };
+                          return formatLeaveComment(h.notes);
+                        })()}
+                      />
                     </TableCell>
                     <TableCell>
                       {h.first_check_in ? formatTime(h.first_check_in) : "—"}
@@ -90,7 +91,9 @@ export default async function MyAttendancePage() {
                     <TableCell>
                       {h.last_check_out ? formatTime(h.last_check_out) : "—"}
                     </TableCell>
-                    <TableCell>{formatDuration(h.total_active_seconds)}</TableCell>
+                    <TableCell>
+                      {formatDuration(creditedProductiveSeconds(h.total_active_seconds, h.status))}
+                    </TableCell>
                     <TableCell>{formatDuration(h.total_break_seconds)}</TableCell>
                   </TableRow>
                 ))}

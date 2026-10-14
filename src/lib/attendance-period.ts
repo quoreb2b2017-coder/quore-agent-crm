@@ -1,4 +1,5 @@
 import { todayIso } from "@/lib/format";
+import { creditedProductiveSeconds } from "@/lib/shift";
 
 export type AttendanceView = "daily" | "monthly" | "yearly";
 
@@ -114,7 +115,7 @@ export function addAttendanceRow(
   row: { status: string; total_active_seconds: number; total_break_seconds: number }
 ): void {
   counts.records += 1;
-  counts.activeSeconds += row.total_active_seconds ?? 0;
+  counts.activeSeconds += creditedProductiveSeconds(row.total_active_seconds ?? 0, row.status);
   counts.breakSeconds += row.total_break_seconds ?? 0;
   if (row.status === "PRESENT" || row.status === "LATE") counts.present += 1;
   else if (row.status === "ABSENT") counts.absent += 1;

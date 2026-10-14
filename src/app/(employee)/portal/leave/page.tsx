@@ -15,16 +15,18 @@ import {
 } from "@/components/ui/table";
 import { formatDate, todayIso } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import { isUndecidedLeaveType, unpackLeaveNote } from "@/lib/leave";
-import { getPaidLeaveQuota } from "@/lib/queries/leave";
+import { isUndecidedLeaveType } from "@/lib/leave";
+import { getPaidLeaveQuota, listLeaveHistory } from "@/lib/queries/leave";
 import { LeaveQuotaPanel } from "@/components/leave/leave-quota-panel";
 import { ApplyLeaveDialog } from "./apply-leave-dialog";
+import { LeaveReasonTip } from "@/components/leave/leave-reason-tip";
 
 const statusTone: Record<string, string> = {
   PENDING: "bg-warning/10 text-warning border-warning/20",
   APPROVED: "bg-success/10 text-success border-success/20",
   REJECTED: "bg-destructive/10 text-destructive border-destructive/20",
   CANCELLED: "bg-muted text-muted-foreground border-transparent",
+  ON_LEAVE: "bg-info/10 text-info border-info/20",
 };
 
 export default async function MyLeavePage() {
@@ -34,14 +36,10 @@ export default async function MyLeavePage() {
   const supabase = await createClient();
   const year = Number(todayIso().slice(0, 4));
 
-  const [{ data: leaveTypes }, { data: requests }, quota] = await Promise.all([
+  const [{ data: leaveTypes }, quota, history] = await Promise.all([
     supabase.from("leave_types").select("id, name, is_paid").order("name"),
-    supabase
-      .from("leave_requests")
-      .select("id, leave_type_id, start_date, end_date, days_count, status, reason")
-      .eq("employee_id", ctx.employeeId)
-      .order("created_at", { ascending: false }),
     getPaidLeaveQuota({ employeeIds: [ctx.employeeId], year, people: 1 }),
+    listLeaveHistory([ctx.employeeId], year),
   ]);
 
   const typeById = new Map((leaveTypes ?? []).map((t) => [t.id, t]));
@@ -50,7 +48,7 @@ export default async function MyLeavePage() {
     <div className="flex flex-col gap-6">
       <PageHeader
         title="Leave"
-        description={`${quota.available} paid days this year, ${quota.remaining} left. Saturday and Sunday are week off and are not deducted.`}
+        description={`Used ${quota.used} of ${quota.available} days. ${quota.remaining} left. Only your leave is shown.`}
         actions={<ApplyLeaveDialog />}
       />
 
@@ -60,14 +58,14 @@ export default async function MyLeavePage() {
         used={quota.used}
         remaining={quota.remaining}
         pending={quota.pending}
-        peopleLabel={`${ctx.fullName} · personal quota`}
+        peopleLabel={`${ctx.fullName} · used ${quota.used} · ${quota.remaining} left`}
       />
 
       <Card className="gap-0 overflow-hidden py-0">
         <CardContent className="p-0">
-          {!requests || requests.length === 0 ? (
+          {history.length === 0 ? (
             <div className="p-6">
-              <EmptyState icon={CalendarDays} title="No leave requests yet" />
+              <EmptyState icon={CalendarDays} title="You have not taken leave this year" />
             </div>
           ) : (
             <Table>
@@ -81,17 +79,20 @@ export default async function MyLeavePage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {requests.map((r) => {
-                  const note = unpackLeaveNote(r.reason);
-                  const type = typeById.get(r.leave_type_id);
+                {history.map((row) => {
+                  const type = row.leaveTypeId ? typeById.get(row.leaveTypeId) : undefined;
                   const decided = type && !isUndecidedLeaveType(type.name);
                   return (
-                  <TableRow key={r.id}>
+                  <TableRow key={row.key}>
                     <TableCell>
-                      <div className="font-medium">{note.subject || "—"}</div>
-                      {note.reason ? (
-                        <p className="line-clamp-2 text-xs text-muted-foreground">{note.reason}</p>
-                      ) : null}
+                      <LeaveReasonTip subject={row.subject} reason={row.reason}>
+                        <span className="block max-w-xs">
+                          <span className="block font-medium">{row.subject || "Leave"}</span>
+                          {row.reason && row.reason !== row.subject ? (
+                            <span className="line-clamp-2 text-xs text-muted-foreground">{row.reason}</span>
+                          ) : null}
+                        </span>
+                      </LeaveReasonTip>
                     </TableCell>
                     <TableCell>
                       {decided ? (
@@ -107,19 +108,22 @@ export default async function MyLeavePage() {
                           {type.is_paid ? "Paid" : "Unpaid"}
                           {type.name ? ` · ${type.name}` : ""}
                         </Badge>
-                      ) : (
+                      ) : row.requestId ? (
                         <Badge variant="outline" className="font-medium">
                           Pending
                         </Badge>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">Marked</span>
                       )}
                     </TableCell>
                     <TableCell>
-                      {formatDate(r.start_date)} – {formatDate(r.end_date)}
+                      {formatDate(row.startDate)}
+                      {row.endDate !== row.startDate ? ` – ${formatDate(row.endDate)}` : ""}
                     </TableCell>
-                    <TableCell>{r.days_count}</TableCell>
+                    <TableCell>{row.days}</TableCell>
                     <TableCell>
-                      <Badge variant="outline" className={cn("font-medium", statusTone[r.status])}>
-                        {r.status}
+                      <Badge variant="outline" className={cn("font-medium", statusTone[row.status])}>
+                        {row.status === "ON_LEAVE" ? "Taken" : row.status}
                       </Badge>
                     </TableCell>
                   </TableRow>

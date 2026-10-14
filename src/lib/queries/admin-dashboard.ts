@@ -10,6 +10,7 @@ import {
   breakExcess,
   breakSecondsBySlot,
   creditedAwaySeconds,
+  creditedProductiveSeconds,
   emptyExcess,
   shiftAccountingWindowUtc,
   type BreakExcess,
@@ -355,14 +356,17 @@ export async function getAdminDashboardData(): Promise<{
     const live = liveByEmployee.get(person.id);
     return (
       sum +
-      dailyActiveSeconds({
-        storedActiveSeconds: row?.total_active_seconds ?? 0,
-        sessionStartedAt: live?.sessionStartedAt ?? null,
-        sessionClosedBreakSeconds: live?.sessionClosedBreakSeconds ?? 0,
-        openBreakStartedAt: live?.openBreakStartedAt ?? null,
-        sessionClosedWashroomSeconds: live?.sessionClosedWashroomSeconds ?? 0,
-        openWashroomStartedAt: live?.openWashroomStartedAt ?? null,
-      })
+      creditedProductiveSeconds(
+        dailyActiveSeconds({
+          storedActiveSeconds: row?.total_active_seconds ?? 0,
+          sessionStartedAt: live?.sessionStartedAt ?? null,
+          sessionClosedBreakSeconds: live?.sessionClosedBreakSeconds ?? 0,
+          openBreakStartedAt: live?.openBreakStartedAt ?? null,
+          sessionClosedWashroomSeconds: live?.sessionClosedWashroomSeconds ?? 0,
+          openWashroomStartedAt: live?.openWashroomStartedAt ?? null,
+        }),
+        row?.status
+      )
     );
   }, 0);
   const totalBreakSeconds = attendance.reduce((sum, a) => sum + a.total_break_seconds, 0);
@@ -478,7 +482,10 @@ export async function getAdminDashboardStats(): Promise<AdminDashboardStats> {
   const onlineEmployees = sessions.length - onBreakEmployees;
 
   const attendance = (attendanceToday ?? []).filter((row) => !adminSet.has(row.employee_id));
-  const totalWorkingSeconds = attendance.reduce((sum, a) => sum + a.total_active_seconds, 0);
+  const totalWorkingSeconds = attendance.reduce(
+    (sum, a) => sum + creditedProductiveSeconds(a.total_active_seconds, a.status),
+    0
+  );
   const totalBreakSeconds = attendance.reduce((sum, a) => sum + a.total_break_seconds, 0);
   const totalIdleSeconds = attendance.reduce((sum, a) => sum + a.total_idle_seconds, 0);
 

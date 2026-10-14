@@ -11,7 +11,9 @@ import {
   breakDurationSeconds,
   breakExcess,
   breakSecondsBySlot,
+  creditedProductiveSeconds,
   istLocalToUtc,
+  productiveTargetSeconds,
   productivityPercent,
   shiftAccountingWindowUtc,
   type BreakExcess,
@@ -146,9 +148,10 @@ export async function getEmployeeHistory(employeeId: string): Promise<EmployeeHi
   const byDate = new Map(rows.map((row) => [row.attendance_date, row]));
   const chartData = eachDateInclusive(chartSince, today).map((iso) => {
     const row = byDate.get(iso);
+    const credited = row ? creditedProductiveSeconds(row.total_active_seconds, row.status) : 0;
     return {
       day: weekdayShortIst(iso),
-      activeHours: row ? Math.round((row.total_active_seconds / 3600) * 10) / 10 : 0,
+      activeHours: Math.round((credited / 3600) * 10) / 10,
     };
   });
 
@@ -208,13 +211,25 @@ export async function getEmployeeHistory(employeeId: string): Promise<EmployeeHi
     since,
     presentDays: rows.filter((row) => row.status === "PRESENT" || row.status === "LATE" || row.status === "HALF_DAY").length,
     leaveDays: rows.filter((row) => row.status === "ON_LEAVE").length,
-    activeSeconds: rows.reduce((sum, row) => sum + row.total_active_seconds, 0),
+    activeSeconds: rows.reduce(
+      (sum, row) => sum + creditedProductiveSeconds(row.total_active_seconds, row.status),
+      0
+    ),
     breakSeconds: rows.reduce((sum, row) => sum + row.total_break_seconds, 0),
     idleSeconds: rows.reduce((sum, row) => sum + row.total_idle_seconds, 0),
-    todayActiveSeconds: todayRow?.total_active_seconds ?? 0,
-    todayProductivityPct: productivityPercent(todayRow?.total_active_seconds ?? 0),
+    todayActiveSeconds: creditedProductiveSeconds(
+      todayRow?.total_active_seconds ?? 0,
+      todayRow?.status
+    ),
+    todayProductivityPct: productivityPercent(
+      creditedProductiveSeconds(todayRow?.total_active_seconds ?? 0, todayRow?.status),
+      productiveTargetSeconds(todayRow?.status)
+    ),
     chartData,
-    attendance: rows,
+    attendance: rows.map((row) => ({
+      ...row,
+      total_active_seconds: creditedProductiveSeconds(row.total_active_seconds, row.status),
+    })),
     breaks: (breakRows ?? []).map((row) => ({
       id: row.id,
       employeeId: row.employee_id,

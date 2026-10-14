@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
@@ -21,6 +22,7 @@ export function AttendanceFilters({
   date,
   month,
   year,
+  search,
 }: {
   canPickEmployee: boolean;
   employees: { id: string; full_name: string; employee_code: string }[];
@@ -29,8 +31,30 @@ export function AttendanceFilters({
   date: string;
   month: string;
   year: string;
+  search: string;
 }) {
   const router = useRouter();
+  const [draft, setDraft] = useState(search);
+
+  useEffect(() => {
+    setDraft(search);
+  }, [search]);
+
+  useEffect(() => {
+    const next = draft.trim();
+    if (next === search) return;
+    const handle = window.setTimeout(() => {
+      const params = new URLSearchParams();
+      params.set("view", view);
+      if (employeeId) params.set("employee", employeeId);
+      if (view === "daily") params.set("date", date);
+      if (view === "monthly") params.set("month", month);
+      if (view === "yearly") params.set("year", year);
+      if (next) params.set("q", next);
+      router.push(`/admin/attendance?${params.toString()}`);
+    }, 250);
+    return () => window.clearTimeout(handle);
+  }, [draft, search, view, employeeId, date, month, year, router]);
 
   function go(next: {
     view?: AttendanceView;
@@ -47,8 +71,19 @@ export function AttendanceFilters({
     if (nextView === "daily") params.set("date", next.date ?? date);
     if (nextView === "monthly") params.set("month", next.month ?? month);
     if (nextView === "yearly") params.set("year", next.year ?? year);
+    if (search.trim()) params.set("q", search.trim());
     router.push(`/admin/attendance?${params.toString()}`);
   }
+
+  const needle = draft.trim().toLowerCase();
+  const listed = needle
+    ? employees.filter(
+        (employee) =>
+          employee.id === employeeId ||
+          employee.full_name.toLowerCase().includes(needle) ||
+          employee.employee_code.toLowerCase().includes(needle)
+      )
+    : employees;
 
   return (
     <div className="flex flex-col gap-4 rounded-2xl border bg-card p-4">
@@ -84,12 +119,26 @@ export function AttendanceFilters({
               className={NATIVE_SELECT_CLASS}
             >
               <option value="all">All employees</option>
-              {employees.map((employee) => (
+              {listed.map((employee) => (
                 <option key={employee.id} value={employee.id}>
                   {employee.full_name} ({employee.employee_code})
                 </option>
               ))}
             </select>
+          </div>
+        ) : null}
+
+        {canPickEmployee ? (
+          <div className="grid min-w-[12rem] flex-1 gap-1.5">
+            <Label htmlFor="attendance-search">Search</Label>
+            <input
+              id="attendance-search"
+              type="search"
+              value={draft}
+              placeholder="Name or code"
+              onChange={(e) => setDraft(e.target.value)}
+              className={NATIVE_SELECT_CLASS}
+            />
           </div>
         ) : null}
 
@@ -142,7 +191,7 @@ export function AttendanceFilters({
         ) : null}
       </div>
       <p className="text-xs text-muted-foreground">
-        Pick a period. All employees shows the team report. Choose one person for their day-by-day record.
+        Pick a period, search a name, or click a name. That opens the same record as the employee list.
       </p>
     </div>
   );

@@ -1,6 +1,8 @@
 import { createDataClient as createClient } from "@/lib/supabase/data";
 import { createServiceClient } from "@/lib/supabase/service";
 import { shiftDateIso, todayIso } from "@/lib/format";
+import { formatLeaveComment } from "@/lib/leave";
+import { leaveNotesByDay } from "@/lib/queries/leave";
 import { formatMinutesLabel, getWorkSettings } from "@/lib/work-settings";
 import { dailyActiveSeconds } from "@/lib/live-time";
 import {
@@ -10,7 +12,8 @@ import {
   addExcess,
   emptyExcess,
   isLateClockIn,
-  PRODUCTIVE_SECONDS,
+  creditedProductiveSeconds,
+  productiveTargetSeconds,
   shiftAccountingWindowUtc,
   TRACKING_START_DATE,
   type BreakExcess,
@@ -27,6 +30,8 @@ export type DayStatus = "met" | "short" | "in_progress" | "upcoming" | "off";
 export type ProductivityDay = {
   date: string;
   productiveSeconds: number;
+  /** 7h 45m, or half of that when the day is marked half day. */
+  targetSeconds: number;
   breakSeconds: number;
   idleSeconds: number;
   /** Time over Tea 1 / Tea 2 / Lunch / washroom allowance that shift. */
@@ -36,6 +41,8 @@ export type ProductivityDay = {
   offStatus: string | null;
   /** Stored attendance status, including LATE. */
   attendanceStatus: string | null;
+  /** Leave subject and reason, shown when the day is hovered. */
+  leaveComment: string | null;
 };
 
 export type ProductivityRow = {
@@ -70,6 +77,7 @@ type AttendanceRow = {
   total_active_seconds: number;
   total_break_seconds: number;
   total_idle_seconds: number;
+  notes: string | null;
 };
 
 type AwayRow = {
@@ -141,7 +149,7 @@ async function loadAttendance(employeeIds: string[], start: string, end: string)
     const { data } = await supabase
       .from("attendance")
       .select(
-        "employee_id, attendance_date, status, total_active_seconds, total_break_seconds, total_idle_seconds"
+        "employee_id, attendance_date, status, total_active_seconds, total_break_seconds, total_idle_seconds, notes"
       )
       .in("employee_id", employeeIds)
       .gte("attendance_date", start)
@@ -152,6 +160,23 @@ async function loadAttendance(employeeIds: string[], start: string, end: string)
     if (!data || data.length < PAGE_SIZE) break;
   }
   return rows;
+}
+
+function leaveCommentFor(
+  employeeId: string,
+  date: string,
+  row: AttendanceRow | undefined,
+  leaveNotes: Awaited<ReturnType<typeof leaveNotesByDay>>
+) {
+  const request = leaveNotes.get(`${employeeId}|${date}`);
+  if (request?.reason) {
+    return request.subject && request.subject !== request.reason
+      ? `${request.subject} — ${request.reason}`
+      : request.reason;
+  }
+  if (row?.status !== "ON_LEAVE") return null;
+  const note = formatLeaveComment(row.notes);
+  return note.reason || null;
 }
 
 /** Marks Present rows whose clock-in is after the shift login time as Late. */
@@ -189,11 +214,12 @@ export async function getProductivityReport(
   const ids = employees.map((employee) => employee.id);
   await syncLateClockIns(ids, start, end);
   const supabase = await createClient();
-  const [attendance, live, { data: joining }, excessByEmployee] = await Promise.all([
+  const [attendance, live, { data: joining }, excessByEmployee, leaveNotes] = await Promise.all([
     loadAttendance(ids, start, end),
     today >= start && today <= end ? liveSessionSlices(supabase, ids) : Promise.resolve(null),
     supabase.from("employees").select("id, joining_date").in("id", ids),
     loadBreakExcess(ids, start, end),
+    leaveNotesByDay(ids, start, end),
   ]);
   const joiningById = new Map((joining ?? []).map((row) => [row.id, row.joining_date]));
 
@@ -213,7 +239,7 @@ export async function getProductivityReport(
     const excessByDate = excessByEmployee.get(employee.id);
     const days: ProductivityDay[] = weekdays.map((date) => {
       const row = rows.get(date);
-      const productiveSeconds =
+      const workedSeconds =
         date === today
           ? dailyActiveSeconds({
               storedActiveSeconds: row?.total_active_seconds ?? 0,
@@ -225,9 +251,11 @@ export async function getProductivityReport(
             })
           : (row?.total_active_seconds ?? 0);
       const off = row && OFF_STATUSES.has(row.status) ? row.status : null;
+      const targetSeconds = productiveTargetSeconds(row?.status);
+      const productiveSeconds = creditedProductiveSeconds(workedSeconds, row?.status);
       const status: DayStatus = off
         ? "off"
-        : productiveSeconds >= PRODUCTIVE_SECONDS
+        : productiveSeconds >= targetSeconds
           ? "met"
           : date > today
             ? "upcoming"
@@ -237,12 +265,14 @@ export async function getProductivityReport(
       return {
         date,
         productiveSeconds,
+        targetSeconds,
         breakSeconds: row?.total_break_seconds ?? 0,
         idleSeconds: row?.total_idle_seconds ?? 0,
         breakExcess: excessByDate?.get(date) ?? emptyExcess(),
         status,
         offStatus: off,
         attendanceStatus: row?.status ?? null,
+        leaveComment: leaveCommentFor(employee.id, date, row, leaveNotes),
       };
     });
 
@@ -251,7 +281,7 @@ export async function getProductivityReport(
     const finished = working.filter((day) => day.date < today);
     const remaining = working.filter((day) => day.date >= today);
     const productiveSeconds = counted.reduce((sum, day) => sum + day.productiveSeconds, 0);
-    const periodTargetSeconds = working.length * PRODUCTIVE_SECONDS;
+    const periodTargetSeconds = working.reduce((sum, day) => sum + day.targetSeconds, 0);
     const gap = Math.max(0, periodTargetSeconds - productiveSeconds);
 
     return {
@@ -266,7 +296,7 @@ export async function getProductivityReport(
       daysMet: counted.filter((day) => day.status === "met").length,
       balanceSeconds:
         finished.reduce((sum, day) => sum + day.productiveSeconds, 0) -
-        finished.length * PRODUCTIVE_SECONDS,
+        finished.reduce((sum, day) => sum + day.targetSeconds, 0),
       periodTargetSeconds,
       remainingDays: remaining.length,
       neededPerDaySeconds: remaining.length > 0 ? Math.ceil(gap / remaining.length) : 0,

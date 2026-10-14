@@ -52,13 +52,15 @@ export function TargetBar({ seconds, target = PRODUCTIVE_SECONDS }: { seconds: n
 export function DayStatusPill({
   status,
   productiveSeconds,
+  targetSeconds = PRODUCTIVE_SECONDS,
   offStatus,
 }: {
   status: DayStatus;
   productiveSeconds: number;
+  targetSeconds?: number;
   offStatus?: string | null;
 }) {
-  const left = Math.max(0, PRODUCTIVE_SECONDS - productiveSeconds);
+  const left = Math.max(0, targetSeconds - productiveSeconds);
   if (status === "met") return null;
   if (status === "in_progress") {
     return (
