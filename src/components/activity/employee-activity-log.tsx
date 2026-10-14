@@ -19,10 +19,12 @@ export function EmployeeActivityLog({
   employeeId,
   fullName,
   employeeCode,
+  className,
 }: {
   employeeId: string;
   fullName: string;
   employeeCode: string;
+  className?: string;
 }) {
   const [open, setOpen] = useState(false);
   const [days, setDays] = useState<ActivityDayLog[] | null>(null);
@@ -53,7 +55,7 @@ export function EmployeeActivityLog({
       <button
         type="button"
         onClick={() => onOpenChange(true)}
-        className="min-w-0 flex-1 rounded-md text-left transition hover:bg-muted/60"
+        className={cn("min-w-0 flex-1 rounded-md text-left transition hover:bg-muted/60", className)}
         title="Open 12-day log"
       >
         <p className="truncate text-sm font-semibold">{fullName}</p>

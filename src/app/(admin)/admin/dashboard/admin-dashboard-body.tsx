@@ -10,8 +10,7 @@ import { formatMonthLabel, greetingForNow, INDIA_TIME_ZONE, todayIso } from "@/l
 import { AdminLogoutButton } from "@/components/attendance/admin-logout-button";
 import { getAdminDashboardData } from "@/lib/queries/admin-dashboard";
 import { sweepIdleSessions } from "@/lib/presence-server";
-import { getEmployeeDashboardBundle, getMySessionState } from "@/lib/queries/employee-status";
-import { ClockWidget } from "@/components/attendance/clock-widget";
+import { getEmployeeDashboardBundle } from "@/lib/queries/employee-status";
 import { isUuid, monthStartEnd } from "@/lib/attendance-period";
 import { MonthCalendar } from "@/components/attendance/month-calendar";
 import { MyActivityLog } from "@/components/activity/my-activity-log";
@@ -87,34 +86,86 @@ export async function AdminDashboardBody({
   const requestedId = requested && isUuid(requested) ? requested : null;
 
   await sweepIdleSessions();
-  const [dashboard, watchedSession] = await Promise.all([
-    getAdminDashboardData(),
-    requestedId ? getMySessionState(requestedId) : Promise.resolve(null),
-  ]);
+  const dashboard = await getAdminDashboardData();
   const { stats, employees, teamReport, pendingMeetings } = dashboard;
 
   const selected = employees.find((employee) => employee.id === requestedId) ?? null;
   const monthKey = todayIso().slice(0, 7);
   const monthBounds = monthStartEnd(monthKey);
-  const [calendarRow, activityDays] = selected
-    ? await Promise.all([
-        getProductivityReport(
-          [{ id: selected.id, full_name: selected.full_name, employee_code: selected.employee_code }],
-          monthBounds.start,
-          monthBounds.end
-        ).then((rows) => rows[0]),
-        buildActivityDays(
-          {
-            id: selected.id,
-            fullName: selected.full_name,
-            employeeCode: selected.employee_code,
-          },
-          30
-        ),
-      ])
-    : [null, null];
-  const session = selected ? watchedSession : null;
-  const reportRows = requestedId ? [] : teamReport;
+  if (selected) {
+    const [{ sessionState, commonData }, calendarRow, activityDays] = await Promise.all([
+      getEmployeeDashboardBundle(selected.id),
+      getProductivityReport(
+        [{ id: selected.id, full_name: selected.full_name, employee_code: selected.employee_code }],
+        monthBounds.start,
+        monthBounds.end
+      ).then((rows) => rows[0]),
+      buildActivityDays(
+        {
+          id: selected.id,
+          fullName: selected.full_name,
+          employeeCode: selected.employee_code,
+        },
+        30
+      ),
+    ]);
+    const first = selected.full_name.split(" ")[0] ?? selected.full_name;
+
+    return (
+      <>
+        <StaffDashboard
+          compact
+          readOnly
+          greeting={greetingForNow()}
+          firstName={first}
+          roleLabel={selected.employee_code}
+          subtitle={todayLabel}
+          sessionState={sessionState}
+          commonData={commonData}
+          sessionTitle={`${selected.full_name}'s session`}
+          sessionHint="Same view the employee sees · view only"
+          toolbar={
+            <div className="flex items-center gap-2 sm:w-auto">
+              {sessionState.isClockedIn ? (
+                <AdminLogoutButton employeeId={selected.id} employeeName={selected.full_name} />
+              ) : null}
+              <div className="sm:w-64">
+                <EmployeeWatchSelect employees={employees} employeeId={selected.id} />
+              </div>
+            </div>
+          }
+          activity={
+            <MyActivityLog
+              days={activityDays}
+              embedded
+              title={`${first}'s activity`}
+              subtitle="Last 30 days · view only"
+            />
+          }
+        />
+        {pendingMeetings.length > 0 ? (
+          <div className="border-x border-b bg-card px-4 py-3">
+            <MeetingRequests requests={pendingMeetings} />
+          </div>
+        ) : null}
+        {calendarRow ? (
+          <div className="pt-4 pb-6">
+            <MonthCalendar
+              title={`${formatMonthLabel(monthKey)} — ${calendarRow.employee.full_name}`}
+              start={monthBounds.start}
+              end={monthBounds.end}
+              days={calendarRow.days}
+              trackingStart={calendarRow.trackingStart}
+              prevHref={`/admin/productivity?view=monthly&employee=${calendarRow.employee.id}&month=${shiftMonth(monthKey, -1)}`}
+              nextHref={`/admin/productivity?view=monthly&employee=${calendarRow.employee.id}&month=${shiftMonth(monthKey, 1)}`}
+            />
+          </div>
+        ) : null}
+      </>
+    );
+  }
+
+  const reportRows = teamReport;
 
   const firstName = ctx.fullName.split(" ")[0] ?? "Admin";
   const attendancePct =
@@ -146,26 +197,15 @@ export async function AdminDashboardBody({
           <div className="session-card">
             <div className="session-card-head flex shrink-0 flex-col gap-2 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
               <div>
-                <p className="text-sm font-semibold">{selected ? "Employee session" : "Today's report"}</p>
-                <p className="text-xs text-white/70">
-                  {selected ? "View only · Super Admin is not tracked" : "All employees · pick someone for session detail"}
-                </p>
+                <p className="text-sm font-semibold">Today&apos;s report</p>
+                <p className="text-xs text-white/70">All employees · pick someone to open their dashboard</p>
               </div>
-              <div className="flex items-center gap-2 sm:w-auto">
-                {selected && session?.isClockedIn ? (
-                  <AdminLogoutButton employeeId={selected.id} employeeName={selected.full_name} />
-                ) : null}
-                <div className="sm:w-64">
-                  <EmployeeWatchSelect employees={employees} employeeId={selected?.id ?? null} />
-                </div>
+              <div className="sm:w-64">
+                <EmployeeWatchSelect employees={employees} employeeId={null} />
               </div>
             </div>
             <MeetingRequests requests={pendingMeetings} />
-            {selected && session ? (
-              <ClockWidget compact readOnly embedded session={session} />
-            ) : (
-              <TeamTodayReport rows={reportRows} attendanceDate={todayIso()} />
-            )}
+            <TeamTodayReport rows={reportRows} attendanceDate={todayIso()} />
           </div>
         }
         right={
@@ -247,24 +287,6 @@ export async function AdminDashboardBody({
         }
       />
     </div>
-      {activityDays ? (
-        <div className="border-x border-b bg-card">
-          <MyActivityLog days={activityDays} embedded />
-        </div>
-      ) : null}
-      {calendarRow ? (
-        <div className="pb-6">
-          <MonthCalendar
-            title={`${formatMonthLabel(monthKey)} — ${calendarRow.employee.full_name}`}
-            start={monthBounds.start}
-            end={monthBounds.end}
-            days={calendarRow.days}
-            trackingStart={calendarRow.trackingStart}
-            prevHref={`/admin/productivity?view=monthly&employee=${calendarRow.employee.id}&month=${shiftMonth(monthKey, -1)}`}
-            nextHref={`/admin/productivity?view=monthly&employee=${calendarRow.employee.id}&month=${shiftMonth(monthKey, 1)}`}
-          />
-        </div>
-      ) : null}
     </>
   );
 }

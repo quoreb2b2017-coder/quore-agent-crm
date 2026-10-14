@@ -19,6 +19,10 @@ export function StaffDashboard({
   marketingData,
   activity,
   compact = false,
+  readOnly = false,
+  sessionTitle = "Your session",
+  sessionHint = "Clock, breaks, and shift progress",
+  toolbar,
 }: {
   greeting: string;
   firstName: string;
@@ -29,6 +33,10 @@ export function StaffDashboard({
   marketingData?: CampaignsDashboardData | null;
   activity?: ReactNode;
   compact?: boolean;
+  readOnly?: boolean;
+  sessionTitle?: string;
+  sessionHint?: string;
+  toolbar?: ReactNode;
 }) {
   return (
     <div className="dash-board flex flex-col">
@@ -45,11 +53,14 @@ export function StaffDashboard({
         }
         left={
           <div className="session-card">
-            <div className="session-card-head flex shrink-0 flex-col justify-center gap-1 px-4 py-3">
-              <p className="text-sm font-semibold">Your session</p>
-              <p className="text-xs text-white/70">Clock, breaks, and shift progress</p>
+            <div className="session-card-head flex shrink-0 flex-col justify-center gap-2 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <p className="text-sm font-semibold">{sessionTitle}</p>
+                <p className="text-xs text-white/70">{sessionHint}</p>
+              </div>
+              {toolbar}
             </div>
-            <ClockWidget compact={compact} embedded fill={!activity} session={sessionState} />
+            <ClockWidget compact={compact} readOnly={readOnly} embedded fill={!activity} session={sessionState} />
             {activity ? (
               <div className="border-t">
                 <div className="hours-card-head flex flex-col justify-center gap-1 px-4 py-3">

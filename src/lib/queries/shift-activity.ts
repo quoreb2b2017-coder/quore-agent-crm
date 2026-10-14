@@ -1,8 +1,10 @@
 import { createServiceClient } from "@/lib/supabase/service";
+import { monthStartEnd } from "@/lib/attendance-period";
 import {
   addDaysIso,
   formatBreakDuration,
   formatIsoDate,
+  formatMonthLabel,
   isWeekendIso,
   shiftDateIso,
   todayIso,
@@ -223,4 +225,42 @@ export async function buildActivityDays(person: Person, dayCount = 12): Promise<
       events: byDate.get(date) ?? [],
     };
   });
+}
+
+export type ActivityRange = {
+  start: string;
+  end: string;
+  label: string;
+  mode: "days" | "month";
+  days: number;
+  month: string;
+};
+
+/** Super Admin activity window: a day count, or one calendar month. */
+export function resolveActivityRange(mode: string | undefined, daysRaw: string | undefined, monthRaw: string | undefined): ActivityRange {
+  const today = todayIso();
+  const month = monthRaw && /^\d{4}-\d{2}$/.test(monthRaw) ? monthRaw : today.slice(0, 7);
+  if (mode === "month") {
+    const bounds = monthStartEnd(month);
+    const end = bounds.end < today ? bounds.end : today;
+    const start = bounds.start > end ? end : bounds.start;
+    return {
+      start,
+      end,
+      label: formatMonthLabel(month),
+      mode: "month",
+      days: 30,
+      month,
+    };
+  }
+  const parsed = Number(daysRaw);
+  const days = Number.isFinite(parsed) ? Math.min(90, Math.max(1, Math.floor(parsed))) : 7;
+  return {
+    start: addDaysIso(today, -(days - 1)),
+    end: today,
+    label: days === 1 ? "Today" : `Last ${days} days`,
+    mode: "days",
+    days,
+    month,
+  };
 }

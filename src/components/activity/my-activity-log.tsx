@@ -39,7 +39,17 @@ function liveDetail(event: ShiftActivityEvent, now: number | null) {
   return `In progress · ${formatClock(seconds)}`;
 }
 
-export function MyActivityLog({ days, embedded = false }: { days: ActivityDayLog[]; embedded?: boolean }) {
+export function MyActivityLog({
+  days,
+  embedded = false,
+  title = "Your activity",
+  subtitle,
+}: {
+  days: ActivityDayLog[];
+  embedded?: boolean;
+  title?: string;
+  subtitle?: string;
+}) {
   const [active, setActive] = useState(days[0]?.date ?? null);
   const [now, setNow] = useState<number | null>(null);
   const selected = days.find((day) => day.date === active) ?? days[0] ?? null;
@@ -79,9 +89,9 @@ export function MyActivityLog({ days, embedded = false }: { days: ActivityDayLog
             <Radio className="size-4" />
           </span>
           <div>
-            <h2 className="text-sm font-semibold">Your activity</h2>
+            <h2 className="text-sm font-semibold">{title}</h2>
             <p className={cn("text-xs", embedded ? "text-white/70" : "text-muted-foreground")}>
-              Only your log · last {days.length} days
+              {subtitle ?? `Only your log · last ${days.length} days`}
             </p>
           </div>
         </div>
