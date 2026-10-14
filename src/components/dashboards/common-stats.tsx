@@ -1,7 +1,7 @@
 import { Timer, Coffee, Briefcase } from "lucide-react";
 import { StatCard } from "@/components/dashboard/stat-card";
 import type { CommonDashboardData } from "@/lib/queries/employee-dashboard";
-import { formatDuration } from "@/lib/format";
+import { formatBreakDuration, formatDuration } from "@/lib/format";
 import {
   BREAK_TOTAL_SECONDS,
   creditedProductiveSeconds,
@@ -43,7 +43,7 @@ export function CommonStats({
         compact={compact}
         packed={packed}
         label="Breaks"
-        value={formatDuration(data.breakSeconds)}
+        value={formatBreakDuration(data.breakSeconds)}
         icon={Coffee}
         tone="warning"
         hint="Used this shift"

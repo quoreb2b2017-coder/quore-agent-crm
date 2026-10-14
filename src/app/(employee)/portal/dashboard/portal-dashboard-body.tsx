@@ -3,9 +3,11 @@ import { getEmployeeDashboardBundle } from "@/lib/queries/employee-status";
 import { getCampaignsDashboardData } from "@/lib/queries/employee-dashboard";
 import { getProductivityReport } from "@/lib/queries/productivity-report";
 import { StaffDashboard } from "@/components/dashboards/staff-dashboard";
+import { MyActivityLog } from "@/components/activity/my-activity-log";
 import { MonthCalendar } from "@/components/attendance/month-calendar";
 import { monthStartEnd } from "@/lib/attendance-period";
 import { formatMonthLabel, greetingForNow, INDIA_TIME_ZONE, todayIso } from "@/lib/format";
+import { buildActivityDays } from "@/lib/queries/shift-activity";
 
 export async function PortalDashboardBody() {
   const ctx = await getCurrentEmployeeContext();
@@ -13,13 +15,15 @@ export async function PortalDashboardBody() {
 
   const monthKey = todayIso().slice(0, 7);
   const bounds = monthStartEnd(monthKey);
-  const [{ sessionState, commonData }, calendarRow] = await Promise.all([
+  const person = { id: ctx.employeeId, fullName: ctx.fullName, employeeCode: ctx.employeeCode };
+  const [{ sessionState, commonData }, calendarRow, activityDays] = await Promise.all([
     getEmployeeDashboardBundle(ctx.employeeId),
     getProductivityReport(
       [{ id: ctx.employeeId, full_name: ctx.fullName, employee_code: ctx.employeeCode }],
       bounds.start,
       bounds.end
     ).then((rows) => rows[0]),
+    buildActivityDays(person, 30),
   ]);
 
   const marketingData =
@@ -43,6 +47,7 @@ export async function PortalDashboardBody() {
       sessionState={sessionState}
       commonData={commonData}
       marketingData={marketingData}
+      activity={<MyActivityLog days={activityDays} embedded />}
     />
     {calendarRow ? (
       <div className="pt-4 pb-6">

@@ -10,7 +10,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { formatDateTime, formatDuration } from "@/lib/format";
+import { formatBreakDuration, formatDateTime } from "@/lib/format";
 import { BREAK_POLICY_LABEL, formatBreakType } from "@/lib/shift";
 import type { BreakRow } from "@/lib/queries/employee-status";
 
@@ -74,7 +74,7 @@ export function BreaksPanel({
                     )}
                   </TableCell>
                   <TableCell>
-                    {row.durationSeconds != null ? formatDuration(row.durationSeconds) : "—"}
+                    {row.durationSeconds != null ? formatBreakDuration(row.durationSeconds) : "—"}
                   </TableCell>
                 </TableRow>
               ))}

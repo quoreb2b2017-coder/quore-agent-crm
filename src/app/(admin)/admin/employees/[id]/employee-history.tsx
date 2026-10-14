@@ -26,6 +26,7 @@ import {
 } from "@/components/ui/table";
 import { BreakExcessCell } from "@/components/attendance/break-excess";
 import {
+  formatBreakDuration,
   formatDuration,
   formatExcess,
   formatInr,
@@ -84,7 +85,7 @@ export function EmployeeHistory({
         />
         <StatCard
           label="Breaks (30 days)"
-          value={formatDuration(data.breakSeconds)}
+          value={formatBreakDuration(data.breakSeconds)}
           icon={Coffee}
           tone={data.excessBreakSeconds > 0 ? "destructive" : "warning"}
           hint={
@@ -177,7 +178,7 @@ export function EmployeeHistory({
                       {row.last_check_out ? formatTime(row.last_check_out) : "—"}
                     </TableCell>
                     <TableCell className="tabular-nums">{formatDuration(row.total_active_seconds)}</TableCell>
-                    <TableCell className="tabular-nums">{formatDuration(row.total_break_seconds)}</TableCell>
+                    <TableCell className="tabular-nums">{formatBreakDuration(row.total_break_seconds)}</TableCell>
                     <TableCell className="pr-5">
                       <BreakExcessCell excess={data.excessByDate[row.attendance_date] ?? emptyExcess()} />
                     </TableCell>

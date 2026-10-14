@@ -1,5 +1,13 @@
 import { createServiceClient } from "@/lib/supabase/service";
-import { formatDuration, shiftDateIso, todayIso } from "@/lib/format";
+import {
+  addDaysIso,
+  formatBreakDuration,
+  formatIsoDate,
+  isWeekendIso,
+  shiftDateIso,
+  todayIso,
+  weekdayShortIst,
+} from "@/lib/format";
 import { formatBreakType, shiftAccountingWindowUtc } from "@/lib/shift";
 
 export type ActivityTone = "login" | "logout" | "break" | "washroom" | "meeting";
@@ -25,7 +33,7 @@ function durationLabel(startedAt: string, endedAt: string | null, stored: number
       ? Math.max(0, Math.floor((new Date(endedAt).getTime() - new Date(startedAt).getTime()) / 1000))
       : null);
   if (seconds == null) return "In progress";
-  return formatDuration(seconds);
+  return formatBreakDuration(seconds);
 }
 
 export async function getShiftActivity(
@@ -179,4 +187,40 @@ export async function getShiftActivity(
       return true;
     })
     .sort((a, b) => new Date(a.at).getTime() - new Date(b.at).getTime() || a.label.localeCompare(b.label));
+}
+
+export type ActivityDayLog = {
+  date: string;
+  weekday: string;
+  day: string;
+  label: string;
+  today: boolean;
+  weekend: boolean;
+  events: ShiftActivityEvent[];
+};
+
+/** One person's own shift log, newest day first. */
+export async function buildActivityDays(person: Person, dayCount = 12): Promise<ActivityDayLog[]> {
+  const today = todayIso();
+  const oldest = addDaysIso(today, -(dayCount - 1));
+  const events = await getShiftActivity([person], oldest, today);
+  const byDate = new Map<string, ShiftActivityEvent[]>();
+  for (const event of events) {
+    const list = byDate.get(event.shiftDate) ?? [];
+    list.push(event);
+    byDate.set(event.shiftDate, list);
+  }
+
+  return Array.from({ length: dayCount }, (_, index) => {
+    const date = addDaysIso(today, -index);
+    return {
+      date,
+      weekday: date === today ? "Today" : weekdayShortIst(date),
+      day: String(Number(date.slice(8, 10))),
+      label: formatIsoDate(date),
+      today: date === today,
+      weekend: isWeekendIso(date),
+      events: byDate.get(date) ?? [],
+    };
+  });
 }

@@ -430,7 +430,17 @@ export async function closeWorkSession(
   return {};
 }
 
-export async function startBreak(breakType: PolicyBreakType): Promise<Result> {
+/** Click time, kept only when it is within a minute of the server clock. */
+function startedAtFromClick(clientIso?: string) {
+  const now = Date.now();
+  const parsed = clientIso ? new Date(clientIso).getTime() : Number.NaN;
+  if (!Number.isFinite(parsed) || parsed > now + 2000 || now - parsed > 60_000) {
+    return new Date(now).toISOString();
+  }
+  return new Date(parsed).toISOString();
+}
+
+export async function startBreak(breakType: PolicyBreakType, clickedAt?: string): Promise<Result> {
   const ctx = await getCurrentEmployeeContext();
   if (!ctx) return { error: "Not authenticated" };
   if (isSuperAdmin(ctx.roleKey)) return { skipped: true };
@@ -476,6 +486,7 @@ export async function startBreak(breakType: PolicyBreakType): Promise<Result> {
     employee_id: ctx.employeeId,
     session_id: session.id,
     break_type: breakType,
+    started_at: startedAtFromClick(clickedAt),
   });
   if (error) return { error: error.message };
 

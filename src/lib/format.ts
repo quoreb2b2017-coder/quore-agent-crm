@@ -43,15 +43,20 @@ export function formatDuration(totalSeconds: number): string {
   return `${h}h ${m}m`;
 }
 
-/** Short over-time label, e.g. "2m 30s", "45s", "1h 5m". */
-export function formatExcess(totalSeconds: number): string {
+/** Break time with the exact seconds, e.g. "45s", "14m 23s", "1h 2m 5s". */
+export function formatBreakDuration(totalSeconds: number): string {
   const safe = Math.max(0, Math.floor(totalSeconds));
   const h = Math.floor(safe / 3600);
   const m = Math.floor((safe % 3600) / 60);
   const s = safe % 60;
-  if (h > 0) return `${h}h ${m}m`;
-  if (m === 0) return `${s}s`;
-  return s ? `${m}m ${s}s` : `${m}m`;
+  if (h > 0) return `${h}h ${m}m ${s}s`;
+  if (m > 0) return `${m}m ${s}s`;
+  return `${s}s`;
+}
+
+/** Short over-time label, including seconds, e.g. "2m 30s", "45s", "1h 5m 0s". */
+export function formatExcess(totalSeconds: number): string {
+  return formatBreakDuration(totalSeconds);
 }
 
 export const INDIA_TIME_ZONE = "Asia/Kolkata";

@@ -14,6 +14,8 @@ import { getEmployeeDashboardBundle, getMySessionState } from "@/lib/queries/emp
 import { ClockWidget } from "@/components/attendance/clock-widget";
 import { isUuid, monthStartEnd } from "@/lib/attendance-period";
 import { MonthCalendar } from "@/components/attendance/month-calendar";
+import { MyActivityLog } from "@/components/activity/my-activity-log";
+import { buildActivityDays } from "@/lib/queries/shift-activity";
 import { getProductivityReport } from "@/lib/queries/productivity-report";
 import { EmployeeWatchSelect } from "./employee-watch-select";
 import { TeamTodayReport } from "./team-today-report";
@@ -35,13 +37,21 @@ export async function AdminDashboardBody({
   if (!seesAll) {
     const monthKey = todayIso().slice(0, 7);
     const bounds = monthStartEnd(monthKey);
-    const [{ sessionState, commonData }, calendarRow] = await Promise.all([
+    const [{ sessionState, commonData }, calendarRow, activityDays] = await Promise.all([
       getEmployeeDashboardBundle(ctx.employeeId),
       getProductivityReport(
         [{ id: ctx.employeeId, full_name: ctx.fullName, employee_code: ctx.employeeCode }],
         bounds.start,
         bounds.end
       ).then((rows) => rows[0]),
+      buildActivityDays(
+        {
+          id: ctx.employeeId,
+          fullName: ctx.fullName,
+          employeeCode: ctx.employeeCode,
+        },
+        30
+      ),
     ]);
 
     return (
@@ -54,6 +64,7 @@ export async function AdminDashboardBody({
           subtitle={todayLabel}
           sessionState={sessionState}
           commonData={commonData}
+          activity={<MyActivityLog days={activityDays} embedded />}
         />
         {calendarRow ? (
           <div className="pt-4 pb-6">
@@ -85,15 +96,23 @@ export async function AdminDashboardBody({
   const selected = employees.find((employee) => employee.id === requestedId) ?? null;
   const monthKey = todayIso().slice(0, 7);
   const monthBounds = monthStartEnd(monthKey);
-  const calendarRow = selected
-    ? (
-        await getProductivityReport(
+  const [calendarRow, activityDays] = selected
+    ? await Promise.all([
+        getProductivityReport(
           [{ id: selected.id, full_name: selected.full_name, employee_code: selected.employee_code }],
           monthBounds.start,
           monthBounds.end
-        )
-      )[0]
-    : null;
+        ).then((rows) => rows[0]),
+        buildActivityDays(
+          {
+            id: selected.id,
+            fullName: selected.full_name,
+            employeeCode: selected.employee_code,
+          },
+          30
+        ),
+      ])
+    : [null, null];
   const session = selected ? watchedSession : null;
   const reportRows = requestedId ? [] : teamReport;
 
@@ -228,6 +247,11 @@ export async function AdminDashboardBody({
         }
       />
     </div>
+      {activityDays ? (
+        <div className="border-x border-b bg-card">
+          <MyActivityLog days={activityDays} embedded />
+        </div>
+      ) : null}
       {calendarRow ? (
         <div className="pb-6">
           <MonthCalendar

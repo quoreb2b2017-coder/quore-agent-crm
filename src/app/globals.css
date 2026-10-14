@@ -362,6 +362,23 @@
     box-shadow: none;
   }
 
+  /* Session stays its own height. Only the activity log grows and scrolls. */
+  .dash-stage-split-log {
+    align-items: start;
+  }
+
+  .dash-stage-split-log > .dash-stage-pane-session {
+    width: 100%;
+    align-self: start;
+  }
+
+  .dash-stage-split-log > .dash-stage-pane-session > * {
+    width: 100%;
+    height: auto;
+    flex: none;
+    align-self: stretch;
+  }
+
   .dash-stage-pane-end {
     border-top: 1px solid color-mix(in oklch, var(--border) 80%, transparent);
   }
@@ -380,6 +397,10 @@
     border-radius: 0;
     box-shadow: none;
     background: linear-gradient(180deg, oklch(0.99 0.012 250) 0%, var(--card) 48%);
+  }
+
+  .dash-stage-split-log .session-card {
+    height: auto;
   }
 
   .dash-stage .session-card-head,

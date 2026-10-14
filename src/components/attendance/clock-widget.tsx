@@ -17,7 +17,7 @@ import {
   endWashroom,
 } from "@/lib/actions/attendance";
 import { RESET_IDLE_EVENT } from "@/components/layout/session-presence";
-import { formatDuration, formatExcess, formatTime } from "@/lib/format";
+import { formatBreakDuration, formatDuration, formatExcess, formatTime } from "@/lib/format";
 import { formatClock } from "@/lib/live-time";
 import {
   BREAK_TOTAL_SECONDS,
@@ -39,8 +39,11 @@ function useElapsed(startedAt: string | null, running: boolean) {
   const [now, setNow] = useState<number | null>(null);
 
   useEffect(() => {
+    if (!running || !startedAt) {
+      setNow(null);
+      return;
+    }
     setNow(Date.now());
-    if (!running || !startedAt) return;
     const id = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(id);
   }, [running, startedAt]);
@@ -49,16 +52,39 @@ function useElapsed(startedAt: string | null, running: boolean) {
   return Math.max(0, Math.floor((now - new Date(startedAt).getTime()) / 1000));
 }
 
+function BreakRing({ elapsed, budget }: { elapsed: number; budget: number }) {
+  const used = budget > 0 ? Math.min(100, (elapsed / budget) * 100) : 0;
+  return (
+    <svg className="absolute inset-0 size-full -rotate-90" viewBox="0 0 36 36" aria-hidden>
+      <circle cx="18" cy="18" r="15.5" fill="none" stroke="currentColor" strokeOpacity="0.28" strokeWidth="2.5" />
+      <circle
+        cx="18"
+        cy="18"
+        r="15.5"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2.5"
+        strokeLinecap="round"
+        pathLength={100}
+        strokeDasharray={`${used} 100`}
+      />
+    </svg>
+  );
+}
+
 export function ClockWidget({
   session,
   compact = false,
   readOnly = false,
   embedded = false,
+  fill = true,
 }: {
   session: MySessionState;
   compact?: boolean;
   readOnly?: boolean;
   embedded?: boolean;
+  /** Stretch to the parent. Off when hours sit directly under the shift bar. */
+  fill?: boolean;
 }) {
   const {
     isClockedIn,
@@ -80,18 +106,22 @@ export function ClockWidget({
   } = session;
   const [isPending, startTransition] = useTransition();
   const [mounted, setMounted] = useState(false);
+  const [localBreak, setLocalBreak] = useState<{ slot: BreakSlot; startedAt: string } | null>(null);
   const router = useRouter();
+  const breakActive = isOnBreak || localBreak != null;
+  const breakStartedAt = openBreakStartedAt ?? localBreak?.startedAt ?? null;
+  const breakType = openBreakType ?? localBreak?.slot ?? null;
   const countedFrom = sessionStartedAt
     ? new Date(creditedWorkBounds(sessionStartedAt).from).toISOString()
     : null;
   const elapsed = useElapsed(countedFrom, isClockedIn);
-  const breakElapsed = useElapsed(openBreakStartedAt, isOnBreak);
-  const isInWashroom = isClockedIn && !isOnBreak && !!washroomStartedAt;
+  const breakElapsed = useElapsed(breakStartedAt, breakActive);
+  const isInWashroom = isClockedIn && !breakActive && !!washroomStartedAt;
   const washroomElapsed = useElapsed(washroomStartedAt, isInWashroom);
-  const isInMeeting = isClockedIn && !isOnBreak && !isInWashroom && !!meetingStartedAt;
-  const meetingPending = isClockedIn && !isOnBreak && !isInWashroom && !isInMeeting && !!meetingRequestedAt;
+  const isInMeeting = isClockedIn && !breakActive && !isInWashroom && !!meetingStartedAt;
+  const meetingPending = isClockedIn && !breakActive && !isInWashroom && !isInMeeting && !!meetingRequestedAt;
   const meetingElapsed = useElapsed(meetingStartedAt, isInMeeting);
-  const liveBreak = isOnBreak ? (breakElapsed ?? 0) : 0;
+  const liveBreak = breakActive ? (breakElapsed ?? 0) : 0;
   const liveWashroom = isInWashroom ? (washroomElapsed ?? 0) : 0;
   // Only the part of an open break after 6:30 PM comes out of productive time.
   const creditedOpen = (seconds: number) => Math.min(seconds, elapsed ?? 0);
@@ -107,7 +137,7 @@ export function ClockWidget({
     : 0;
   const dailySeconds = accruedActiveSeconds + liveSlice;
   const countedSeconds = creditedProductiveSeconds(dailySeconds, halfDay ? "HALF_DAY" : null);
-  const openSlot = openBreakType ? breakSlot(openBreakType) : null;
+  const openSlot = breakType ? breakSlot(breakType) : null;
   const usedBySlot: Record<BreakSlot, number> = {
     TEA_1: closedBreakSeconds.TEA_1 + (openSlot === "TEA_1" ? liveBreak : 0),
     TEA_2: closedBreakSeconds.TEA_2 + (openSlot === "TEA_2" ? liveBreak : 0),
@@ -133,12 +163,16 @@ export function ClockWidget({
   }, []);
 
   useEffect(() => {
+    if (localBreak && isOnBreak && openBreakStartedAt) setLocalBreak(null);
+  }, [localBreak, isOnBreak, openBreakStartedAt]);
+
+  useEffect(() => {
     if (readOnly || !meetingPending) return;
     const id = window.setInterval(() => router.refresh(), 8000);
     return () => window.clearInterval(id);
   }, [readOnly, meetingPending, router]);
 
-  const status: EmployeeLiveStatus = isOnBreak
+  const status: EmployeeLiveStatus = breakActive
     ? "BREAK"
     : isInWashroom
       ? "WASHROOM"
@@ -160,11 +194,26 @@ export function ClockWidget({
     });
   }
 
+  function beginBreak(slot: BreakSlot) {
+    const startedAt = new Date().toISOString();
+    setLocalBreak({ slot, startedAt });
+    startTransition(async () => {
+      const res = await startBreak(slot, startedAt);
+      if (res.error || res.skipped) {
+        setLocalBreak(null);
+        if (res.error) toast.error(res.error);
+        return;
+      }
+      window.dispatchEvent(new Event(RESET_IDLE_EVENT));
+      router.refresh();
+    });
+  }
+
   return (
     <div
       className={cn(
         "overflow-hidden",
-        embedded && "flex h-full min-h-0 flex-1 flex-col",
+        embedded && fill && "flex h-full min-h-0 flex-1 flex-col",
         !embedded && "clock-panel border",
         !embedded && (compact ? "rounded-2xl" : "rounded-3xl shadow-[0_12px_32px_oklch(0.21_0.02_260/0.06)]")
       )}
@@ -172,16 +221,17 @@ export function ClockWidget({
       <div
         className={cn(
           "flex flex-col sm:flex-row sm:items-center sm:justify-between",
-          embedded && "min-h-0 flex-1",
+          embedded && fill && "min-h-0 flex-1",
           compact ? "gap-4 p-4" : "gap-6 p-5 sm:p-6",
-          isOnBreak && "bg-warning/10"
+          breakActive && "bg-warning/10"
         )}
       >
         <div className={cn("flex items-center", compact ? "gap-3.5" : "gap-4 sm:gap-5")}>
           <div
             className={cn(
-              "relative flex shrink-0 items-center justify-center rounded-2xl shadow-inner",
-              compact ? "size-12" : "size-16 sm:size-[4.5rem]",
+              "relative flex shrink-0 items-center justify-center shadow-inner",
+              breakActive ? "size-24 rounded-full sm:size-28" : "rounded-2xl",
+              !breakActive && (compact ? "size-12" : "size-16 sm:size-[4.5rem]"),
               status === "ONLINE" &&
                 "bg-success text-white shadow-[0_0_0_4px_oklch(0.55_0.14_155/0.22)]",
               status === "MEETING" &&
@@ -193,7 +243,14 @@ export function ClockWidget({
               status === "OFFLINE" && "bg-muted text-muted-foreground"
             )}
           >
-            {isInMeeting ? (
+            {breakActive ? (
+              <>
+                <BreakRing elapsed={liveBreak} budget={openSlot ? slotBudgetSeconds(openSlot) : BREAK_TOTAL_SECONDS} />
+                <span className="font-mono text-sm font-semibold tracking-tight tabular-nums sm:text-base">
+                  {mounted ? formatClock(liveBreak) : "00:00:00"}
+                </span>
+              </>
+            ) : isInMeeting ? (
               <Users className={compact ? "size-5" : "size-7 sm:size-8"} />
             ) : isInWashroom ? (
               <Bath className={compact ? "size-5" : "size-7 sm:size-8"} />
@@ -236,18 +293,18 @@ export function ClockWidget({
                 status === "OFFLINE" && "text-muted-foreground"
               )}
             >
-              {mounted ? formatClock(isOnBreak ? liveBreak : isInWashroom ? liveWashroom : countedSeconds) : "—"}
+              {mounted ? formatClock(breakActive ? liveBreak : isInWashroom ? liveWashroom : countedSeconds) : "—"}
             </p>
-            {isOnBreak ? (
+            {breakActive ? (
               <>
                 {openBreakOver > 0 ? (
                   <p className="text-xs font-semibold text-destructive">
-                    {formatBreakType(openBreakType ?? "TEA")} running · excess +{formatExcess(openBreakOver)} over
+                    {formatBreakType(breakType ?? "TEA")} running · excess +{formatExcess(openBreakOver)} over
                   </p>
                 ) : (
                   <p className="text-xs font-medium text-muted-foreground">
-                    {formatBreakType(openBreakType ?? "TEA")} running ·{" "}
-                    {formatDuration(openSlot ? slotRemaining(openSlot) : 0)} left
+                    {formatBreakType(breakType ?? "TEA")} running ·{" "}
+                    {formatBreakDuration(openSlot ? slotRemaining(openSlot) : 0)} left
                   </p>
                 )}
                 <p className="text-xs text-muted-foreground">
@@ -265,7 +322,7 @@ export function ClockWidget({
                   Washroom running ·{" "}
                   {excess.washroom > 0
                     ? `excess +${formatExcess(excess.washroom)}`
-                    : `break total ${formatDuration(poolLeft)} left`}
+                    : `break total ${formatBreakDuration(poolLeft)} left`}
                 </p>
                 <p className="text-xs text-muted-foreground">
                   Productive today {mounted ? formatClock(countedSeconds) : "—"} · paused during washroom
@@ -285,10 +342,10 @@ export function ClockWidget({
 
         {readOnly ? (
           <div className="flex flex-wrap gap-1.5 sm:justify-end">
-            <span className="break-chip break-chip-tea">Tea 1 {formatDuration(tea1Remaining)} left</span>
-            <span className="break-chip break-chip-tea">Tea 2 {formatDuration(tea2Remaining)} left</span>
-            <span className="break-chip break-chip-lunch">Lunch {formatDuration(lunchRemaining)} left</span>
-            <span className="break-chip">Total {formatDuration(poolLeft)} left</span>
+            <span className="break-chip break-chip-tea">Tea 1 {formatBreakDuration(tea1Remaining)} left</span>
+            <span className="break-chip break-chip-tea">Tea 2 {formatBreakDuration(tea2Remaining)} left</span>
+            <span className="break-chip break-chip-lunch">Lunch {formatBreakDuration(lunchRemaining)} left</span>
+            <span className="break-chip">Total {formatBreakDuration(poolLeft)} left</span>
             {excess.total > 0 ? (
               <span className="break-chip text-destructive">Excess +{formatExcess(excess.total)}</span>
             ) : null}
@@ -297,7 +354,7 @@ export function ClockWidget({
         <div className={cn("flex flex-col gap-2.5 sm:items-end", compact ? "min-w-0" : "min-w-[12rem]")}>
           {isClockedIn ? (
             <span className="text-[11px] font-medium text-muted-foreground">
-              Break total {formatDuration(poolLeft)} left of {formatDuration(BREAK_TOTAL_SECONDS)}
+              Break total {formatBreakDuration(poolLeft)} left of {formatBreakDuration(BREAK_TOTAL_SECONDS)}
               {excess.total > 0 ? (
                 <span className="text-destructive"> · Excess today +{formatExcess(excess.total)}</span>
               ) : null}
@@ -347,7 +404,7 @@ export function ClockWidget({
                     {isPending ? <Loader2 className="size-4 animate-spin" /> : <Play className="size-4" />}
                     Cancel request
                   </Button>
-                ) : !isOnBreak ? (
+                ) : !breakActive ? (
                   <>
                     <Button
                       variant="outline"
@@ -381,10 +438,10 @@ export function ClockWidget({
                         size={compact ? "sm" : "lg"}
                         className={compact ? "h-8" : "h-10"}
                         disabled={isPending || remaining === 0}
-                        onClick={() => run(() => startBreak(slot))}
+                        onClick={() => beginBreak(slot)}
                       >
                         {isPending ? <Loader2 className="size-4 animate-spin" /> : <Coffee className="size-4" />}
-                        {formatBreakType(slot)} · {formatDuration(remaining)} left
+                        {formatBreakType(slot)} · {formatBreakDuration(remaining)} left
                       </Button>
                     ))}
                     <Button
@@ -392,14 +449,14 @@ export function ClockWidget({
                       size={compact ? "sm" : "lg"}
                       className={compact ? "h-8" : "h-10"}
                       disabled={isPending || lunchRemaining === 0}
-                      onClick={() => run(() => startBreak("LUNCH"))}
+                      onClick={() => beginBreak("LUNCH")}
                     >
                       {isPending ? (
                         <Loader2 className="size-4 animate-spin" />
                       ) : (
                         <UtensilsCrossed className="size-4" />
                       )}
-                      Lunch · {formatDuration(lunchRemaining)} left
+                      Lunch · {formatBreakDuration(lunchRemaining)} left
                     </Button>
                   </>
                 ) : (
@@ -411,14 +468,14 @@ export function ClockWidget({
                     onClick={() => run(endBreak)}
                   >
                     {isPending ? <Loader2 className="size-4 animate-spin" /> : <Play className="size-4" />}
-                    End {formatBreakType(openBreakType ?? "TEA")}
+                    End {formatBreakType(breakType ?? "TEA")}
                   </Button>
                 )}
                 <Button
                   variant="secondary"
                   size={compact ? "sm" : "lg"}
                   className={compact ? "h-8" : "h-10"}
-                  disabled={isPending || isOnBreak || isInMeeting || isInWashroom || meetingPending}
+                  disabled={isPending || breakActive || isInMeeting || isInWashroom || meetingPending}
                   onClick={() => run(clockOut)}
                 >
                   {isPending ? <Loader2 className="size-4 animate-spin" /> : <LogOut className="size-4" />}
@@ -433,10 +490,10 @@ export function ClockWidget({
 
       <div className={cn("shrink-0 border-t shift-foot", compact ? "px-4 py-2.5" : "px-5 py-3 sm:px-6")}>
         <div className="mb-1.5 flex items-center justify-between text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
-          <span>{isOnBreak || isInWashroom ? "Break total used" : "Shift progress"}</span>
+          <span>{breakActive || isInWashroom ? "Break total used" : "Shift progress"}</span>
           <span className="tabular-nums">
-            {isOnBreak || isInWashroom
-              ? `${formatDuration(BREAK_TOTAL_SECONDS - poolLeft)} / ${formatDuration(BREAK_TOTAL_SECONDS)}`
+            {breakActive || isInWashroom
+              ? `${formatBreakDuration(BREAK_TOTAL_SECONDS - poolLeft)} / ${formatBreakDuration(BREAK_TOTAL_SECONDS)}`
               : `${Math.round(shiftPct)}% of ${halfDay ? formatDuration(shiftTarget) : "9 hrs"}`}
           </span>
         </div>
@@ -444,9 +501,9 @@ export function ClockWidget({
           <div
             className={cn(
               "progress-fill",
-              isOnBreak || isInWashroom ? "break-progress-fill" : "shift-progress-fill"
+              breakActive || isInWashroom ? "break-progress-fill" : "shift-progress-fill"
             )}
-            style={{ width: `${isOnBreak || isInWashroom ? poolUsedPct : shiftPct}%` }}
+            style={{ width: `${breakActive || isInWashroom ? poolUsedPct : shiftPct}%` }}
           />
         </div>
       </div>

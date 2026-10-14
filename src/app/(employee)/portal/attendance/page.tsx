@@ -16,7 +16,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { formatDate, formatDuration, formatTime, shiftWindowLabel } from "@/lib/format";
+import { formatBreakDuration, formatDate, formatDuration, formatTime, shiftWindowLabel } from "@/lib/format";
 import { BREAK_POLICY_LABEL, creditedProductiveSeconds } from "@/lib/shift";
 import { formatLeaveComment } from "@/lib/leave";
 import { leaveNotesByDay } from "@/lib/queries/leave";
@@ -94,7 +94,7 @@ export default async function MyAttendancePage() {
                     <TableCell>
                       {formatDuration(creditedProductiveSeconds(h.total_active_seconds, h.status))}
                     </TableCell>
-                    <TableCell>{formatDuration(h.total_break_seconds)}</TableCell>
+                    <TableCell>{formatBreakDuration(h.total_break_seconds)}</TableCell>
                   </TableRow>
                 ))}
               </TableBody>

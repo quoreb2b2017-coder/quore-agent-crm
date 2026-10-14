@@ -6,6 +6,7 @@ import { ProductivityChart } from "@/components/dashboard/productivity-chart";
 import {
   addDaysIso,
   eachDateInclusive,
+  formatBreakDuration,
   formatDuration,
   formatExcess,
   todayIso,
@@ -74,7 +75,7 @@ export async function EmployeeProductivityOverview({
         />
         <StatCard
           label="Break today"
-          value={formatDuration(totalBreak)}
+          value={formatBreakDuration(totalBreak)}
           icon={Coffee}
           tone={excessToday > 0 ? "destructive" : "warning"}
           hint={excessToday > 0 ? `Excess break +${formatExcess(excessToday)}` : "No excess break"}

@@ -23,6 +23,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import {
+  formatBreakDuration,
   formatDuration,
   formatExcess,
   formatIsoDate,
@@ -247,7 +248,7 @@ function DailyView({ rows, date, today }: { rows: ProductivityRow[]; date: strin
                 <TableCell className="pl-5">
                   <EmployeeCell employee={row.employee} />
                 </TableCell>
-                <TableCell className="tabular-nums">{formatDuration(day?.breakSeconds ?? 0)}</TableCell>
+                <TableCell className="tabular-nums">{formatBreakDuration(day?.breakSeconds ?? 0)}</TableCell>
                 <TableCell>
                   <BreakExcessCell excess={day?.breakExcess ?? emptyExcess()} />
                 </TableCell>
@@ -396,7 +397,7 @@ function PeriodView({
                     <TargetBar seconds={row.productiveSeconds} target={row.periodTargetSeconds} />
                   </div>
                 </TableCell>
-                <TableCell className="tabular-nums">{formatDuration(row.breakSeconds)}</TableCell>
+                <TableCell className="tabular-nums">{formatBreakDuration(row.breakSeconds)}</TableCell>
                 <TableCell>
                   <BreakExcessCell excess={row.breakExcess} />
                 </TableCell>

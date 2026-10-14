@@ -73,7 +73,7 @@ export function EmployeeActivityLog({
 
           {days && selected ? (
             <>
-              <div className="flex gap-1.5 overflow-x-auto border-b px-4 py-3">
+              <div className="flex shrink-0 gap-1.5 overflow-x-auto overflow-y-hidden border-b px-4 py-3">
                 {days.map((day) => {
                   const chosen = day.date === active;
                   return (

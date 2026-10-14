@@ -80,8 +80,8 @@ export function DualOfficeClocks({
   const now = useNow();
   const shiftZone = getWorkSettings().timeZone;
   const shiftLabel = timeZoneShort(shiftZone);
-  const india = now ? formatTime(now, shiftZone, !pills) : pills ? "--:--" : "--:--:--";
-  const us = now ? formatTime(now, US_TIME_ZONE, !pills) : pills ? "--:--" : "--:--:--";
+  const india = now ? formatTime(now, shiftZone, true) : "--:--:--";
+  const us = now ? formatTime(now, US_TIME_ZONE, true) : "--:--:--";
 
   async function copy(label: string, value: string) {
     if (!now) return;

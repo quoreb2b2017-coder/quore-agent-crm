@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/table";
 import {
   eachDateInclusive,
+  formatBreakDuration,
   formatDuration,
   formatIsoDate,
   formatMonthLabel,
@@ -238,7 +239,7 @@ export default async function AdminAttendancePage({
           value={formatDuration(rangeCounts.activeSeconds)}
           icon={Timer}
           tone="success"
-          hint={`Breaks ${formatDuration(rangeCounts.breakSeconds)}`}
+          hint={`Breaks ${formatBreakDuration(rangeCounts.breakSeconds)}`}
         />
       </div>
 
@@ -294,7 +295,7 @@ export default async function AdminAttendancePage({
                       creditedProductiveSeconds(attendance?.total_active_seconds ?? 0, attendance?.status)
                     )}
                   </TableCell>
-                  <TableCell>{formatDuration(attendance?.total_break_seconds ?? 0)}</TableCell>
+                  <TableCell>{formatBreakDuration(attendance?.total_break_seconds ?? 0)}</TableCell>
                   {seesAll ? (
                     <TableCell className="text-right">
                       <EditAttendanceDialog
@@ -364,7 +365,7 @@ export default async function AdminAttendancePage({
                       creditedProductiveSeconds(attendance?.total_active_seconds ?? 0, attendance?.status)
                     )}
                   </TableCell>
-                    <TableCell>{formatDuration(attendance?.total_break_seconds ?? 0)}</TableCell>
+                    <TableCell>{formatBreakDuration(attendance?.total_break_seconds ?? 0)}</TableCell>
                     {seesAll ? (
                       <TableCell className="text-right">
                         <EditAttendanceDialog
@@ -420,7 +421,7 @@ export default async function AdminAttendancePage({
                     <TableCell>{counts.leave}</TableCell>
                     <TableCell>{counts.absent}</TableCell>
                     <TableCell>{formatDuration(counts.activeSeconds)}</TableCell>
-                    <TableCell>{formatDuration(counts.breakSeconds)}</TableCell>
+                    <TableCell>{formatBreakDuration(counts.breakSeconds)}</TableCell>
                     <TableCell className="text-right">
                       <Button asChild size="sm" variant="outline">
                         <Link href={href}>Month</Link>
@@ -536,7 +537,7 @@ function TeamSummaryTable({
               <TableCell>{counts.leave}</TableCell>
               <TableCell>{counts.absent}</TableCell>
               <TableCell>{formatDuration(counts.activeSeconds)}</TableCell>
-              <TableCell>{formatDuration(counts.breakSeconds)}</TableCell>
+              <TableCell>{formatBreakDuration(counts.breakSeconds)}</TableCell>
               {seesAll ? (
                 <TableCell className="text-right">
                   <Button asChild size="sm" variant="outline">

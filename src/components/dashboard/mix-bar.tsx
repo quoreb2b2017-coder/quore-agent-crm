@@ -45,6 +45,7 @@ export function MixBar({ segments }: { segments: MixSegment[] }) {
 export function MeterRow({
   label,
   value,
+  valueLabel,
   max,
   barClass,
   compact = false,
@@ -53,6 +54,7 @@ export function MeterRow({
 }: {
   label: string;
   value: number;
+  valueLabel?: string;
   max: number;
   barClass: string;
   compact?: boolean;
@@ -76,7 +78,9 @@ export function MeterRow({
           <span className={cn("size-2 rounded-full", barClass)} />
           {label}
         </span>
-        <span className={cn("font-semibold tabular-nums", compact && "text-xs")}>{value}h</span>
+        <span className={cn("font-semibold tabular-nums", compact && "text-xs")}>
+          {valueLabel ?? `${value}h`}
+        </span>
       </div>
       <div className={cn("overflow-hidden rounded-full bg-white/70", compact ? "h-1.5" : "h-2")}>
         <div
