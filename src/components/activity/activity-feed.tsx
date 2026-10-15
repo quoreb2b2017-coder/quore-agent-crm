@@ -1,5 +1,9 @@
+"use client";
+
 import { Bath, Coffee, LogIn, LogOut, Users } from "lucide-react";
+import { useLiveNowMs } from "@/components/layout/trusted-clock";
 import { formatTime, formatTimeInZone } from "@/lib/format";
+import { activityDetail } from "@/lib/activity-detail";
 import type { ActivityTone, ShiftActivityEvent } from "@/lib/queries/shift-activity";
 import { getWorkSettings } from "@/lib/work-settings";
 import { cn } from "@/lib/utils";
@@ -22,11 +26,14 @@ const dotClass: Record<ActivityTone, string> = {
 
 export function ActivityFeed({ events }: { events: ShiftActivityEvent[] }) {
   const zone = getWorkSettings().timeZone;
+  const live = events.some((event) => event.detail === "In progress");
+  const now = useLiveNowMs(live);
 
   return (
     <ol>
       {events.map((event, index) => {
         const Icon = toneIcon[event.tone];
+        const detail = activityDetail(event, now);
         const live = event.detail === "In progress";
         const last = index === events.length - 1;
         return (
@@ -45,14 +52,14 @@ export function ActivityFeed({ events }: { events: ShiftActivityEvent[] }) {
               <p className="flex min-w-0 items-center gap-1.5 text-sm">
                 <Icon className="size-3.5 shrink-0 text-muted-foreground" />
                 <span className="truncate">{event.label}</span>
-                {event.detail ? (
+                {detail ? (
                   <span
                     className={cn(
                       "shrink-0 text-xs font-medium",
                       live ? "text-warning-foreground" : "text-muted-foreground"
                     )}
                   >
-                    {event.detail}
+                    {detail}
                   </span>
                 ) : null}
               </p>

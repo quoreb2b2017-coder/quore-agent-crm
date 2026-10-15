@@ -79,7 +79,7 @@ export const INDIA_LATE_MINUTES = 19 * 60;
 export const INDIA_LATE_TIME = "7:00 PM";
 
 /** Productive time starts at 6:30 PM even if they signed in earlier, and stops at 3:30 AM. */
-export function creditedWorkBounds(startedAt: string | Date, endedAt: Date | number = new Date()) {
+export function creditedWorkBounds(startedAt: string | Date, endedAt: Date | number = trustedNowMs()) {
   const start = typeof startedAt === "string" ? new Date(startedAt) : startedAt;
   const endAt = typeof endedAt === "number" ? new Date(endedAt) : endedAt;
   const shiftDate = shiftDateIso(start);
@@ -113,20 +113,17 @@ export function creditedAwaySeconds(
 export type BreakExcess = Record<BreakSlot, number> & { washroom: number; total: number };
 
 /**
- * Time over each slot (Tea 1 / Tea 2 15 min, Lunch 45 min). Washroom uses whatever is left of the
- * 1 hr 15 min total; washroom beyond that is excess too.
+ * Time over each slot (Tea 1 / Tea 2 15 min, Lunch 45 min). Washroom is a separate time log and
+ * does not use the 1 hr 15 min break allowance.
  */
-export function breakExcess(used: Record<BreakSlot, number>, washroomSeconds = 0): BreakExcess {
-  let withinSlots = 0;
+export function breakExcess(used: Record<BreakSlot, number>, _washroomSeconds = 0): BreakExcess {
   const excess = { TEA_1: 0, TEA_2: 0, LUNCH: 0, washroom: 0, total: 0 };
   for (const slot of BREAK_SLOTS) {
     const seconds = Math.max(0, used[slot]);
     const budget = slotBudgetSeconds(slot);
-    withinSlots += Math.min(seconds, budget);
     excess[slot] = Math.max(0, seconds - budget);
   }
-  excess.washroom = Math.max(0, withinSlots + Math.max(0, washroomSeconds) - BREAK_TOTAL_SECONDS);
-  excess.total = excess.TEA_1 + excess.TEA_2 + excess.LUNCH + excess.washroom;
+  excess.total = excess.TEA_1 + excess.TEA_2 + excess.LUNCH;
   return excess;
 }
 
@@ -144,13 +141,13 @@ export function addExcess(sum: BreakExcess, next: BreakExcess): BreakExcess {
   };
 }
 
-/** Break allowance not yet used: slot time within budget plus washroom, out of 1 hr 15 min. */
-export function breakPoolLeftSeconds(used: Record<BreakSlot, number>, washroomSeconds = 0) {
+/** Break allowance not yet used, out of 1 hr 15 min. Washroom does not reduce this. */
+export function breakPoolLeftSeconds(used: Record<BreakSlot, number>, _washroomSeconds = 0) {
   const withinSlots = BREAK_SLOTS.reduce(
     (sum, slot) => sum + Math.min(Math.max(0, used[slot]), slotBudgetSeconds(slot)),
     0
   );
-  return Math.max(0, BREAK_TOTAL_SECONDS - withinSlots - Math.max(0, washroomSeconds));
+  return Math.max(0, BREAK_TOTAL_SECONDS - withinSlots);
 }
 
 /** True when the clock-in is after the shift login time in the configured time zone. */

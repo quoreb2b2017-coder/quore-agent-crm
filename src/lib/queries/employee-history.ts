@@ -3,12 +3,12 @@ import { createServiceClient } from "@/lib/supabase/service";
 import {
   addDaysIso,
   eachDateInclusive,
+  formatBreakDuration,
   shiftDateIso,
   todayIso,
   weekdayShortIst,
 } from "@/lib/format";
 import {
-  breakDurationSeconds,
   breakExcess,
   breakSecondsBySlot,
   creditedProductiveSeconds,
@@ -57,7 +57,7 @@ export type EmployeeHistoryPayload = {
   breaks: BreakRow[];
   timeline: { time: string; label: string }[];
   todayWashroomVisits: number;
-  /** Shift date → time over Tea / Lunch / washroom allowance. */
+  /** Shift date → time over Tea / Lunch. Washroom is logged separately. */
   excessByDate: Record<string, BreakExcess>;
   excessBreakSeconds: number;
   leaves: EmployeeHistoryLeave[];
@@ -158,8 +158,16 @@ export async function getEmployeeHistory(employeeId: string): Promise<EmployeeHi
   const typeById = new Map((leaveTypes ?? []).map((item) => [item.id, item.name]));
   const timeline: { time: string; label: string }[] = [];
   for (const session of sessions ?? []) {
-    timeline.push({ time: session.started_at, label: "Logged in" });
-    if (session.ended_at) timeline.push({ time: session.ended_at, label: "Logged out" });
+    const stayed = session.ended_at
+      ? formatBreakDuration(
+          Math.max(
+            0,
+            Math.floor((new Date(session.ended_at).getTime() - new Date(session.started_at).getTime()) / 1000)
+          )
+        )
+      : null;
+    timeline.push({ time: session.started_at, label: stayed ? `Logged in · ${stayed}` : "Logged in · still in" });
+    if (session.ended_at) timeline.push({ time: session.ended_at, label: `Logged out · ${stayed}` });
   }
   const todayBreaks = (breakRows ?? []).filter(
     (row) => row.started_at >= start.toISOString() && row.started_at < end.toISOString()
@@ -190,18 +198,10 @@ export async function getEmployeeHistory(employeeId: string): Promise<EmployeeHi
     const date = shiftDateIso(new Date(row.started_at));
     breaksByDate.set(date, [...(breaksByDate.get(date) ?? []), row]);
   }
-  const washroomByDate = new Map<string, number>();
-  for (const row of washroomRows ?? []) {
-    const date = shiftDateIso(new Date(row.started_at));
-    washroomByDate.set(date, (washroomByDate.get(date) ?? 0) + breakDurationSeconds(row));
-  }
   const excessByDate: Record<string, BreakExcess> = {};
-  for (const date of new Set([...breaksByDate.keys(), ...washroomByDate.keys()])) {
+  for (const date of breaksByDate.keys()) {
     if (date < since) continue;
-    excessByDate[date] = breakExcess(
-      breakSecondsBySlot(breaksByDate.get(date) ?? []),
-      washroomByDate.get(date) ?? 0
-    );
+    excessByDate[date] = breakExcess(breakSecondsBySlot(breaksByDate.get(date) ?? []));
   }
 
   const payroll = setupAsOf(salaryRecords ?? [], employeeId, today, employee?.salary ?? null);

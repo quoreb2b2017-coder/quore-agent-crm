@@ -89,7 +89,8 @@ export async function getShiftActivity(
     at: string | null,
     label: string,
     detail: string | null,
-    tone: ActivityTone
+    tone: ActivityTone,
+    shiftDate?: string
   ) => {
     if (!at) return;
     const person = byId.get(personId);
@@ -103,20 +104,23 @@ export async function getShiftActivity(
       label,
       detail,
       tone,
-      shiftDate: shiftDateIso(new Date(at)),
+      shiftDate: shiftDate ?? shiftDateIso(new Date(at)),
     });
   };
 
   for (const row of sessions ?? []) {
-    push(row.employee_id, `${row.id}-in`, row.started_at, "Logged in", null, "login");
+    const day = shiftDateIso(new Date(row.started_at));
+    const stayed = row.ended_at ? durationLabel(row.started_at, row.ended_at, null) : "In progress";
+    push(row.employee_id, `${row.id}-in`, row.started_at, "Logged in", stayed, "login", day);
     if (row.ended_at) {
       push(
         row.employee_id,
         `${row.id}-out`,
         row.ended_at,
         row.status === "TIMED_OUT" ? "Logged out (timeout)" : "Logged out",
-        null,
-        "logout"
+        stayed,
+        "logout",
+        day
       );
     }
   }

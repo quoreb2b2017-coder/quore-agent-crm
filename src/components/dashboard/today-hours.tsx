@@ -43,12 +43,7 @@ export function TodayHours({
           status
         );
   const breakSeconds =
-    closedBreak +
-    session.closedWashroomSeconds +
-    (now == null
-      ? 0
-      : (session.isOnBreak ? elapsedSince(session.openBreakStartedAt, now) : 0) +
-        elapsedSince(session.washroomStartedAt, now));
+    closedBreak + (now == null || !session.isOnBreak ? 0 : elapsedSince(session.openBreakStartedAt, now));
   const hourScale = Math.max(8, working / 3600, breakSeconds / 3600, idleSeconds / 3600, 0.1);
 
   return (

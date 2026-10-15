@@ -19,16 +19,18 @@ import {
 import { RESET_IDLE_EVENT } from "@/components/layout/session-presence";
 import { hasTrustedClock, subscribeClock, trustedNowDate, trustedNowMs } from "@/lib/clock-anchor";
 import { syncTrustedClock } from "@/components/layout/trusted-clock";
-import { formatBreakDuration, formatDuration, formatExcess, formatTime } from "@/lib/format";
+import { formatBreakDuration, formatDuration, formatExcess, formatTime, shiftDateIso } from "@/lib/format";
 import { formatClock } from "@/lib/live-time";
 import {
   BREAK_TOTAL_SECONDS,
   breakExcess,
   breakPoolLeftSeconds,
   breakSlot,
+  creditedAwaySeconds,
   creditedProductiveSeconds,
   formatBreakType,
   shiftTargetSeconds,
+  shiftWindowUtc,
   slotBudgetSeconds,
   creditedWorkBounds,
   type BreakSlot,
@@ -41,20 +43,29 @@ import { cn } from "@/lib/utils";
 function useElapsed(startedAt: string | null, running: boolean) {
   const [seconds, setSeconds] = useState<number | null>(null);
   const shownRef = useRef(0);
+  const startedRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (!running || !startedAt) {
       shownRef.current = 0;
+      startedRef.current = null;
       setSeconds(null);
       return;
     }
     const startedMs = new Date(startedAt).getTime();
+    const previousStarted = startedRef.current;
+    const sameTimer =
+      previousStarted != null &&
+      Number.isFinite(startedMs) &&
+      Math.abs(new Date(previousStarted).getTime() - startedMs) < 60_000;
+    startedRef.current = startedAt;
+    if (!sameTimer) shownRef.current = 0;
     let originPerf = performance.now();
     const trustedSeconds =
       hasTrustedClock() && Number.isFinite(startedMs)
         ? Math.max(0, Math.floor((trustedNowMs() - startedMs) / 1000))
         : 0;
-    // Never step backward when Google time lands behind the click.
+    // A rewritten click time stays continuous. A new login does not keep the previous session's seconds.
     let originSeconds = Math.max(shownRef.current, trustedSeconds);
     const tick = () => {
       const next = originSeconds + Math.floor((performance.now() - originPerf) / 1000);
@@ -139,7 +150,6 @@ export function ClockWidget({
     meetingStartedAt = null,
     meetingRequestedAt = null,
     washroomStartedAt = null,
-    closedWashroomSeconds = 0,
     sessionClosedWashroomSeconds = 0,
     onLeave,
     weekOff = false,
@@ -148,32 +158,54 @@ export function ClockWidget({
   const [isPending, startTransition] = useTransition();
   const [mounted, setMounted] = useState(false);
   const [localBreak, setLocalBreak] = useState<{ slot: BreakSlot; startedAt: string } | null>(null);
+  const [breakResume, setBreakResume] = useState<{ extra: number; slot: BreakSlot | null } | null>(null);
+  const [washResume, setWashResume] = useState<{ extra: number } | null>(null);
   const router = useRouter();
-  const breakActive = isOnBreak || localBreak != null;
+  const breakCaughtUp = breakResume != null && !isOnBreak;
+  const washCaughtUp = washResume != null && !washroomStartedAt;
+  const heldBreak = breakCaughtUp ? 0 : (breakResume?.extra ?? 0);
+  const heldWash = washCaughtUp ? 0 : (washResume?.extra ?? 0);
+  const breakActive = (isOnBreak || localBreak != null) && breakResume == null;
   const breakStartedAt = openBreakStartedAt ?? localBreak?.startedAt ?? null;
   const breakType = openBreakType ?? localBreak?.slot ?? null;
   const countedFrom = sessionStartedAt
     ? new Date(creditedWorkBounds(sessionStartedAt).from).toISOString()
     : null;
   const elapsed = useElapsed(countedFrom, isClockedIn);
+  const nowMs = trustedNowMs();
+  const elapsedCapped = sessionStartedAt ? creditedWorkBounds(sessionStartedAt, nowMs).seconds : (elapsed ?? 0);
+  const shiftEndMs = sessionStartedAt
+    ? shiftWindowUtc(shiftDateIso(new Date(sessionStartedAt))).end.getTime()
+    : null;
+  const pastLogout = shiftEndMs != null && nowMs >= shiftEndMs;
+  const logoutLabel = formatMinutesLabel(getWorkSettings().logoutMinutes);
+  const awayInside = (startedAt: string | null, seconds: number) => {
+    if (!sessionStartedAt || !startedAt || seconds <= 0) return 0;
+    return creditedAwaySeconds(
+      sessionStartedAt,
+      { started_at: startedAt, ended_at: null },
+      new Date(startedAt).getTime() + seconds * 1000
+    );
+  };
   const breakElapsed = useElapsed(breakStartedAt, breakActive);
-  const isInWashroom = isClockedIn && !breakActive && !!washroomStartedAt;
+  const isInWashroom = isClockedIn && !breakActive && !!washroomStartedAt && washResume == null;
   const washroomElapsed = useElapsed(washroomStartedAt, isInWashroom);
   const isInMeeting = isClockedIn && !breakActive && !isInWashroom && !!meetingStartedAt;
   const meetingPending = isClockedIn && !breakActive && !isInWashroom && !isInMeeting && !!meetingRequestedAt;
   const meetingElapsed = useElapsed(meetingStartedAt, isInMeeting);
   const liveBreak = breakActive ? (breakElapsed ?? 0) : 0;
   const liveWashroom = isInWashroom ? (washroomElapsed ?? 0) : 0;
-  // Only the part of an open break after 6:30 PM comes out of productive time.
-  const creditedOpen = (seconds: number) => Math.min(seconds, elapsed ?? 0);
+  // Productive time stops at logout (3:30 AM). Staying signed in after that does not add more.
   const liveSlice = isClockedIn
     ? Math.max(
         0,
-        (elapsed ?? 0) -
+        elapsedCapped -
           sessionClosedBreakSeconds -
+          heldBreak -
           sessionClosedWashroomSeconds -
-          creditedOpen(liveBreak) -
-          creditedOpen(liveWashroom)
+          heldWash -
+          awayInside(breakActive ? breakStartedAt : null, liveBreak) -
+          awayInside(isInWashroom ? washroomStartedAt : null, liveWashroom)
       )
     : 0;
   const dailySeconds = accruedActiveSeconds + liveSlice;
@@ -184,9 +216,11 @@ export function ClockWidget({
     TEA_2: closedBreakSeconds.TEA_2 + (openSlot === "TEA_2" ? liveBreak : 0),
     LUNCH: closedBreakSeconds.LUNCH + (openSlot === "LUNCH" ? liveBreak : 0),
   };
-  const washroomUsed = closedWashroomSeconds + liveWashroom;
-  const excess = breakExcess(usedBySlot, washroomUsed);
-  const poolLeft = breakPoolLeftSeconds(usedBySlot, washroomUsed);
+  if (breakResume && !breakCaughtUp && breakResume.slot) {
+    usedBySlot[breakResume.slot] += breakResume.extra;
+  }
+  const excess = breakExcess(usedBySlot);
+  const poolLeft = breakPoolLeftSeconds(usedBySlot);
   const slotRemaining = (slot: BreakSlot) => Math.max(0, slotBudgetSeconds(slot) - usedBySlot[slot]);
   const tea1Remaining = slotRemaining("TEA_1");
   const tea2Remaining = slotRemaining("TEA_2");
@@ -206,6 +240,14 @@ export function ClockWidget({
   useEffect(() => {
     if (localBreak && isOnBreak && openBreakStartedAt) setLocalBreak(null);
   }, [localBreak, isOnBreak, openBreakStartedAt]);
+
+  useEffect(() => {
+    if (breakCaughtUp) setBreakResume(null);
+  }, [breakCaughtUp]);
+
+  useEffect(() => {
+    if (washCaughtUp) setWashResume(null);
+  }, [washCaughtUp]);
 
   useEffect(() => {
     if (readOnly || !meetingPending) return;
@@ -245,6 +287,37 @@ export function ClockWidget({
       const res = await startBreak(slot, startedAt);
       if (res.error || res.skipped) {
         setLocalBreak(null);
+        if (res.error) toast.error(res.error);
+        return;
+      }
+      window.dispatchEvent(new Event(RESET_IDLE_EVENT));
+      router.refresh();
+    });
+  }
+
+  function finishBreak() {
+    const extra = awayInside(breakStartedAt, liveBreak);
+    setBreakResume({ extra, slot: openSlot });
+    setLocalBreak(null);
+    startTransition(async () => {
+      const res = await endBreak();
+      if (res.error || res.skipped) {
+        setBreakResume(null);
+        if (res.error) toast.error(res.error);
+        return;
+      }
+      window.dispatchEvent(new Event(RESET_IDLE_EVENT));
+      router.refresh();
+    });
+  }
+
+  function finishWashroom() {
+    const extra = awayInside(washroomStartedAt, liveWashroom);
+    setWashResume({ extra });
+    startTransition(async () => {
+      const res = await endWashroom();
+      if (res.error || res.skipped) {
+        setWashResume(null);
         if (res.error) toast.error(res.error);
         return;
       }
@@ -353,34 +426,38 @@ export function ClockWidget({
                 )}
                 <p className="text-xs text-muted-foreground">
                   Productive today {mounted ? formatClock(countedSeconds) : "—"} · paused during break
+                  {pastLogout ? ` · stopped at ${logoutLabel}` : ""}
                 </p>
               </>
             ) : isInWashroom ? (
               <>
-                <p
-                  className={cn(
-                    "text-xs font-medium",
-                    excess.washroom > 0 ? "text-destructive" : "text-muted-foreground"
-                  )}
-                >
-                  Washroom running ·{" "}
-                  {excess.washroom > 0
-                    ? `excess +${formatExcess(excess.washroom)}`
-                    : `break total ${formatBreakDuration(poolLeft)} left`}
+                <p className="text-xs font-medium text-muted-foreground">
+                  Washroom running · {formatBreakDuration(liveWashroom)} logged · not part of break time
                 </p>
                 <p className="text-xs text-muted-foreground">
                   Productive today {mounted ? formatClock(countedSeconds) : "—"} · paused during washroom
+                  {pastLogout ? ` · stopped at ${logoutLabel}` : ""}
                 </p>
               </>
-            ) : isInMeeting ? (
-              <p className="text-xs font-medium text-muted-foreground">
-                In meeting · {formatDuration(meetingElapsed ?? 0)} · counts as productive time
-              </p>
-            ) : meetingPending ? (
-              <p className="text-xs font-medium text-muted-foreground">
-                Meeting requested · waiting for admin to accept before time starts
-              </p>
-            ) : null}
+            ) : (
+              <>
+                {isInMeeting ? (
+                  <p className="text-xs font-medium text-muted-foreground">
+                    In meeting · {formatDuration(meetingElapsed ?? 0)}
+                    {pastLogout ? "" : " · counts as productive time"}
+                  </p>
+                ) : meetingPending ? (
+                  <p className="text-xs font-medium text-muted-foreground">
+                    Meeting requested · waiting for admin to accept before time starts
+                  </p>
+                ) : null}
+                {pastLogout ? (
+                  <p className="text-xs font-medium text-muted-foreground">
+                    Productive time stopped at {logoutLabel}
+                  </p>
+                ) : null}
+              </>
+            )}
           </div>
         </div>
 
@@ -422,7 +499,7 @@ export function ClockWidget({
                     size={compact ? "sm" : "lg"}
                     className={compact ? "h-8" : "h-10"}
                     disabled={isPending}
-                    onClick={() => run(endWashroom)}
+                    onClick={finishWashroom}
                   >
                     {isPending ? <Loader2 className="size-4 animate-spin" /> : <Play className="size-4" />}
                     End washroom
@@ -509,7 +586,7 @@ export function ClockWidget({
                     size={compact ? "sm" : "lg"}
                     className={compact ? "h-8" : "h-10"}
                     disabled={isPending}
-                    onClick={() => run(endBreak)}
+                    onClick={finishBreak}
                   >
                     {isPending ? <Loader2 className="size-4 animate-spin" /> : <Play className="size-4" />}
                     End {formatBreakType(breakType ?? "TEA")}
@@ -534,9 +611,9 @@ export function ClockWidget({
 
       <div className={cn("shrink-0 border-t shift-foot", compact ? "px-4 py-2.5" : "px-5 py-3 sm:px-6")}>
         <div className="mb-1.5 flex items-center justify-between text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
-          <span>{breakActive || isInWashroom ? "Break total used" : "Shift progress"}</span>
+          <span>{breakActive ? "Break total used" : "Shift progress"}</span>
           <span className="tabular-nums">
-            {breakActive || isInWashroom
+            {breakActive
               ? `${formatBreakDuration(BREAK_TOTAL_SECONDS - poolLeft)} / ${formatBreakDuration(BREAK_TOTAL_SECONDS)}`
               : `${Math.round(shiftPct)}% of ${halfDay ? formatDuration(shiftTarget) : "9 hrs"}`}
           </span>
@@ -545,9 +622,9 @@ export function ClockWidget({
           <div
             className={cn(
               "progress-fill",
-              breakActive || isInWashroom ? "break-progress-fill" : "shift-progress-fill"
+              breakActive ? "break-progress-fill" : "shift-progress-fill"
             )}
-            style={{ width: `${breakActive || isInWashroom ? poolUsedPct : shiftPct}%` }}
+            style={{ width: `${breakActive ? poolUsedPct : shiftPct}%` }}
           />
         </div>
       </div>

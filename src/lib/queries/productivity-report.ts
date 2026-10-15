@@ -6,7 +6,6 @@ import { leaveNotesByDay } from "@/lib/queries/leave";
 import { formatMinutesLabel, getWorkSettings } from "@/lib/work-settings";
 import { dailyActiveSeconds } from "@/lib/live-time";
 import {
-  breakDurationSeconds,
   breakExcess,
   breakSecondsBySlot,
   addExcess,
@@ -34,7 +33,7 @@ export type ProductivityDay = {
   targetSeconds: number;
   breakSeconds: number;
   idleSeconds: number;
-  /** Time over Tea 1 / Tea 2 / Lunch / washroom allowance that shift. */
+  /** Time over Tea 1 / Tea 2 / Lunch that shift. Washroom is logged separately. */
   breakExcess: BreakExcess;
   status: DayStatus;
   /** Off reason when status is "off" (leave or holiday). */
@@ -110,33 +109,21 @@ async function loadAwayRows(table: "breaks" | "washroom_visits", employeeIds: st
   return rows;
 }
 
-/** employee id → shift date → excess break for that shift. */
+/** employee id → shift date → excess break for that shift. Washroom visits are not break time. */
 async function loadBreakExcess(employeeIds: string[], start: string, end: string) {
-  const [breaks, washroom] = await Promise.all([
-    loadAwayRows("breaks", employeeIds, start, end),
-    loadAwayRows("washroom_visits", employeeIds, start, end),
-  ]);
-  const grouped = new Map<string, { breaks: AwayRow[]; washroomSeconds: number }>();
-  const bucket = (row: AwayRow) => {
+  const breaks = await loadAwayRows("breaks", employeeIds, start, end);
+  const grouped = new Map<string, AwayRow[]>();
+  for (const row of breaks) {
     const key = `${row.employee_id}|${shiftDateIso(new Date(row.started_at))}`;
-    let entry = grouped.get(key);
-    if (!entry) {
-      entry = { breaks: [], washroomSeconds: 0 };
-      grouped.set(key, entry);
-    }
-    return entry;
-  };
-  for (const row of breaks) bucket(row).breaks.push(row);
-  for (const row of washroom) bucket(row).washroomSeconds += breakDurationSeconds(row);
+    grouped.set(key, [...(grouped.get(key) ?? []), row]);
+  }
 
   const result = new Map<string, Map<string, BreakExcess>>();
-  for (const [key, entry] of grouped) {
+  for (const [key, rows] of grouped) {
     const [employeeId, date] = key.split("|");
-    const used = breakSecondsBySlot(
-      entry.breaks.map((row) => ({ ...row, break_type: row.break_type ?? "TEA_1" }))
-    );
+    const used = breakSecondsBySlot(rows.map((row) => ({ ...row, break_type: row.break_type ?? "TEA_1" })));
     const byDate = result.get(employeeId) ?? new Map<string, BreakExcess>();
-    byDate.set(date, breakExcess(used, entry.washroomSeconds));
+    byDate.set(date, breakExcess(used));
     result.set(employeeId, byDate);
   }
   return result;

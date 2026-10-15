@@ -4,7 +4,7 @@ import { useState } from "react";
 import { Bath, Coffee, LogIn, LogOut, Radio, Users } from "lucide-react";
 import { useLiveNowMs } from "@/components/layout/trusted-clock";
 import { formatTimeInZone } from "@/lib/format";
-import { formatClock } from "@/lib/live-time";
+import { activityDetail } from "@/lib/activity-detail";
 import type { ActivityDayLog, ActivityTone, ShiftActivityEvent } from "@/lib/queries/shift-activity";
 import { getWorkSettings } from "@/lib/work-settings";
 import { cn } from "@/lib/utils";
@@ -32,12 +32,6 @@ function dayCounts(events: ShiftActivityEvent[]) {
     washrooms: events.filter((event) => event.label === "Washroom").length,
     meetings: events.filter((event) => event.label === "Meeting requested").length,
   };
-}
-
-function liveDetail(event: ShiftActivityEvent, now: number | null) {
-  if (event.detail !== "In progress" || now == null) return event.detail;
-  const seconds = Math.max(0, Math.floor((now - new Date(event.at).getTime()) / 1000));
-  return `In progress · ${formatClock(seconds)}`;
 }
 
 export function MyActivityLog({
@@ -139,7 +133,7 @@ export function MyActivityLog({
           <ol>
             {selected.events.map((event, index) => {
               const Icon = toneIcon[event.tone];
-              const detail = liveDetail(event, now);
+              const detail = activityDetail(event, now);
               const running = event.detail === "In progress";
               const last = index === selected.events.length - 1;
               return (

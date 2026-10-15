@@ -1,13 +1,11 @@
 import { cache } from "react";
 import { createDataClient as createClient } from "@/lib/supabase/data";
 import { createServiceClient } from "@/lib/supabase/service";
-import { trustedNowMs } from "@/lib/clock-anchor";
 import { todayIso } from "@/lib/format";
 import { SUPER_ADMIN_ROLE } from "@/lib/permissions/roles";
 import { weekendOrRecordedStatus } from "@/lib/attendance-weekend";
 import { dailyActiveSeconds } from "@/lib/live-time";
 import {
-  breakDurationSeconds,
   breakExcess,
   breakSecondsBySlot,
   creditedAwaySeconds,
@@ -91,7 +89,7 @@ export type TeamTodayRow = {
   washroomSeconds: number;
   sessionClosedWashroomSeconds: number;
   openWashroomStartedAt: string | null;
-  /** Today's time over Tea 1 / Tea 2 / Lunch / washroom allowance. */
+  /** Today's time over Tea 1 / Tea 2 / Lunch. Washroom is logged separately. */
   breakExcess: BreakExcess;
   /** Set when today's latest session was closed automatically (break time over). */
   autoLoggedOutAt: string | null;
@@ -178,15 +176,11 @@ export async function liveSessionSlices(
     (meetings ?? []).filter((row) => !row.started_at).map((row) => row.employee_id)
   );
 
-  const now = trustedNowMs();
   const excessFor = (employeeId: string) => {
     const used = breakSecondsBySlot(
       (shiftBreaks ?? []).filter((row) => row.employee_id === employeeId)
     );
-    const washroomUsed = (washrooms ?? [])
-      .filter((row) => row.employee_id === employeeId)
-      .reduce((sum, row) => sum + breakDurationSeconds(row, now), 0);
-    return breakExcess(used, washroomUsed);
+    return breakExcess(used);
   };
 
   for (const session of sessions ?? []) {
