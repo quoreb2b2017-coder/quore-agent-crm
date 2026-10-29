@@ -17,9 +17,24 @@ const ADMIN_SHELL_ROLES = new Set<string>([
   ...STAFF_ROLE_KEYS,
 ]);
 
+/**
+ * Permissions the shared staff roles (Agent / Database / Email Marketing) must
+ * never receive implicitly. Before finding F-03 only the first two were listed,
+ * so every staff member was treated as holding payroll, salary, role and
+ * policy administration rights at the application layer.
+ */
 const SUPER_ADMIN_ONLY_PERMISSIONS = new Set([
   "employees.manage",
   "audit_logs.view",
+  "roles.manage",
+  "salary.view",
+  "salary.manage",
+  "payroll.manage",
+  "policies.manage",
+  "devices.manage",
+  "compliance.view",
+  "compliance.manage",
+  "compliance.audit",
 ]);
 
 const HR_BLOCKED_PERMISSIONS = new Set(["audit_logs.view"]);

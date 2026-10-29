@@ -129,6 +129,7 @@ with rp (role_key, permission_key) as (
     ('SUPER_ADMIN', 'devices.manage'),
     ('SUPER_ADMIN', 'audit_logs.view'),
     ('SUPER_ADMIN', 'policies.manage'),
+    ('SUPER_ADMIN', 'compliance.view'), ('SUPER_ADMIN', 'compliance.manage'),
 
     -- HR
     ('HR', 'employees.manage'),
@@ -146,27 +147,23 @@ with rp (role_key, permission_key) as (
     ('MANAGER', 'leave.view'), ('MANAGER', 'leave.apply'), ('MANAGER', 'leave.approve'),
     ('MANAGER', 'reports.view'),
 
-    -- AGENT / DATABASE / EMAIL_MARKETING share the same workspace
-    ('AGENT', 'attendance.view'), ('AGENT', 'attendance.manage'),
-    ('AGENT', 'activity.view'), ('AGENT', 'activity.manage'),
+    -- AGENT / DATABASE / EMAIL_MARKETING share the same workspace.
+    -- Least privilege (finding F-03): no salary, payroll, attendance/break
+    -- editing, leave approval or policy administration. See 0022.
+    ('AGENT', 'attendance.view'),
+    ('AGENT', 'activity.view'),
     ('AGENT', 'tasks.view'), ('AGENT', 'tasks.create'), ('AGENT', 'tasks.update'),
-    ('AGENT', 'salary.view'),
-    ('AGENT', 'leave.view'), ('AGENT', 'leave.apply'), ('AGENT', 'leave.approve'),
-    ('AGENT', 'policies.manage'),
+    ('AGENT', 'leave.view'), ('AGENT', 'leave.apply'),
 
-    ('DATABASE', 'attendance.view'), ('DATABASE', 'attendance.manage'),
-    ('DATABASE', 'activity.view'), ('DATABASE', 'activity.manage'),
+    ('DATABASE', 'attendance.view'),
+    ('DATABASE', 'activity.view'),
     ('DATABASE', 'tasks.view'), ('DATABASE', 'tasks.create'), ('DATABASE', 'tasks.update'),
-    ('DATABASE', 'salary.view'),
-    ('DATABASE', 'leave.view'), ('DATABASE', 'leave.apply'), ('DATABASE', 'leave.approve'),
-    ('DATABASE', 'policies.manage'),
+    ('DATABASE', 'leave.view'), ('DATABASE', 'leave.apply'),
 
-    ('EMAIL_MARKETING', 'attendance.view'), ('EMAIL_MARKETING', 'attendance.manage'),
-    ('EMAIL_MARKETING', 'activity.view'), ('EMAIL_MARKETING', 'activity.manage'),
+    ('EMAIL_MARKETING', 'attendance.view'),
+    ('EMAIL_MARKETING', 'activity.view'),
     ('EMAIL_MARKETING', 'tasks.view'), ('EMAIL_MARKETING', 'tasks.create'), ('EMAIL_MARKETING', 'tasks.update'),
-    ('EMAIL_MARKETING', 'salary.view'),
-    ('EMAIL_MARKETING', 'leave.view'), ('EMAIL_MARKETING', 'leave.apply'), ('EMAIL_MARKETING', 'leave.approve'),
-    ('EMAIL_MARKETING', 'policies.manage'),
+    ('EMAIL_MARKETING', 'leave.view'), ('EMAIL_MARKETING', 'leave.apply'),
 
     -- FIELD_EMPLOYEE
     ('FIELD_EMPLOYEE', 'field_visits.view'), ('FIELD_EMPLOYEE', 'field_visits.manage'),

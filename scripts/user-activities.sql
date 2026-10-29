@@ -1,3 +1,7 @@
+-- DEPRECATED (security finding F-03): this script re-grants over-broad staff
+-- permissions / admin-like RLS. Do not run it. Migration 0022_security_hardening.sql
+-- is the source of truth for staff role permissions and RLS.
+
 -- Paste in Supabase SQL Editor. Safe to run again if the last attempt failed.
 -- Domain-level website activity from the Chrome extension.
 -- Does not call has_role() — some projects never created that helper.
