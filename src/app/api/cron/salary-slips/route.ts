@@ -1,3 +1,4 @@
+import { timingSafeEqual } from "node:crypto";
 import { NextResponse } from "next/server";
 import { getCurrentEmployeeContext, isManagement } from "@/lib/permissions/server";
 import { autoGeneratePayrollMonth } from "@/lib/payroll";
@@ -5,10 +6,16 @@ import { ensureAutoSalarySlips } from "@/lib/salary-slip-generate";
 
 export const runtime = "nodejs";
 
+function safeEqual(a: string, b: string) {
+  const left = Buffer.from(a);
+  const right = Buffer.from(b);
+  return left.length === right.length && timingSafeEqual(left, right);
+}
+
 async function run(request: Request) {
   const secret = process.env.CRON_SECRET?.trim();
   const auth = request.headers.get("authorization");
-  const cronOk = Boolean(secret && auth === `Bearer ${secret}`);
+  const cronOk = Boolean(secret && auth && safeEqual(auth, `Bearer ${secret}`));
 
   if (!cronOk) {
     const ctx = await getCurrentEmployeeContext();

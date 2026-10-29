@@ -11,10 +11,16 @@ const port = Number(process.env.SOCKET_PORT || 3002);
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-const emitSecret = process.env.SOCKET_SECRET || serviceKey || "";
+// Finding F-11: never reuse the service-role key as an inter-service secret.
+const emitSecret = process.env.SOCKET_SECRET?.trim() || "";
 
 if (!supabaseUrl || !anonKey || !serviceKey) {
   console.error("Socket server missing Supabase env vars.");
+  process.exit(1);
+}
+
+if (emitSecret.length < 32) {
+  console.error("SOCKET_SECRET must be set to a random value of at least 32 characters.");
   process.exit(1);
 }
 

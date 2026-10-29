@@ -26,12 +26,9 @@ export function serverSocketUrl(): string | null {
   return "http://127.0.0.1:3002";
 }
 
+/** Dedicated inter-service secret. Never falls back to the service-role key (F-11). */
 export function socketAuthSecret(): string {
-  return (
-    process.env.SOCKET_SECRET?.trim() ||
-    process.env.SUPABASE_SERVICE_ROLE_KEY?.trim() ||
-    ""
-  );
+  return process.env.SOCKET_SECRET?.trim() || "";
 }
 
 export function isSocketConfigured(): boolean {
