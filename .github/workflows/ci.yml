@@ -1,0 +1,45 @@
+# Change-management gate (controls WT-SDL-02 / WT-SDL-03).
+# Make "ci" a required status check on main via branch protection; until then
+# this workflow reports but does not block merges.
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Type check
+        run: npx next typegen && npx tsc --noEmit
+
+      - name: Database security acceptance tests (RLS, audit, compliance)
+        run: npm run test:security
+
+      - name: Dependency audit (high and critical)
+        run: npm audit --omit=dev --audit-level=high
+
+      - name: Secret scan
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
