@@ -20,6 +20,17 @@ type Table<Row, Insert, Update = Partial<Insert>> = {
   Relationships: [];
 };
 
+export type ComplianceControlStatus =
+  | "NOT_ASSESSED"
+  | "NOT_IMPLEMENTED"
+  | "IN_PROGRESS"
+  | "IMPLEMENTED_AWAITING_EVIDENCE"
+  | "OPERATING_EVIDENCED"
+  | "EXCEPTION_IDENTIFIED"
+  | "REMEDIATION_REQUIRED"
+  | "RISK_ACCEPTED"
+  | "NOT_APPLICABLE";
+
 export interface Database {
   public: {
     Tables: {
@@ -947,18 +958,158 @@ export interface Database {
           new_data: Json | null;
           ip_address: string | null;
           created_at: string;
+          seq: number | null;
+          actor_source: string | null;
+          db_role: string | null;
+          request_id: string | null;
+          prev_hash: string | null;
+          row_hash: string | null;
+        },
+        // Inserts happen only inside security-definer triggers (0022).
+        Record<string, never>,
+        Record<string, never>
+      >;
+      // ---- Compliance (0023-0025) ----
+      compliance_frameworks: Table<
+        { id: string; framework_key: string; name: string; version: string; notes: string | null; created_at: string },
+        { id?: string; framework_key: string; name: string; version: string; notes?: string | null }
+      >;
+      framework_requirements: Table<
+        { id: string; framework_id: string; ref: string; title: string; category: string | null; created_at: string },
+        { id?: string; framework_id: string; ref: string; title: string; category?: string | null }
+      >;
+      compliance_controls: Table<
+        {
+          id: string;
+          control_code: string;
+          title: string;
+          description: string;
+          objective: string | null;
+          domain: string;
+          owner_role: string | null;
+          owner_employee_id: string | null;
+          frequency: string;
+          control_type: string;
+          execution_mode: string;
+          scope_layer: string;
+          status: ComplianceControlStatus;
+          applicability_rationale: string | null;
+          current_state: string | null;
+          gap_remediation: string | null;
+          evidence_required: string | null;
+          test_procedure: string | null;
+          priority: "P0" | "P1" | "P2" | "P3" | null;
+          next_due_at: string | null;
+          version: number;
+          created_at: string;
+          updated_at: string;
         },
         {
-          id?: string;
-          actor_employee_id?: string | null;
-          action: string;
-          table_name?: string | null;
-          record_id?: string | null;
-          old_data?: Json | null;
-          new_data?: Json | null;
-          ip_address?: string | null;
-          created_at?: string;
+          control_code: string;
+          title: string;
+          description: string;
+          domain: string;
+          status?: ComplianceControlStatus;
+          owner_employee_id?: string | null;
+          applicability_rationale?: string | null;
         }
+      >;
+      control_requirement_mappings: Table<
+        { id: string; control_id: string; requirement_id: string; mapping_note: string | null; created_at: string },
+        { control_id: string; requirement_id: string; mapping_note?: string | null }
+      >;
+      evidence_items: Table<
+        {
+          id: string;
+          control_id: string;
+          title: string;
+          evidence_type: string;
+          collection_method: string;
+          source_system: string;
+          source_record_id: string | null;
+          collected_at: string;
+          period_start: string | null;
+          period_end: string | null;
+          collected_by: string | null;
+          storage_path: string | null;
+          sha256: string | null;
+          limitations: string | null;
+          retention_class: string;
+          status: "PENDING_REVIEW" | "ACCEPTED" | "REJECTED" | "SUPERSEDED" | "EXPIRED";
+          reviewed_by: string | null;
+          reviewed_at: string | null;
+          review_note: string | null;
+          supersedes_id: string | null;
+          created_at: string;
+        },
+        {
+          control_id: string;
+          title: string;
+          evidence_type: string;
+          collection_method: string;
+          source_system: string;
+          source_record_id?: string | null;
+          period_start?: string | null;
+          period_end?: string | null;
+          collected_by?: string | null;
+          storage_path?: string | null;
+          sha256?: string | null;
+          limitations?: string | null;
+        },
+        { status?: "ACCEPTED" | "REJECTED" | "SUPERSEDED" | "EXPIRED"; review_note?: string | null }
+      >;
+      control_tests: Table<
+        {
+          id: string;
+          control_id: string;
+          executed_at: string;
+          executed_by: string | null;
+          execution_identity: string;
+          method: string;
+          rule_version: string | null;
+          population: Json;
+          result: "PASS" | "FAIL" | "PARTIAL" | "COLLECTION_FAILED";
+          exceptions: Json;
+          exceptions_count: number;
+          notes: string | null;
+          evidence_id: string | null;
+          is_independent: boolean;
+          created_at: string;
+        },
+        {
+          control_id: string;
+          executed_by?: string | null;
+          execution_identity: string;
+          method: string;
+          rule_version?: string | null;
+          population?: Json;
+          result: "PASS" | "FAIL" | "PARTIAL" | "COLLECTION_FAILED";
+          exceptions?: Json;
+          notes?: string | null;
+          evidence_id?: string | null;
+        },
+        Record<string, never>
+      >;
+      corrective_actions: Table<
+        {
+          id: string;
+          ref: string;
+          source_type: string;
+          source_ref: string | null;
+          control_id: string | null;
+          title: string;
+          description: string | null;
+          severity: "CRITICAL" | "HIGH" | "MEDIUM" | "LOW" | null;
+          owner_employee_id: string | null;
+          due_date: string | null;
+          status: "OPEN" | "IN_PROGRESS" | "READY_FOR_VERIFICATION" | "CLOSED" | "RISK_ACCEPTED";
+          closure_evidence_id: string | null;
+          closed_by: string | null;
+          closed_at: string | null;
+          created_at: string;
+          updated_at: string;
+        },
+        { ref: string; source_type: string; title: string }
       >;
     };
     Views: Record<string, never>;
@@ -986,6 +1137,10 @@ export interface Database {
       purge_old_chat: {
         Args: Record<string, never>;
         Returns: number;
+      };
+      run_automated_control_checks: {
+        Args: Record<string, never>;
+        Returns: { control_code: string; result: string; exceptions_count: number }[];
       };
     };
     Enums: Record<string, never>;

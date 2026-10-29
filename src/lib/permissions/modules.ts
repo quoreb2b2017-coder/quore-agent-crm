@@ -121,6 +121,14 @@ export const ADMIN_MODULES: ModuleDefinition[] = [
   { key: "leave", label: "Leave Management", href: "/admin/leave", icon: "calendar", group: "hr" },
   { key: "notifications", label: "Notifications", href: "/admin/notifications", icon: "bell", group: "account" },
   {
+    key: "compliance",
+    label: "Security & Compliance",
+    href: "/admin/compliance",
+    icon: "shield",
+    group: "insights",
+    rolesOnly: ["SUPER_ADMIN"],
+  },
+  {
     key: "work-settings",
     label: "Work settings",
     href: "/admin/work-settings",
