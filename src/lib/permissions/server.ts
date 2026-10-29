@@ -1,34 +1,11 @@
 import { cache } from "react";
 import { redirect } from "next/navigation";
-import { createClient } from "@/lib/supabase/server";
+import { getAuthUser } from "@/lib/supabase/server";
 import { createServiceClient } from "@/lib/supabase/service";
-import { readWorktrackJwtClaims, hasWorktrackProfileClaims } from "@/lib/auth/jwt-claims";
+import { isEmploymentBlocked } from "@/lib/format";
 import type { EmployeeContext } from "./types";
-import {
-  isManagement,
-  isStaffOrAdmin,
-  isStaffRole,
-  isSuperAdmin,
-  staffHasPermission,
-  staffDepartmentLabel,
-  SUPER_ADMIN_ROLE,
-} from "./roles";
+import { isManagement, isSuperAdmin, staffHasPermission } from "./roles";
 export { isAdminLike, isManagement, isSuperAdmin } from "./roles";
-
-const getSession = cache(async () => {
-  const supabase = await createClient();
-  const {
-    data: { session },
-  } = await supabase.auth.getSession();
-  return session;
-});
-
-function roleDisplayNameLocal(roleKey: string) {
-  if (roleKey === SUPER_ADMIN_ROLE) return "Super Admin";
-  if (roleKey === "HR") return "HR";
-  if (isStaffRole(roleKey)) return staffDepartmentLabel(roleKey);
-  return roleKey.replaceAll("_", " ");
-}
 
 async function loadEmployeeContextFromDb(userId: string): Promise<EmployeeContext | null> {
   const service = createServiceClient();
@@ -53,7 +30,7 @@ async function loadEmployeeContextFromDb(userId: string): Promise<EmployeeContex
   if (!assignment || !role) return null;
 
   let permissions: string[] = [];
-  if (!isStaffOrAdmin(role.role_key)) {
+  {
     const { data: permRows } = await service
       .from("role_permissions")
       .select("permission_id")
@@ -83,56 +60,34 @@ async function loadEmployeeContextFromDb(userId: string): Promise<EmployeeContex
 
 /**
  * Resolves the signed-in employee's identity + role + permissions.
- * Prefers JWT custom claims (Auth Hook). Falls back to a service-role
- * lookup by auth user id so Super Admin can sign in before the hook
- * is enabled in the Supabase dashboard.
+ *
+ * Identity comes from a VERIFIED access token (getAuthUser -> getClaims).
+ * Role, permissions and employment status are then read live from the
+ * database rather than from JWT custom claims, so a role change, block or
+ * termination takes effect on the next request instead of when the token
+ * expires (findings F-01 and F-06). Cached per request.
+ *
+ * Includes SUSPENDED / TERMINATED employees so layouts can render the
+ * blocked-account gate. Server actions and route handlers must use
+ * getCurrentEmployeeContext(), which returns null for blocked employees.
+ */
+export const getEmployeeContextIncludingBlocked = cache(
+  async (): Promise<EmployeeContext | null> => {
+    const user = await getAuthUser();
+    if (!user) return null;
+    return loadEmployeeContextFromDb(user.id);
+  }
+);
+
+/**
+ * Signed-in, verified, ACTIVE (or ON_LEAVE) employee, or null.
+ * Use this for every authorization decision.
  */
 export const getCurrentEmployeeContext = cache(
   async (): Promise<EmployeeContext | null> => {
-    const session = await getSession();
-    const user = session?.user;
-    if (!user) return null;
-
-    const claims = readWorktrackJwtClaims(session.access_token);
-    if (hasWorktrackProfileClaims(claims)) {
-      return {
-        employeeId: claims.employeeId!,
-        employeeCode: claims.employeeCode!,
-        fullName: claims.fullName!,
-        email: user.email ?? "",
-        profileImagePath: null,
-        employmentStatus: claims.employmentStatus ?? "ACTIVE",
-        roleKey: claims.roleKey!,
-        roleDisplayName: claims.roleDisplayName!,
-        permissions: claims.permissions ?? [],
-      };
-    }
-
-    // Partial JWT claims: one employee row, no roles table scan.
-    if (claims.employeeId && claims.roleKey) {
-      const service = createServiceClient();
-      const { data: employee } = await service
-        .from("employees")
-        .select("id, employee_code, full_name, email, profile_image_path, employment_status")
-        .eq("id", claims.employeeId)
-        .maybeSingle();
-
-      if (employee) {
-        return {
-          employeeId: employee.id,
-          employeeCode: employee.employee_code,
-          fullName: employee.full_name,
-          email: employee.email,
-          profileImagePath: employee.profile_image_path,
-          employmentStatus: claims.employmentStatus ?? employee.employment_status,
-          roleKey: claims.roleKey,
-          roleDisplayName: roleDisplayNameLocal(claims.roleKey),
-          permissions: claims.permissions ?? [],
-        };
-      }
-    }
-
-    return loadEmployeeContextFromDb(user.id);
+    const ctx = await getEmployeeContextIncludingBlocked();
+    if (!ctx || isEmploymentBlocked(ctx.employmentStatus)) return null;
+    return ctx;
   }
 );
 

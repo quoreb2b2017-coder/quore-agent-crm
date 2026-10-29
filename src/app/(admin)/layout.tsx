@@ -2,7 +2,7 @@ import { Suspense } from "react";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { getAuthUser } from "@/lib/supabase/server";
-import { getCurrentEmployeeContext, isAdminLike } from "@/lib/permissions/server";
+import { getEmployeeContextIncludingBlocked, isAdminLike } from "@/lib/permissions/server";
 import { ADMIN_MODULES, filterModules } from "@/lib/permissions/modules";
 import { AppShell } from "@/components/layout/app-shell";
 import { AccountSetupNotice } from "@/components/auth/account-setup-notice";
@@ -16,7 +16,7 @@ export default async function AdminLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const ctx = await getCurrentEmployeeContext();
+  const ctx = await getEmployeeContextIncludingBlocked();
 
   if (!ctx) {
     const user = await getAuthUser();

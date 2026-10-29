@@ -1,5 +1,11 @@
 import { isAdminLike } from "@/lib/permissions/roles";
 
+// SECURITY: these helpers DECODE the access token without verifying its
+// signature. Use them only for routing hints (which dashboard to redirect to)
+// in middleware and the login page. Never use them for authorization: on the
+// server, identity comes from getAuthUser() / getCurrentEmployeeContext(),
+// which verify the token (finding F-01).
+
 export type WorktrackJwtClaims = {
   employeeId?: string;
   roleKey?: string;
