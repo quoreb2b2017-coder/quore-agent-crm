@@ -10,7 +10,8 @@
     "lint": "eslint",
     "db:push": "supabase db push",
     "db:types": "supabase gen types typescript --linked --schema public > src/types/supabase.ts",
-    "create-super-admin": "tsx scripts/create-super-admin.ts"
+    "create-super-admin": "tsx scripts/create-super-admin.ts",
+    "test:security": "node supabase/tests/run-security-tests.mjs"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.9.1",
@@ -20,7 +21,7 @@
     "clsx": "^2.1.1",
     "date-fns": "^4.4.0",
     "lucide-react": "^1.33.0",
-    "next": "16.3.2",
+    "next": "16.4.3",
     "next-themes": "^0.4.6",
     "pdf-lib": "^1.17.1",
     "radix-ui": "^1.6.7",
@@ -39,6 +40,7 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "^0.5.13",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/react": "^19",
@@ -46,7 +48,7 @@
     "concurrently": "^10.0.5",
     "dotenv": "^17.4.2",
     "eslint": "^9",
-    "eslint-config-next": "16.3.2",
+    "eslint-config-next": "16.4.3",
     "tailwindcss": "^4",
     "tsx": "^4.23.12",
     "typescript": "^5"
