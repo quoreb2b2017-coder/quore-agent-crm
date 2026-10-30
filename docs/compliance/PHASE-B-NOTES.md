@@ -7,7 +7,7 @@ Nothing on this branch changes any control's status by itself. A control moves f
 ## Deploy order
 
 1. **Set `SOCKET_SECRET`** (32+ random characters, e.g. `openssl rand -hex 32`) on Vercel and on the socket host. The socket server now refuses to start without it and no longer falls back to the service-role key.
-2. **Apply migrations 0022 to 0025** to a staging project first (`npx supabase db push`), run the app, then production.
+2. **Apply migrations 0024 to 0027** to a staging project first (`npx supabase db push`), run the app, then production.
 3. **Deploy the app.** Next.js moves from 16.3.2 to 16.4.3 (critical advisories, F-17).
 4. **Run the checks**: Security & Compliance → *Run automated checks*. Expect failures for MFA (IAM-02) and segregation of duties (IAM-04) until those gaps are closed. Those failures are correct.
 5. **Rotate the Supabase service-role key** after deploying. The repository is public and the key was previously shared with the socket host.

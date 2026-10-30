@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { Plus } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -13,11 +14,13 @@ import { createRole } from "./actions";
 
 export function CreateRoleDialog() {
   const [open, setOpen] = useState(false);
+  const router = useRouter();
   const { handleSubmit, isPending, error } = useActionForm(
     (formData) => createRole({}, formData),
     () => {
-      toast.success("Role created — assign permissions below");
+      toast.success("Role created. Assign its permissions in the table.");
       setOpen(false);
+      router.refresh();
     }
   );
 

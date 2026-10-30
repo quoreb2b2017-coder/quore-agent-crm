@@ -7,7 +7,7 @@ import {
   rememberWorkSettings,
   validateWorkSettings,
 } from "@/lib/work-settings-server";
-import { createServiceClient } from "@/lib/supabase/service";
+import { createDataClient } from "@/lib/supabase/data";
 import { timeValueToMinutes, type WorkSettings } from "@/lib/work-settings";
 
 export async function saveWorkSettings(
@@ -35,7 +35,8 @@ export async function saveWorkSettings(
   const invalid = validateWorkSettings(settings);
   if (invalid) return { error: invalid };
 
-  const { error } = await createServiceClient()
+  // Actor-tagged client: the audit log records who changed shift settings.
+  const { error } = await (await createDataClient())
     .from("app_settings")
     .upsert({
       id: 1,

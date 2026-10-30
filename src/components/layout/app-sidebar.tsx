@@ -2,7 +2,6 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { ShieldCheck, Users2 } from "lucide-react";
 import {
   Sidebar,
   SidebarContent,
@@ -10,50 +9,34 @@ import {
   SidebarGroup,
   SidebarGroupContent,
   SidebarGroupLabel,
-  SidebarHeader,
   SidebarMenu,
+  SidebarMenuBadge,
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarRail,
   useSidebar,
 } from "@/components/ui/sidebar";
 import {
+  ADMIN_GROUP_ORDER,
+  EMPLOYEE_GROUP_ORDER,
   MODULE_GROUP_LABELS,
   type ModuleDefinition,
-  type ModuleGroup,
 } from "@/lib/permissions/modules";
-import type { EmployeeContext } from "@/lib/permissions/types";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { NavItemGlyph } from "@/components/layout/route-loading";
 import { cn } from "@/lib/utils";
-
-const ADMIN_GROUP_ORDER: ModuleGroup[] = [
-  "overview",
-  "operations",
-  "hr",
-  "account",
-];
-
-const EMPLOYEE_GROUP_ORDER: ModuleGroup[] = ["overview", "work", "time", "account"];
-
-function initials(name: string) {
-  return name
-    .split(" ")
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((part) => part[0]?.toUpperCase())
-    .join("");
-}
 
 export function AppSidebar({
   modules,
   brand,
-  ctx,
+  badges,
+  mfaEnabled,
+  securityHref,
 }: {
   modules: ModuleDefinition[];
-  groupLabel?: string;
   brand: "admin" | "employee";
-  ctx: EmployeeContext;
+  badges: Record<string, number>;
+  mfaEnabled: boolean;
+  securityHref: string;
 }) {
   const pathname = usePathname();
   const { isMobile, setOpenMobile } = useSidebar();
@@ -67,41 +50,18 @@ export function AppSidebar({
     .filter((section) => section.items.length > 0);
 
   return (
-    <Sidebar collapsible="icon">
-      <SidebarHeader className="p-3 pb-2">
-        <Link
-          href={brand === "admin" ? "/admin/dashboard" : "/portal/dashboard"}
-          className="flex items-center gap-3 rounded-xl px-1.5 py-1.5 outline-none ring-sidebar-ring focus-visible:ring-2"
-        >
-          <div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-linear-to-br from-sky-200 to-white text-sidebar shadow-sm">
-            {brand === "admin" ? (
-              <ShieldCheck className="size-4" />
-            ) : (
-              <Users2 className="size-4" />
-            )}
-          </div>
-          <div className="grid min-w-0 flex-1 text-left leading-tight">
-            <span className="truncate text-[15px] font-semibold tracking-tight text-white">
-              WorkTrack
-            </span>
-            <span className="truncate text-[11px] text-white/45">
-              {ctx.roleDisplayName}
-            </span>
-          </div>
-        </Link>
-      </SidebarHeader>
-
-      <SidebarContent className="gap-0 px-2.5 pt-1 pb-3">
+    <Sidebar collapsible="icon" className="border-r border-sidebar-border">
+      <SidebarContent className="gap-0 px-2 pt-2 pb-3">
         {sections.map((section) => (
           <SidebarGroup key={section.group} className="p-0 pt-3">
-            <SidebarGroupLabel className="mb-1 h-6 px-2.5 text-[10px] font-medium tracking-[0.16em] text-white/35 uppercase">
+            <SidebarGroupLabel className="mb-0.5 h-6 px-2.5 text-[11px] font-semibold tracking-[0.07em] text-muted-foreground uppercase">
               {section.label}
             </SidebarGroupLabel>
             <SidebarGroupContent>
-              <SidebarMenu className="gap-0.5">
+              <SidebarMenu className="gap-px">
                 {section.items.map((mod) => {
-                  const isActive =
-                    pathname === mod.href || pathname.startsWith(`${mod.href}/`);
+                  const isActive = pathname === mod.href || pathname.startsWith(`${mod.href}/`);
+                  const badge = badges[mod.key] ?? 0;
                   return (
                     <SidebarMenuItem key={mod.key}>
                       <SidebarMenuButton
@@ -109,9 +69,9 @@ export function AppSidebar({
                         isActive={isActive}
                         tooltip={mod.label}
                         className={cn(
-                          "h-9 gap-2.5 rounded-lg px-2 text-[13px] text-white/65 hover:bg-white/8 hover:text-white",
+                          "h-9 gap-2.5 rounded-md px-2.5 text-[13.5px] text-sidebar-foreground hover:bg-muted hover:text-foreground",
                           isActive &&
-                            "bg-white font-medium text-sidebar shadow-sm hover:bg-white hover:text-sidebar data-active:bg-white data-active:text-sidebar data-active:hover:bg-white data-active:hover:text-sidebar"
+                            "bg-sidebar-accent font-semibold text-sidebar-accent-foreground data-active:bg-sidebar-accent data-active:text-sidebar-accent-foreground"
                         )}
                       >
                         <Link
@@ -121,17 +81,17 @@ export function AppSidebar({
                             if (isMobile) setOpenMobile(false);
                           }}
                         >
-                          <span
-                            className={cn(
-                              "relative flex size-6 items-center justify-center rounded-md",
-                              isActive ? "bg-sidebar/8" : "bg-white/6"
-                            )}
-                          >
+                          <span className="relative flex size-4 items-center justify-center">
                             <NavItemGlyph name={mod.icon} />
                           </span>
                           <span>{mod.label}</span>
                         </Link>
                       </SidebarMenuButton>
+                      {badge > 0 ? (
+                        <SidebarMenuBadge className="rounded-full bg-mint-soft px-1.5 text-[11px] font-semibold text-primary">
+                          {badge > 99 ? "99+" : badge}
+                        </SidebarMenuBadge>
+                      ) : null}
                     </SidebarMenuItem>
                   );
                 })}
@@ -141,20 +101,21 @@ export function AppSidebar({
         ))}
       </SidebarContent>
 
-      <SidebarFooter className="p-3">
+      <SidebarFooter className="p-3 group-data-[collapsible=icon]:hidden">
         <Link
-          href={brand === "admin" ? "/admin/settings" : "/portal/profile"}
-          className="flex items-center gap-2.5 rounded-xl border border-white/8 bg-white/5 px-2 py-2 outline-none ring-sidebar-ring transition hover:bg-white/8 focus-visible:ring-2"
+          href={securityHref}
+          className={cn(
+            "flex items-start gap-2.5 rounded-lg border px-3 py-2.5 text-[12.5px] leading-snug transition",
+            mfaEnabled
+              ? "border-[#abefc6] bg-[#ecfdf3] text-[#067647] hover:bg-[#dcfae6]"
+              : "border-[#fecdca] bg-[#fef3f2] text-[#b42318] hover:bg-[#fee4e2]"
+          )}
         >
-          <Avatar className="size-8 rounded-lg">
-            <AvatarFallback className="rounded-lg bg-white/15 text-[11px] font-semibold text-white">
-              {initials(ctx.fullName)}
-            </AvatarFallback>
-          </Avatar>
-          <div className="grid min-w-0 flex-1 text-left leading-tight">
-            <span className="truncate text-sm font-medium text-white">{ctx.fullName}</span>
-            <span className="truncate text-[11px] text-white/40">{ctx.employeeCode}</span>
-          </div>
+          <span className={cn("mt-1 size-2 shrink-0 rounded-full", mfaEnabled ? "bg-[#17b26a]" : "bg-[#f04438]")} aria-hidden />
+          <span>
+            <span className="block font-semibold">{mfaEnabled ? "Two-factor sign-in on" : "Two-factor sign-in off"}</span>
+            <span className="block opacity-90">{mfaEnabled ? "Your account is protected." : "Turn it on to protect your account."}</span>
+          </span>
         </Link>
       </SidebarFooter>
       <SidebarRail />

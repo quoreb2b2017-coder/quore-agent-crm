@@ -1,4 +1,5 @@
 import "server-only";
+import { unstable_rethrow } from "next/navigation";
 import { hasTrustedClock, setClockAnchor, trustedNowDate } from "@/lib/clock-anchor";
 
 const REFRESH_MS = 5 * 60 * 1000;
@@ -43,8 +44,17 @@ export async function ensureGoogleTime(force = false): Promise<Date> {
   try {
     return await box.inflight;
   } catch (error) {
+    // Let Next.js internal signals (dynamic rendering bail-out etc.) through.
+    unstable_rethrow(error);
     if (hasTrustedClock()) return trustedNowDate();
-    throw error;
+    // Google unreachable and no anchor yet: fall back to the server's own
+    // NTP-synced clock so sign-in and attendance keep working. The browser
+    // clock is still never trusted. Retry Google on the next refresh.
+    console.warn("[time] Google time unavailable, using server clock:", error instanceof Error ? error.message : error);
+    const mono = performance.now();
+    setClockAnchor(Date.now(), mono);
+    box.mono = mono - REFRESH_MS + 30_000;
+    return trustedNowDate();
   }
 }
 

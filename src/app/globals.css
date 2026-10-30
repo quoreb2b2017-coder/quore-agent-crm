@@ -7,9 +7,17 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
-  --font-mono: var(--font-geist-mono), ui-monospace, monospace;
-  --font-heading: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-sans: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+  --font-heading: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+  --color-ink: var(--ink);
+  --color-ink-foreground: var(--ink-foreground);
+  --color-ink-muted: var(--ink-muted);
+  --color-ink-panel: var(--ink-panel);
+  --color-ink-border: var(--ink-border);
+  --color-mint: var(--mint);
+  --color-mint-soft: var(--mint-soft);
+  --color-canvas: var(--canvas);
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -55,47 +63,64 @@
 }
 
 :root {
-  --background: oklch(0.975 0.004 250);
-  --foreground: oklch(0.21 0.02 260);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.21 0.02 260);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.21 0.02 260);
-  --primary: oklch(0.42 0.14 255);
-  --primary-foreground: oklch(0.99 0 0);
-  --secondary: oklch(0.96 0.01 250);
-  --secondary-foreground: oklch(0.32 0.06 255);
-  --muted: oklch(0.96 0.006 250);
-  --muted-foreground: oklch(0.5 0.02 260);
-  --accent: oklch(0.955 0.014 250);
-  --accent-foreground: oklch(0.28 0.06 255);
-  --destructive: oklch(0.577 0.215 27.325);
-  --success: oklch(0.55 0.14 155);
-  --success-foreground: oklch(0.98 0 0);
-  --warning: oklch(0.75 0.14 70);
-  --warning-foreground: oklch(0.3 0.06 70);
-  --info: oklch(0.55 0.12 240);
-  --info-foreground: oklch(0.98 0 0);
-  --border: oklch(0.91 0.01 250);
-  --input: oklch(0.91 0.01 250);
-  --ring: oklch(0.42 0.14 255);
-  --chart-1: oklch(0.5 0.14 255);
-  --chart-2: oklch(0.58 0.13 155);
-  --chart-3: oklch(0.72 0.14 70);
-  --chart-4: oklch(0.58 0.14 290);
-  --chart-5: oklch(0.6 0.16 25);
-  --radius: 0.8rem;
-  --sidebar: oklch(0.205 0.028 260);
-  --sidebar-foreground: oklch(0.9 0.01 250);
-  --sidebar-primary: oklch(1 0 0);
-  --sidebar-primary-foreground: oklch(0.205 0.028 260);
-  --sidebar-accent: oklch(1 0 0 / 8%);
-  --sidebar-accent-foreground: oklch(1 0 0);
-  --sidebar-border: oklch(1 0 0 / 7%);
-  --sidebar-ring: oklch(0.7 0.1 255);
+  /* Quore ink and mint: calm neutrals, one brand colour, status colours only where needed */
+  --background: #f5f7f6;
+  --canvas: #f5f7f6;
+  --foreground: #0f1a17;
+  --card: #ffffff;
+  --card-foreground: #0f1a17;
+  --popover: #ffffff;
+  --popover-foreground: #0f1a17;
+  --primary: #00775f;
+  --primary-foreground: #ffffff;
+  --secondary: #eef2f0;
+  --secondary-foreground: #0f1a17;
+  --muted: #f1f4f3;
+  --muted-foreground: #4a5753;
+  --accent: #e7f8f2;
+  --accent-foreground: #0b2420;
+  --destructive: #b42318;
+  --success: #067647;
+  --success-foreground: #ffffff;
+  --warning: #b54708;
+  --warning-foreground: #ffffff;
+  --info: #2e5aac;
+  --info-foreground: #ffffff;
+  --border: #e2e8e5;
+  --input: #d3dcd8;
+  --ring: #00a67e;
+  --chart-1: #00a67e;
+  --chart-2: #2e5aac;
+  --chart-3: #f5a35c;
+  --chart-4: #7f56d9;
+  --chart-5: #f97066;
+  --radius: 0.625rem;
+  --ink: #0b2420;
+  --ink-foreground: #d5e3de;
+  --ink-muted: #9fb6af;
+  --ink-panel: #102f29;
+  --ink-border: #23423b;
+  --mint: #00d9a6;
+  --mint-soft: #e7f8f2;
+  --sidebar: #ffffff;
+  --sidebar-foreground: #33403c;
+  --sidebar-primary: #0b2420;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #e7f8f2;
+  --sidebar-accent-foreground: #0b2420;
+  --sidebar-border: #e2e8e5;
+  --sidebar-ring: #00a67e;
 }
 
 .dark {
+  --canvas: oklch(0.175 0.018 175);
+  --ink: #06140f;
+  --ink-foreground: #d5e3de;
+  --ink-muted: #9fb6af;
+  --ink-panel: #0d2621;
+  --ink-border: #23423b;
+  --mint: #00d9a6;
+  --mint-soft: oklch(0.3 0.05 170);
   --background: oklch(0.175 0.018 264);
   --foreground: oklch(0.96 0.006 264);
   --card: oklch(0.22 0.02 264);
@@ -153,9 +178,7 @@
 
 @layer components {
   [data-slot="card"] {
-    box-shadow:
-      0 1px 2px oklch(0.21 0.02 260 / 0.04),
-      0 8px 24px oklch(0.21 0.02 260 / 0.03);
+    box-shadow: 0 1px 2px rgb(11 36 32 / 0.04);
   }
 
   .dark [data-slot="card"] {
@@ -163,13 +186,8 @@
   }
 
   .dash-hero {
-    background:
-      radial-gradient(720px 240px at 92% -20%, oklch(0.78 0.14 195 / 0.55), transparent 58%),
-      radial-gradient(520px 200px at 6% 120%, oklch(0.7 0.16 310 / 0.38), transparent 52%),
-      linear-gradient(125deg, oklch(0.28 0.11 265) 0%, oklch(0.38 0.14 248) 48%, oklch(0.4 0.12 205) 100%);
-    box-shadow:
-      0 12px 32px oklch(0.28 0.08 255 / 0.28),
-      inset 0 1px 0 oklch(1 0 0 / 0.16);
+    background: var(--ink);
+    border: 1px solid var(--ink-border);
   }
 
   .dash-hero-compact {
@@ -177,21 +195,12 @@
   }
 
   .dash-hero-grid {
-    background-image:
-      linear-gradient(to right, rgb(255 255 255 / 0.07) 1px, transparent 1px),
-      linear-gradient(to bottom, rgb(255 255 255 / 0.07) 1px, transparent 1px);
-    background-size: 22px 22px;
-    mask-image: radial-gradient(ellipse 90% 80% at 70% 0%, black, transparent);
+    display: none;
   }
 
   .dash-hero-shine {
-    background: linear-gradient(
-      90deg,
-      transparent,
-      rgb(255 255 255 / 0.45),
-      transparent
-    );
-    opacity: 0.7;
+    background: linear-gradient(90deg, transparent, var(--mint), transparent);
+    opacity: 0.5;
   }
 
   .dash-chip {
@@ -200,12 +209,9 @@
 
   .session-card {
     overflow: hidden;
-    border: 1px solid color-mix(in oklch, var(--primary) 22%, var(--border));
-    background:
-      linear-gradient(180deg, oklch(0.99 0.015 250) 0%, var(--card) 48%);
-    box-shadow:
-      0 1px 2px oklch(0.28 0.08 255 / 0.06),
-      0 16px 36px oklch(0.28 0.08 255 / 0.1);
+    border: 1px solid var(--border);
+    background: var(--card);
+    box-shadow: 0 1px 2px rgb(11 36 32 / 0.04);
   }
 
   .session-card-head,
@@ -213,7 +219,6 @@
     position: relative;
     isolation: isolate;
     overflow: hidden;
-    color: white;
   }
 
   .session-card-head > *,
@@ -223,68 +228,35 @@
   }
 
   .session-card-head {
-    background: linear-gradient(
-      115deg,
-      oklch(0.34 0.14 265) 0%,
-      oklch(0.4 0.13 248) 48%,
-      oklch(0.42 0.12 205) 100%
-    );
+    background: var(--card);
   }
 
   .session-card-head::after {
-    content: "";
-    position: absolute;
-    right: -1.5rem;
-    top: -2.4rem;
-    z-index: 0;
-    width: 8.5rem;
-    height: 8.5rem;
-    border-radius: 999px;
-    background: radial-gradient(circle, oklch(0.82 0.14 195 / 0.45), transparent 68%);
+    content: none;
   }
 
   .hours-card-head {
-    background: linear-gradient(
-      115deg,
-      oklch(0.4 0.1 175) 0%,
-      oklch(0.4 0.12 210) 100%
-    );
+    background: var(--card);
   }
 
   .hours-card-head::after {
-    content: "";
-    position: absolute;
-    right: -1.2rem;
-    top: -2rem;
-    z-index: 0;
-    width: 7rem;
-    height: 7rem;
-    border-radius: 999px;
-    background: radial-gradient(circle, oklch(0.88 0.12 145 / 0.4), transparent 68%);
+    content: none;
   }
 
   [data-slot="card"].dash-hours {
-    border: 1px solid oklch(0.84 0.06 200);
-    background: linear-gradient(180deg, oklch(0.98 0.025 175) 0%, var(--card) 42%);
-    box-shadow:
-      0 1px 2px oklch(0.28 0.06 200 / 0.05),
-      0 14px 32px oklch(0.28 0.06 200 / 0.08);
+    border: 1px solid var(--border);
+    background: var(--card);
+    box-shadow: 0 1px 2px rgb(11 36 32 / 0.04);
   }
 
   .clock-panel {
     position: relative;
-    background:
-      linear-gradient(180deg, color-mix(in oklch, var(--card) 82%, var(--info)) 0%, var(--card) 46%);
-    box-shadow:
-      0 1px 2px oklch(0.21 0.02 260 / 0.04),
-      0 8px 22px oklch(0.21 0.02 260 / 0.04);
+    background: var(--card);
+    box-shadow: 0 1px 2px rgb(11 36 32 / 0.04);
   }
 
   .clock-timer {
-    background: linear-gradient(180deg, oklch(0.32 0.1 255), oklch(0.42 0.12 220));
-    -webkit-background-clip: text;
-    background-clip: text;
-    color: transparent;
+    color: var(--foreground);
   }
 
   .break-chip {
@@ -292,13 +264,13 @@
   }
 
   .break-chip-tea {
-    background: oklch(0.95 0.05 70);
-    color: oklch(0.42 0.1 55);
+    background: #fffaeb;
+    color: #b54708;
   }
 
   .break-chip-lunch {
-    background: oklch(0.94 0.05 200);
-    color: oklch(0.38 0.1 220);
+    background: #eef3fb;
+    color: #2e5aac;
   }
 
   .dash-board {
@@ -413,12 +385,13 @@
   }
 
   .dash-stage-footer .dash-stat {
-    box-shadow: none;
+    background: var(--card);
+    box-shadow: 0 1px 2px rgb(11 36 32 / 0.04);
+    transition: border-color 160ms ease, background-color 160ms ease;
   }
 
   .dash-stage-footer .dash-stat:hover {
-    transform: none;
-    box-shadow: none;
+    border-color: #bfebdd;
   }
 
   .dash-stage-stats {
@@ -494,23 +467,23 @@
   }
 
   .dash-stat[data-tone="default"] {
-    background: linear-gradient(165deg, oklch(0.97 0.025 255) 0%, var(--card) 58%);
-    border-color: oklch(0.86 0.04 255);
+    background: var(--card);
+    border-color: var(--border);
   }
 
   .dash-stat[data-tone="success"] {
-    background: linear-gradient(165deg, oklch(0.97 0.05 155) 0%, var(--card) 58%);
-    border-color: oklch(0.84 0.08 155);
+    background: var(--card);
+    border-color: #abefc6;
   }
 
   .dash-stat[data-tone="warning"] {
-    background: linear-gradient(165deg, oklch(0.97 0.06 75) 0%, var(--card) 58%);
-    border-color: oklch(0.86 0.08 75);
+    background: var(--card);
+    border-color: #fedf89;
   }
 
   .dash-stat[data-tone="destructive"] {
-    background: linear-gradient(165deg, oklch(0.97 0.035 25) 0%, var(--card) 58%);
-    border-color: oklch(0.86 0.07 25);
+    background: var(--card);
+    border-color: #fecdca;
   }
 
   .heat-cell {
@@ -533,8 +506,8 @@
   }
 
   .dash-stat[data-tone="info"] {
-    background: linear-gradient(165deg, oklch(0.96 0.04 240) 0%, var(--card) 58%);
-    border-color: oklch(0.84 0.06 240);
+    background: var(--card);
+    border-color: #c7d7f2;
   }
 
   .dash-stat:hover {
@@ -559,18 +532,18 @@
   }
 
   .hours-tile-work {
-    background: oklch(0.96 0.045 155);
-    border-color: oklch(0.86 0.07 155);
+    background: #ecfdf3;
+    border-color: #abefc6;
   }
 
   .hours-tile-break {
-    background: oklch(0.97 0.05 75);
-    border-color: oklch(0.88 0.08 75);
+    background: #fffaeb;
+    border-color: #fedf89;
   }
 
   .hours-tile-idle {
-    background: oklch(0.96 0.035 240);
-    border-color: oklch(0.86 0.06 240);
+    background: #f1f4f3;
+    border-color: var(--border);
   }
 
   .meter-fill {
@@ -578,34 +551,25 @@
   }
 
   .shift-foot {
-    background: linear-gradient(90deg, oklch(0.95 0.035 255), oklch(0.96 0.04 175));
+    background: #f1f4f3;
   }
 
   .shift-progress-fill {
-    background: linear-gradient(90deg, oklch(0.4 0.14 255), oklch(0.58 0.13 195));
+    background: #00a67e;
   }
 
   .break-progress-fill {
-    background: linear-gradient(90deg, oklch(0.78 0.15 70), oklch(0.7 0.12 40));
+    background: #f79009;
   }
 }
 
 @layer utilities {
   .bg-app-canvas {
-    background-color: var(--background);
-    background-image:
-      radial-gradient(900px 420px at 100% -10%, color-mix(in oklch, var(--primary) 16%, transparent), transparent 55%),
-      radial-gradient(640px 280px at 50% -8%, color-mix(in oklch, var(--info) 14%, transparent), transparent 50%),
-      radial-gradient(700px 320px at -10% 110%, color-mix(in oklch, var(--warning) 12%, transparent), transparent 50%);
+    background-color: var(--canvas);
   }
 
   .bg-hero-mesh {
-    background-image: linear-gradient(
-      160deg,
-      oklch(0.22 0.04 260) 0%,
-      oklch(0.3 0.1 255) 55%,
-      oklch(0.36 0.1 245) 100%
-    );
+    background-color: var(--ink);
   }
 
   .bg-hero-grid {
@@ -729,4 +693,62 @@
   .celebrate-pop {
     animation: none;
   }
+}
+
+@layer components {
+  .wt-eyebrow {
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--muted-foreground);
+  }
+
+  .wt-kbd {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    padding: 1px 6px;
+    color: var(--muted-foreground);
+  }
+
+  .wt-pill {
+    @apply inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-medium whitespace-nowrap;
+  }
+  .wt-pill[data-tone="success"] { background: #ecfdf3; color: #067647; }
+  .wt-pill[data-tone="warning"] { background: #fffaeb; color: #b54708; }
+  .wt-pill[data-tone="danger"] { background: #fef3f2; color: #b42318; }
+  .wt-pill[data-tone="info"] { background: #eef3fb; color: #2e5aac; }
+  .wt-pill[data-tone="neutral"] { background: #f1f4f3; color: #33403c; }
+  .wt-pill[data-tone="brand"] { background: var(--mint-soft); color: var(--primary); }
+}
+
+/* Inside the dark app bar, shared buttons (chat, bell, clocks) read light. */
+.wt-appbar {
+  --foreground: #ffffff;
+  --muted-foreground: #9fb6af;
+  --muted: #102f29;
+  --accent: #102f29;
+  --accent-foreground: #ffffff;
+  --border: #23423b;
+}
+
+/* Card headers are light in the new look: remap the old on-dark text colours. */
+.session-card-head,
+.hours-card-head {
+  color: var(--foreground) !important;
+  border-bottom: 1px solid var(--border);
+}
+.session-card-head .text-white\/70,
+.hours-card-head .text-white\/70,
+.hours-card-head .text-white\/80 {
+  color: var(--muted-foreground) !important;
+}
+.hours-card-head .text-white {
+  color: var(--foreground) !important;
+}
+.hours-card-head .bg-white\/15 {
+  background: var(--mint-soft) !important;
+  color: var(--primary) !important;
 }

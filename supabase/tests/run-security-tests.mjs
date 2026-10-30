@@ -354,6 +354,41 @@ await test("Statement of Applicability covers all 93 Annex A controls", async ()
   expect(row.n === 93, `SoA has ${row.n} rows`);
 });
 
+await test("Second-factor status is readable by the server only", async () => {
+  await q("insert into auth.mfa_factors (user_id, status) values ($1, 'verified')", [hr.authId]);
+  const serverSees = await asService(null, () => q("select public.has_verified_mfa($1) as on", [hr.authId]));
+  const userBlocked = await rejects(() => asUser(agent, () => q("select public.has_verified_mfa($1)", [hr.authId])));
+  const none = await asService(null, () => q("select public.has_verified_mfa($1) as on", [agent.authId]));
+  expect(serverSees[0].on === true && none[0].on === false, "has_verified_mfa returned the wrong answer");
+  expect(userBlocked, "a signed-in user could probe other people's two-factor status");
+});
+
+await test("Security events are logged with the actor and cannot be forged by users", async () => {
+  const forged = await rejects(() =>
+    asUser(agent, () => q("select public.log_security_event($1, 'MFA_RESET', '{}'::jsonb)", [agent2.id]))
+  );
+  const rows = await asService(admin.id, async () => {
+    await q("select public.log_security_event($1, 'MFA_RESET', '{\"factors_removed\":1}'::jsonb)", [agent.id]);
+    return q("select actor_employee_id, action, record_id from public.audit_logs where action = 'SECURITY_MFA_RESET'");
+  });
+  expect(forged, "an agent could write a security event");
+  expect(rows.length === 1 && rows[0].actor_employee_id === admin.id && rows[0].record_id === agent.id, "security event not attributed");
+});
+
+await test("Onboarding changes are audited with identity and bank numbers redacted", async () => {
+  const rows = await asService(hr.id, async () => {
+    await q(
+      `insert into public.employee_onboarding (employee_id, pan_number, aadhaar_number, bank_account_number)
+       values ($1, 'ABCDE1234F', '123412341234', '0011223344556677')`,
+      [agent.id]
+    );
+    return q("select actor_employee_id, new_data from public.audit_logs where table_name = 'employee_onboarding'");
+  });
+  expect(rows.length === 1 && rows[0].actor_employee_id === hr.id, "onboarding change not audited with actor");
+  const data = rows[0].new_data;
+  expect(data.pan_number === "***4F" && data.aadhaar_number === "***1234" && data.bank_account_number === "***6677", `not redacted: ${JSON.stringify(data)}`);
+});
+
 // ------------------------------------------------------------ report
 let failed = 0;
 for (const r of results) {

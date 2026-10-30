@@ -68,6 +68,12 @@ export async function setRolePermissions(
 
   const supabase = await createClient();
 
+  const { data: role } = await supabase.from("roles").select("role_key").eq("id", roleId).maybeSingle();
+  if (!role) return { error: "Role not found." };
+  if (role.role_key === "SUPER_ADMIN") {
+    return { error: "Super Admin permissions are fixed and cannot be changed here." };
+  }
+
   const { error: deleteError } = await supabase
     .from("role_permissions")
     .delete()

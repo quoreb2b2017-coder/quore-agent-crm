@@ -1,5 +1,5 @@
 -- DEPRECATED (security finding F-03): this script re-grants over-broad staff
--- permissions / admin-like RLS. Do not run it. Migration 0022_security_hardening.sql
+-- permissions / admin-like RLS. Do not run it. Migration 0024_security_hardening.sql
 -- is the source of truth for staff role permissions and RLS.
 
 -- Paste in Supabase SQL Editor if you are not running `supabase db push`.

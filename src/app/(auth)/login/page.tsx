@@ -105,6 +105,12 @@ export default function LoginPage() {
       return;
     }
 
+    const { data: aal } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+    if (aal?.nextLevel === "aal2" && aal.currentLevel !== "aal2") {
+      window.location.assign("/verify");
+      return;
+    }
+
     const claims = readWorktrackJwtClaims(signInData.session?.access_token);
     // Hard navigation is faster than soft RSC replace after auth cookie write.
     window.location.assign(postLoginPath(claims.roleKey));

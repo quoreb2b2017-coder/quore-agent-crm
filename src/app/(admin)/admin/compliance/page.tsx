@@ -1,261 +1,123 @@
-import { redirect } from "next/navigation";
-import { ShieldCheck } from "lucide-react";
-import { PageHeader } from "@/components/dashboard/page-header";
-import { EmptyState } from "@/components/dashboard/empty-state";
-import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import { getCurrentEmployeeContext, isSuperAdmin } from "@/lib/permissions/server";
-import { createDataClient } from "@/lib/supabase/data";
-import type { ComplianceControlStatus } from "@/types/supabase";
-import { RunChecksButton } from "./run-checks-button";
+import Link from "next/link";
+import { ArrowRight } from "lucide-react";
+import { requireCompliance } from "@/lib/compliance/access";
+import { loadComplianceSummary } from "@/lib/compliance/summary";
+import { createServiceClient } from "@/lib/supabase/service";
+import { Panel, Pill, SegmentBar } from "@/components/wt/panel";
+import { shortDate } from "@/lib/compliance/labels";
 
 export const dynamic = "force-dynamic";
 
-const STATUS_LABEL: Record<ComplianceControlStatus, string> = {
-  NOT_ASSESSED: "Not assessed",
-  NOT_IMPLEMENTED: "Not implemented",
-  IN_PROGRESS: "In progress",
-  IMPLEMENTED_AWAITING_EVIDENCE: "Implemented, awaiting evidence",
-  OPERATING_EVIDENCED: "Operating and evidenced",
-  EXCEPTION_IDENTIFIED: "Exception identified",
-  REMEDIATION_REQUIRED: "Remediation required",
-  RISK_ACCEPTED: "Risk accepted",
-  NOT_APPLICABLE: "Not applicable",
-};
+export default async function ComplianceOverviewPage() {
+  await requireCompliance();
+  const service = createServiceClient();
+  const [summary, domainsRes, frameworksRes, reqsRes, mapsRes] = await Promise.all([
+    loadComplianceSummary(),
+    service.from("compliance_controls").select("domain, status"),
+    service.from("compliance_frameworks").select("id, framework_key, name, version"),
+    service.from("framework_requirements").select("id, framework_id"),
+    service.from("control_requirement_mappings").select("requirement_id"),
+  ]);
 
-const STATUS_VARIANT: Record<ComplianceControlStatus, "default" | "secondary" | "destructive" | "outline"> = {
-  NOT_ASSESSED: "outline",
-  NOT_IMPLEMENTED: "destructive",
-  IN_PROGRESS: "secondary",
-  IMPLEMENTED_AWAITING_EVIDENCE: "secondary",
-  OPERATING_EVIDENCED: "default",
-  EXCEPTION_IDENTIFIED: "destructive",
-  REMEDIATION_REQUIRED: "destructive",
-  RISK_ACCEPTED: "outline",
-  NOT_APPLICABLE: "outline",
-};
-
-function formatDate(value: string | null) {
-  if (!value) return "—";
-  return new Date(value).toISOString().slice(0, 10);
-}
-
-export default async function CompliancePage() {
-  const ctx = await getCurrentEmployeeContext();
-  if (!ctx) redirect("/login");
-  const allowed =
-    isSuperAdmin(ctx.roleKey) ||
-    ctx.permissions.includes("compliance.view") ||
-    ctx.permissions.includes("compliance.audit");
-  if (!allowed) redirect("/admin/dashboard");
-  const canManage = isSuperAdmin(ctx.roleKey) || ctx.permissions.includes("compliance.manage");
-
-  const supabase = await createDataClient();
-  const [controlsRes, mappingsRes, requirementsRes, frameworksRes, testsRes, evidenceRes, actionsRes] =
-    await Promise.all([
-      supabase
-        .from("compliance_controls")
-        .select("id, control_code, title, domain, status, priority, owner_role, current_state")
-        .order("control_code"),
-      supabase.from("control_requirement_mappings").select("control_id, requirement_id"),
-      supabase.from("framework_requirements").select("id, framework_id, ref"),
-      supabase.from("compliance_frameworks").select("id, framework_key"),
-      supabase
-        .from("control_tests")
-        .select("control_id, result, executed_at, exceptions_count")
-        .order("executed_at", { ascending: false })
-        .limit(500),
-      supabase.from("evidence_items").select("control_id, status"),
-      supabase
-        .from("corrective_actions")
-        .select("ref, title, severity, status, due_date")
-        .neq("status", "CLOSED")
-        .order("ref"),
-    ]);
-
-  const controls = controlsRes.data ?? [];
-  const frameworkKey = new Map((frameworksRes.data ?? []).map((f) => [f.id, f.framework_key]));
-  const requirement = new Map(
-    (requirementsRes.data ?? []).map((r) => [r.id, { ref: r.ref, framework: frameworkKey.get(r.framework_id) }])
-  );
-  const refsByControl = new Map<string, { iso: string[]; soc: string[] }>();
-  for (const m of mappingsRes.data ?? []) {
-    const req = requirement.get(m.requirement_id);
-    if (!req) continue;
-    const entry = refsByControl.get(m.control_id) ?? { iso: [], soc: [] };
-    if (req.framework === "ISO27001_2022") entry.iso.push(req.ref);
-    else entry.soc.push(req.ref);
-    refsByControl.set(m.control_id, entry);
+  const domains = new Map<string, { total: number; operating: number; gaps: number }>();
+  for (const row of domainsRes.data ?? []) {
+    const entry = domains.get(row.domain) ?? { total: 0, operating: 0, gaps: 0 };
+    entry.total += 1;
+    if (row.status === "OPERATING_EVIDENCED") entry.operating += 1;
+    if (["NOT_IMPLEMENTED", "REMEDIATION_REQUIRED", "EXCEPTION_IDENTIFIED"].includes(row.status)) entry.gaps += 1;
+    domains.set(row.domain, entry);
   }
-  const latestTest = new Map<string, { result: string; executed_at: string; exceptions_count: number }>();
-  for (const t of testsRes.data ?? []) {
-    if (!latestTest.has(t.control_id)) latestTest.set(t.control_id, t);
-  }
-  const evidence = new Map<string, { accepted: number; pending: number }>();
-  for (const e of evidenceRes.data ?? []) {
-    const entry = evidence.get(e.control_id) ?? { accepted: 0, pending: 0 };
-    if (e.status === "ACCEPTED") entry.accepted += 1;
-    if (e.status === "PENDING_REVIEW") entry.pending += 1;
-    evidence.set(e.control_id, entry);
-  }
-
-  const counts = new Map<ComplianceControlStatus, number>();
-  for (const c of controls) counts.set(c.status, (counts.get(c.status) ?? 0) + 1);
-  const summary: ComplianceControlStatus[] = [
-    "OPERATING_EVIDENCED",
-    "IMPLEMENTED_AWAITING_EVIDENCE",
-    "IN_PROGRESS",
-    "REMEDIATION_REQUIRED",
-    "EXCEPTION_IDENTIFIED",
-    "NOT_IMPLEMENTED",
-    "NOT_ASSESSED",
-  ];
-
-  const actions = actionsRes.data ?? [];
-  const loadError = controlsRes.error?.message;
+  const mapped = new Set((mapsRes.data ?? []).map((m) => m.requirement_id));
+  const frameworks = (frameworksRes.data ?? []).map((f) => {
+    const reqs = (reqsRes.data ?? []).filter((r) => r.framework_id === f.id);
+    return { ...f, total: reqs.length, mapped: reqs.filter((r) => mapped.has(r.id)).length };
+  });
+  const readiness = summary.totalControls ? Math.round((summary.operating / summary.totalControls) * 100) : 0;
 
   return (
-    <div className="flex flex-col gap-6">
-      <PageHeader
-        title="Security & Compliance"
-        description="Control register mapped to ISO/IEC 27001:2022 and SOC 2. Statuses show implementation and evidence, not an audit opinion or certification."
-        actions={canManage ? <RunChecksButton /> : undefined}
-      />
+    <div className="flex flex-col gap-5">
+      <div className="grid gap-5 lg:grid-cols-3">
+        <section aria-labelledby="ready-title" className="flex flex-col gap-4 rounded-xl bg-ink p-5 text-ink-foreground">
+          <h2 id="ready-title" className="text-[15px] font-semibold text-white">Audit readiness</h2>
+          <p className="flex items-baseline gap-2.5">
+            <span className="text-[40px] leading-none font-semibold tracking-[-0.02em] text-white">{readiness}%</span>
+            <span className="text-[13px]">of {summary.totalControls} controls operating</span>
+          </p>
+          <SegmentBar
+            dark
+            label="Control status breakdown"
+            segments={summary.byStatus.map((s) => ({ label: s.label, count: s.count, color: s.color }))}
+          />
+          <p className="text-[12.5px] text-ink-muted">
+            SOC 2 Type II also needs an observation period, usually 3 to 12 months, once controls are operating.
+            Last automated check: {summary.lastAutomatedRun ? shortDate(summary.lastAutomatedRun) : "never run"}.
+          </p>
+        </section>
 
-      {loadError ? (
-        <Card>
-          <CardContent className="text-sm text-destructive">
-            Could not load the control register: {loadError}. Apply migrations 0022–0025.
-          </CardContent>
-        </Card>
-      ) : null}
+        <Panel id="findings" title="Findings & corrective actions" actions={<span className="text-[13px] text-muted-foreground">{summary.openActions} open</span>} bodyClassName="flex flex-col gap-3 p-5">
+          <div className="grid grid-cols-2 gap-3">
+            <Link href="/admin/compliance/actions" className="rounded-lg bg-[#fef3f2] p-3.5 transition hover:brightness-[0.98]">
+              <span className="block text-[28px] font-semibold text-[#b42318]">{summary.criticalHighActions}</span>
+              <span className="text-[12.5px] text-[#7a271a]">Critical or high</span>
+            </Link>
+            <Link href="/admin/compliance/actions" className="rounded-lg bg-muted p-3.5 transition hover:brightness-[0.98]">
+              <span className="block text-[28px] font-semibold">{summary.openActions - summary.criticalHighActions}</span>
+              <span className="text-[12.5px] text-muted-foreground">Medium or low</span>
+            </Link>
+          </div>
+          <Link href="/admin/approvals" className="flex items-center justify-between rounded-lg border px-3.5 py-2.5 text-sm transition hover:bg-muted/40">
+            <span>
+              <b className="font-semibold">{summary.pendingEvidence}</b> evidence {summary.pendingEvidence === 1 ? "item" : "items"} waiting for review
+            </span>
+            <ArrowRight className="size-4 text-muted-foreground" aria-hidden />
+          </Link>
+        </Panel>
 
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-7">
-        {summary.map((status) => (
-          <Card key={status} size="sm">
-            <CardContent className="flex flex-col gap-1">
-              <span className="text-xs text-muted-foreground">{STATUS_LABEL[status]}</span>
-              <span className="text-2xl font-semibold tabular-nums">{counts.get(status) ?? 0}</span>
-            </CardContent>
-          </Card>
-        ))}
+        <Panel id="gov" title="Governance">
+          <ul className="divide-y text-sm">
+            <li className="flex items-center justify-between gap-3 px-5 py-3">
+              Statement of Applicability decided
+              <Pill tone={summary.soaDecided === summary.soaTotal ? "success" : "warning"}>
+                {summary.soaDecided} of {summary.soaTotal}
+              </Pill>
+            </li>
+            <li className="flex items-center justify-between gap-3 px-5 py-3">
+              Open risks
+              <Pill tone={summary.openRisks ? "warning" : "neutral"}>{summary.openRisks}</Pill>
+            </li>
+            {frameworks.map((f) => (
+              <li key={f.id} className="flex items-center justify-between gap-3 px-5 py-3">
+                <span className="min-w-0 truncate">{f.name} requirements mapped</span>
+                <Pill tone={f.mapped === f.total ? "success" : "info"}>
+                  {f.mapped} of {f.total}
+                </Pill>
+              </li>
+            ))}
+          </ul>
+        </Panel>
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Control register ({controls.length})</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {controls.length === 0 ? (
-            <EmptyState icon={ShieldCheck} title="No controls loaded" />
-          ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Control</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>ISO 27001</TableHead>
-                  <TableHead>SOC 2</TableHead>
-                  <TableHead>Latest test</TableHead>
-                  <TableHead>Evidence</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {controls.map((c) => {
-                  const refs = refsByControl.get(c.id);
-                  const test = latestTest.get(c.id);
-                  const ev = evidence.get(c.id);
-                  return (
-                    <TableRow key={c.id}>
-                      <TableCell className="max-w-[26rem] whitespace-normal">
-                        <div className="font-medium">
-                          {c.control_code} · {c.title}
-                        </div>
-                        <div className="text-xs text-muted-foreground">
-                          {c.domain}
-                          {c.priority ? ` · ${c.priority}` : ""}
-                          {c.owner_role ? ` · ${c.owner_role}` : ""}
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant={STATUS_VARIANT[c.status]}>{STATUS_LABEL[c.status]}</Badge>
-                      </TableCell>
-                      <TableCell className="max-w-[12rem] whitespace-normal text-xs">
-                        {refs?.iso.join(", ") || "—"}
-                      </TableCell>
-                      <TableCell className="max-w-[10rem] whitespace-normal text-xs">
-                        {refs?.soc.join(", ") || "—"}
-                      </TableCell>
-                      <TableCell className="text-xs">
-                        {test ? (
-                          <>
-                            <span className={test.result === "PASS" ? "text-success" : "text-destructive"}>
-                              {test.result}
-                            </span>
-                            {test.exceptions_count ? ` (${test.exceptions_count})` : ""}
-                            <div className="text-muted-foreground">{formatDate(test.executed_at)}</div>
-                          </>
-                        ) : (
-                          "—"
-                        )}
-                      </TableCell>
-                      <TableCell className="text-xs">
-                        {ev ? `${ev.accepted} accepted · ${ev.pending} to review` : "None"}
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
-          )}
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Open corrective actions ({actions.length})</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {actions.length === 0 ? (
-            <EmptyState icon={ShieldCheck} title="No open corrective actions" />
-          ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Ref</TableHead>
-                  <TableHead>Finding</TableHead>
-                  <TableHead>Severity</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Due</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {actions.map((a) => (
-                  <TableRow key={a.ref}>
-                    <TableCell className="font-medium">{a.ref}</TableCell>
-                    <TableCell className="max-w-[28rem] whitespace-normal">{a.title}</TableCell>
-                    <TableCell>
-                      <Badge variant={a.severity === "CRITICAL" || a.severity === "HIGH" ? "destructive" : "outline"}>
-                        {a.severity ?? "—"}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="text-xs">{a.status.replaceAll("_", " ")}</TableCell>
-                    <TableCell className="text-xs">{a.due_date ?? "Not set"}</TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          )}
-        </CardContent>
-      </Card>
+      <Panel id="domains" title="Controls by domain" description="Gaps are controls not implemented, needing remediation, or with an exception.">
+        <div className="grid gap-px bg-border sm:grid-cols-2 xl:grid-cols-3">
+          {[...domains.entries()]
+            .sort((a, b) => b[1].gaps - a[1].gaps || a[0].localeCompare(b[0]))
+            .map(([domain, d]) => (
+              <Link
+                key={domain}
+                href={`/admin/compliance/controls?domain=${encodeURIComponent(domain)}`}
+                className="flex flex-col gap-1.5 bg-card px-5 py-3.5 transition hover:bg-muted/40"
+              >
+                <span className="flex items-center justify-between gap-2">
+                  <span className="font-medium">{domain}</span>
+                  <span className="size-2 rounded-full" style={{ background: d.gaps ? "#f04438" : d.operating === d.total ? "#17b26a" : "#f79009" }} aria-hidden />
+                </span>
+                <span className="text-[12.5px] text-muted-foreground">
+                  {d.total} {d.total === 1 ? "control" : "controls"} · {d.operating} operating · {d.gaps} {d.gaps === 1 ? "gap" : "gaps"}
+                </span>
+              </Link>
+            ))}
+        </div>
+      </Panel>
     </div>
   );
 }

@@ -646,7 +646,8 @@ export async function acceptMeeting(meetingId: string): Promise<Result> {
   if (meeting.started_at) return {};
 
   const now = googleDate().toISOString();
-  const { error } = await service
+  // Decision writes go through the actor-tagged client so the audit log names the approver.
+  const { error } = await (await createClient())
     .from("meetings")
     .update({
       started_at: now,
@@ -686,7 +687,8 @@ export async function rejectMeeting(meetingId: string): Promise<Result> {
   if (meeting.started_at) return { error: "This meeting already started. Ask the employee to end it." };
 
   const now = googleDate().toISOString();
-  const { error } = await service
+  // Decision writes go through the actor-tagged client so the audit log names the approver.
+  const { error } = await (await createClient())
     .from("meetings")
     .update({ ended_at: now, duration_seconds: 0, status: "REJECTED" })
     .eq("id", meeting.id);

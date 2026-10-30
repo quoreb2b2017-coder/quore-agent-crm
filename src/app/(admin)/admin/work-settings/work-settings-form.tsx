@@ -37,17 +37,25 @@ export function WorkSettingsForm({ settings }: { settings: WorkSettings }) {
   const [leave, setLeave] = useState(String(settings.annualPaidLeaveDays));
   const [now, setNow] = useState<Date | null>(null);
 
-  useEffect(() => {
+  const settingsKey = `${settings.timeZone}|${settings.loginMinutes}|${settings.logoutMinutes}|${settings.annualPaidLeaveDays}`;
+  const [syncedKey, setSyncedKey] = useState(settingsKey);
+  if (settingsKey !== syncedKey) {
+    // Saved settings changed on the server: reset the form to them.
+    setSyncedKey(settingsKey);
     setTimeZone(settings.timeZone);
     setLogin(minutesToTimeValue(settings.loginMinutes));
     setLogout(minutesToTimeValue(settings.logoutMinutes));
     setLeave(String(settings.annualPaidLeaveDays));
-  }, [settings.timeZone, settings.loginMinutes, settings.logoutMinutes, settings.annualPaidLeaveDays]);
+  }
 
   useEffect(() => {
-    setNow(trustedNowDate());
-    const timer = setInterval(() => setNow(trustedNowDate()), 1000);
-    return () => clearInterval(timer);
+    const tick = () => setNow(trustedNowDate());
+    const first = setTimeout(tick, 0);
+    const timer = setInterval(tick, 1000);
+    return () => {
+      clearTimeout(first);
+      clearInterval(timer);
+    };
   }, []);
 
   const zones = TIME_ZONE_OPTIONS.some((zone) => zone.id === timeZone)

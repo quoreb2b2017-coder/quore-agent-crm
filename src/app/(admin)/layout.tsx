@@ -10,6 +10,7 @@ import { BlockedAccountGate } from "@/components/auth/blocked-account-gate";
 import { DashboardPageSkeleton } from "@/components/layout/page-skeleton";
 import { TodayCelebrations } from "@/components/celebrations/today-celebrations";
 import { isEmploymentBlocked } from "@/lib/format";
+import { loadShell } from "@/lib/shell";
 
 export default async function AdminLayout({
   children,
@@ -34,15 +35,18 @@ export default async function AdminLayout({
 
   const modules = filterModules(ADMIN_MODULES, ctx);
   const sidebarOpen = (await cookies()).get("sidebar_state")?.value !== "false";
+  const shell = await loadShell(ctx, "admin");
 
   return (
     <AppShell
       modules={modules}
-      groupLabel="Administration"
       brand="admin"
       ctx={ctx}
-      profileHref="/admin/settings"
-      notificationsHref="/admin/notifications"
+      companyName={shell.companyName}
+      approvalsCount={shell.approvalsCount}
+      mfaEnabled={shell.mfaEnabled}
+      mfaRequired={shell.mfaRequired}
+      paletteActions={shell.paletteActions}
       defaultSidebarOpen={sidebarOpen}
     >
       <Suspense fallback={<DashboardPageSkeleton />}>{children}</Suspense>

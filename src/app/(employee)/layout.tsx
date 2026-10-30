@@ -10,6 +10,7 @@ import { BlockedAccountGate } from "@/components/auth/blocked-account-gate";
 import { DashboardPageSkeleton } from "@/components/layout/page-skeleton";
 import { TodayCelebrations } from "@/components/celebrations/today-celebrations";
 import { isEmploymentBlocked } from "@/lib/format";
+import { loadShell } from "@/lib/shell";
 
 export default async function EmployeeLayout({
   children,
@@ -30,15 +31,18 @@ export default async function EmployeeLayout({
 
   const modules = filterModules(EMPLOYEE_MODULES, ctx);
   const sidebarOpen = (await cookies()).get("sidebar_state")?.value !== "false";
+  const shell = await loadShell(ctx, "employee");
 
   return (
     <AppShell
       modules={modules}
-      groupLabel="My Workspace"
       brand="employee"
       ctx={ctx}
-      profileHref="/portal/profile"
-      notificationsHref="/portal/notifications"
+      companyName={shell.companyName}
+      approvalsCount={shell.approvalsCount}
+      mfaEnabled={shell.mfaEnabled}
+      mfaRequired={shell.mfaRequired}
+      paletteActions={shell.paletteActions}
       defaultSidebarOpen={sidebarOpen}
     >
       <Suspense fallback={<DashboardPageSkeleton />}>{children}</Suspense>

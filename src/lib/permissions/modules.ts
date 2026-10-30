@@ -27,28 +27,33 @@ export type ModuleIconName =
   | "user"
   | "key"
   | "message"
-  | "clipboard";
+  | "clipboard"
+  | "inbox"
+  | "fingerprint"
+  | "scroll"
+  | "lock";
 
 export type ModuleGroup =
-  | "overview"
+  | "workspace"
   | "people"
-  | "operations"
-  | "hr"
+  | "payroll"
+  | "governance"
   | "account"
   | "work"
-  | "time"
-  | "insights";
+  | "time";
 
 export const MODULE_GROUP_LABELS: Record<ModuleGroup, string> = {
-  overview: "Overview",
+  workspace: "Workspace",
   people: "People",
-  operations: "Operations",
-  hr: "HR & payroll",
+  payroll: "Payroll",
+  governance: "Governance",
   account: "Account",
   work: "My work",
   time: "Time",
-  insights: "Insights",
 };
+
+export const ADMIN_GROUP_ORDER: ModuleGroup[] = ["workspace", "people", "payroll", "governance", "account"];
+export const EMPLOYEE_GROUP_ORDER: ModuleGroup[] = ["workspace", "work", "time", "account"];
 
 export type ModuleDefinition = {
   key: string;
@@ -80,75 +85,41 @@ export function filterModules(
   });
 }
 
+const MANAGEMENT = ["SUPER_ADMIN", "HR"];
+const SUPER_ADMIN_ONLY = ["SUPER_ADMIN"];
+
 export const ADMIN_MODULES: ModuleDefinition[] = [
-  { key: "dashboard", label: "Dashboard", href: "/admin/dashboard", icon: "dashboard", group: "overview" },
-  { key: "chat", label: "Chat", href: "/admin/chat", icon: "message", group: "overview" },
-  {
-    key: "employees",
-    label: "Employees",
-    href: "/admin/employees",
-    icon: "users",
-    group: "operations",
-    rolesOnly: ["SUPER_ADMIN", "HR"],
-  },
-  { key: "attendance", label: "Attendance", href: "/admin/attendance", icon: "clock", group: "operations" },
-  {
-    key: "activity",
-    label: "Activity",
-    href: "/admin/activity",
-    icon: "radio",
-    group: "operations",
-    rolesOnly: ["SUPER_ADMIN", "HR"],
-  },
-  { key: "productivity", label: "Productivity", href: "/admin/productivity", icon: "trending", group: "operations" },
-  {
-    key: "onboarding",
-    label: "Onboarding",
-    href: "/admin/onboarding",
-    icon: "clipboard",
-    group: "hr",
-    rolesOnly: ["SUPER_ADMIN", "HR"],
-  },
-  { key: "salary-slips", label: "Salary Slips", href: "/admin/salary-slips", icon: "file", group: "hr" },
-  {
-    key: "payroll",
-    label: "Payroll",
-    href: "/admin/payroll",
-    icon: "wallet",
-    group: "hr",
-    rolesOnly: ["SUPER_ADMIN", "HR"],
-  },
-  { key: "leave", label: "Leave Management", href: "/admin/leave", icon: "calendar", group: "hr" },
-  { key: "notifications", label: "Notifications", href: "/admin/notifications", icon: "bell", group: "account" },
-  {
-    key: "compliance",
-    label: "Security & Compliance",
-    href: "/admin/compliance",
-    icon: "shield",
-    group: "insights",
-    rolesOnly: ["SUPER_ADMIN"],
-  },
-  {
-    key: "work-settings",
-    label: "Work settings",
-    href: "/admin/work-settings",
-    icon: "settings",
-    group: "account",
-    rolesOnly: ["SUPER_ADMIN"],
-  },
+  { key: "dashboard", label: "Command center", href: "/admin/dashboard", icon: "dashboard", group: "workspace" },
+  { key: "approvals", label: "Approvals", href: "/admin/approvals", icon: "inbox", group: "workspace", rolesOnly: MANAGEMENT },
+  { key: "chat", label: "Chat", href: "/admin/chat", icon: "message", group: "workspace" },
+  { key: "notifications", label: "Notifications", href: "/admin/notifications", icon: "bell", group: "workspace" },
+  { key: "employees", label: "Employees", href: "/admin/employees", icon: "users", group: "people", rolesOnly: MANAGEMENT },
+  { key: "onboarding", label: "Onboarding", href: "/admin/onboarding", icon: "clipboard", group: "people", rolesOnly: MANAGEMENT },
+  { key: "attendance", label: "Attendance", href: "/admin/attendance", icon: "clock", group: "people" },
+  { key: "activity", label: "Activity", href: "/admin/activity", icon: "radio", group: "people", rolesOnly: MANAGEMENT },
+  { key: "productivity", label: "Productivity", href: "/admin/productivity", icon: "trending", group: "people" },
+  { key: "leave", label: "Leave", href: "/admin/leave", icon: "calendar", group: "people" },
+  { key: "payroll", label: "Payroll runs", href: "/admin/payroll", icon: "wallet", group: "payroll", rolesOnly: MANAGEMENT },
+  { key: "salary-slips", label: "Salary slips", href: "/admin/salary-slips", icon: "file", group: "payroll" },
+  { key: "compliance", label: "Security & Compliance", href: "/admin/compliance", icon: "shield", group: "governance", rolesOnly: SUPER_ADMIN_ONLY },
+  { key: "roles", label: "Roles & permissions", href: "/admin/roles", icon: "key", group: "governance", rolesOnly: SUPER_ADMIN_ONLY },
+  { key: "audit-log", label: "Audit log", href: "/admin/audit-logs", icon: "scroll", group: "governance", rolesOnly: SUPER_ADMIN_ONLY },
+  { key: "work-settings", label: "Work settings", href: "/admin/work-settings", icon: "settings", group: "governance", rolesOnly: SUPER_ADMIN_ONLY },
+  { key: "security", label: "Account security", href: "/admin/security", icon: "fingerprint", group: "account" },
   { key: "profile", label: "Profile", href: "/admin/settings", icon: "user", group: "account" },
-  { key: "password", label: "Update password", href: "/admin/password", icon: "key", group: "account" },
+  { key: "password", label: "Change password", href: "/admin/password", icon: "lock", group: "account" },
 ];
 
 export const EMPLOYEE_MODULES: ModuleDefinition[] = [
-  { key: "dashboard", label: "Dashboard", href: "/portal/dashboard", icon: "dashboard", group: "overview" },
-  { key: "chat", label: "Chat", href: "/portal/chat", icon: "message", group: "overview" },
-  { key: "activity", label: "My Activity", href: "/portal/activity", icon: "radio", group: "work" },
+  { key: "dashboard", label: "Home", href: "/portal/dashboard", icon: "dashboard", group: "workspace" },
+  { key: "chat", label: "Chat", href: "/portal/chat", icon: "message", group: "workspace" },
+  { key: "notifications", label: "Notifications", href: "/portal/notifications", icon: "bell", group: "workspace" },
+  { key: "activity", label: "My activity", href: "/portal/activity", icon: "radio", group: "work" },
   { key: "attendance", label: "Attendance", href: "/portal/attendance", icon: "clock", group: "time" },
   { key: "productivity", label: "Productivity", href: "/portal/productivity", icon: "trending", group: "time" },
-  { key: "salary-slips", label: "Salary Slips", href: "/portal/salary-slips", icon: "wallet", group: "account" },
-  { key: "leave", label: "Leave", href: "/portal/leave", icon: "calendar", group: "account" },
-  { key: "notifications", label: "Notifications", href: "/portal/notifications", icon: "bell", group: "account" },
+  { key: "leave", label: "Leave", href: "/portal/leave", icon: "calendar", group: "time" },
+  { key: "salary-slips", label: "Salary slips", href: "/portal/salary-slips", icon: "wallet", group: "account" },
+  { key: "security", label: "Account security", href: "/portal/security", icon: "fingerprint", group: "account" },
   { key: "profile", label: "Profile", href: "/portal/profile", icon: "user", group: "account" },
-  { key: "password", label: "Update password", href: "/portal/password", icon: "key", group: "account" },
+  { key: "password", label: "Change password", href: "/portal/password", icon: "lock", group: "account" },
 ];

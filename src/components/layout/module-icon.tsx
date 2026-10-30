@@ -28,6 +28,10 @@ import {
   KeyRound,
   MessageCircle,
   ClipboardCheck,
+  Inbox,
+  Fingerprint,
+  ScrollText,
+  LockKeyhole,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -93,6 +97,14 @@ export function ModuleIcon({
       return <MessageCircle {...props} />;
     case "clipboard":
       return <ClipboardCheck {...props} />;
+    case "inbox":
+      return <Inbox {...props} />;
+    case "fingerprint":
+      return <Fingerprint {...props} />;
+    case "scroll":
+      return <ScrollText {...props} />;
+    case "lock":
+      return <LockKeyhole {...props} />;
     default:
       return <LayoutDashboard {...props} />;
   }

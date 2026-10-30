@@ -12,12 +12,14 @@ import {
   type StaffRoleKey,
   STAFF_ROLE_KEYS,
 } from "@/lib/permissions/roles";
-import { formatDate } from "@/lib/format";
+import { formatDate, formatEmploymentStatus, initials } from "@/lib/format";
+import { Pill } from "@/components/wt/panel";
 import { getEmployeeHistory } from "@/lib/queries/employee-history";
 import { EditEmployeeForm } from "./edit-employee-form";
 import { EmployeeManageButtons } from "./employee-manage-buttons";
 import { EmployeeTabs } from "./employee-tabs";
 import { EmployeeHistory } from "./employee-history";
+import { AccessCard } from "./access-card";
 
 function asStaffRole(roleKey: string | undefined): StaffRoleKey | "" {
   if (roleKey && (STAFF_ROLE_KEYS as readonly string[]).includes(roleKey)) {
@@ -99,6 +101,31 @@ export default async function EmployeeDetailPage({
 
       {tab === "history" && history ? (
         <>
+          <section className="flex flex-wrap items-center gap-4 rounded-xl border bg-card p-5">
+            <span className="flex size-14 shrink-0 items-center justify-center rounded-full bg-mint-soft text-lg font-semibold text-primary">
+              {initials(employee.full_name)}
+            </span>
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <h1 className="text-[22px] font-semibold tracking-tight">{employee.full_name}</h1>
+                <Pill tone={employee.employment_status === "ACTIVE" ? "success" : "danger"}>{formatEmploymentStatus(employee.employment_status)}</Pill>
+              </div>
+              <p className="mt-0.5 text-sm text-muted-foreground">
+                <span className="font-mono text-[13px]">{employee.employee_code}</span> · {roleLabel || "Staff"}
+                {designation?.title ? ` · ${designation.title}` : ""}
+                {employee.joining_date ? ` · joined ${formatDate(employee.joining_date)}` : ""}
+              </p>
+            </div>
+          </section>
+          <AccessCard
+            employeeId={employee.id}
+            authUserId={employee.auth_user_id}
+            name={employee.full_name}
+            roleLabel={roleLabel || "Staff"}
+            status={employee.employment_status}
+            canReset={viewerIsSuperAdmin && employee.id !== ctx.employeeId}
+          />
+
           <div className="overflow-hidden rounded-2xl border bg-card">
             <EmployeeTabs employeeId={id} active="history" />
           </div>
@@ -165,6 +192,17 @@ export default async function EmployeeDetailPage({
           </div>
         </ProfileCard>
       )}
+      {tab === "profile" ? (
+        <AccessCard
+          employeeId={employee.id}
+          authUserId={employee.auth_user_id}
+          name={employee.full_name}
+          roleLabel={roleLabel || "Staff"}
+          status={employee.employment_status}
+          canReset={viewerIsSuperAdmin && employee.id !== ctx.employeeId}
+        />
+
+      ) : null}
     </div>
   );
 }

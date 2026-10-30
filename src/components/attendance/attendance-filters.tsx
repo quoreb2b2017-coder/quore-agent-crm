@@ -35,10 +35,12 @@ export function AttendanceFilters({
 }) {
   const router = useRouter();
   const [draft, setDraft] = useState(search);
-
-  useEffect(() => {
+  const [syncedSearch, setSyncedSearch] = useState(search);
+  if (search !== syncedSearch) {
+    // URL changed (back/forward or another filter): show it in the box.
+    setSyncedSearch(search);
     setDraft(search);
-  }, [search]);
+  }
 
   useEffect(() => {
     const next = draft.trim();

@@ -1,0 +1,235 @@
+import "server-only";
+import { cache } from "react";
+import { createServiceClient } from "@/lib/supabase/service";
+import { isManagement, isSuperAdmin } from "@/lib/permissions/roles";
+import type { EmployeeContext } from "@/lib/permissions/types";
+
+export type ApprovalKind = "MEETING" | "LEAVE" | "EVIDENCE" | "EXCEPTION";
+
+export type ApprovalItem = {
+  id: string;
+  kind: ApprovalKind;
+  title: string;
+  subtitle: string;
+  requestedAt: string;
+  requesterId: string | null;
+  requesterName: string;
+  details: { label: string; value: string }[];
+  /** Plain-language rule shown next to the decision buttons. */
+  rule: string;
+  /** Leave approvals need a leave type; this is the one requested. */
+  leaveTypeId?: string;
+  /** True when the viewer is the requester and so cannot decide (SoD). */
+  selfBlocked: boolean;
+};
+
+export type ApprovalsData = {
+  items: ApprovalItem[];
+  leaveTypes: { id: string; name: string; is_paid: boolean }[];
+  counts: Record<ApprovalKind | "ALL", number>;
+};
+
+function canSeeCompliance(ctx: EmployeeContext) {
+  return isSuperAdmin(ctx.roleKey) || ctx.permissions.includes("compliance.manage");
+}
+
+function fmtDate(iso: string | null | undefined) {
+  if (!iso) return "—";
+  return new Date(`${iso.slice(0, 10)}T00:00:00Z`).toLocaleDateString("en-IN", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    timeZone: "UTC",
+  });
+}
+
+/**
+ * Everything waiting for a decision by the signed-in manager, from every
+ * module, in one list. Each source keeps its own server action and rules;
+ * this only reads.
+ */
+export const loadApprovals = cache(async (ctx: EmployeeContext): Promise<ApprovalsData> => {
+  const empty: ApprovalsData = {
+    items: [],
+    leaveTypes: [],
+    counts: { ALL: 0, MEETING: 0, LEAVE: 0, EVIDENCE: 0, EXCEPTION: 0 },
+  };
+  if (!isManagement(ctx.roleKey) && !canSeeCompliance(ctx)) return empty;
+
+  const service = createServiceClient();
+  const compliance = canSeeCompliance(ctx);
+
+  const [meetingsRes, leaveRes, typesRes, evidenceRes, exceptionsRes, peopleRes] = await Promise.all([
+    isSuperAdmin(ctx.roleKey)
+      ? service
+          .from("meetings")
+          .select("id, employee_id, requested_at")
+          .is("ended_at", null)
+          .is("started_at", null)
+          .order("requested_at", { ascending: true })
+      : Promise.resolve({ data: [] as { id: string; employee_id: string; requested_at: string }[] }),
+    isManagement(ctx.roleKey)
+      ? service
+          .from("leave_requests")
+          .select("id, employee_id, leave_type_id, start_date, end_date, days_count, reason, created_at")
+          .eq("status", "PENDING")
+          .order("created_at", { ascending: true })
+      : Promise.resolve({ data: [] as never[] }),
+    service.from("leave_types").select("id, name, is_paid").order("name"),
+    compliance
+      ? service
+          .from("evidence_items")
+          .select("id, title, evidence_type, source_system, collected_at, collected_by, period_start, period_end, control_id")
+          .eq("status", "PENDING_REVIEW")
+          .order("collected_at", { ascending: true })
+          .limit(200)
+      : Promise.resolve({ data: [] as never[] }),
+    compliance
+      ? service
+          .from("control_exceptions")
+          .select("id, kind, description, compensating_control, requested_by, expires_at, created_at, control_id")
+          .eq("status", "REQUESTED")
+          .order("created_at", { ascending: true })
+      : Promise.resolve({ data: [] as never[] }),
+    service.from("employees").select("id, full_name, employee_code"),
+  ]);
+  const { data: controlRows } = compliance
+    ? await service.from("compliance_controls").select("id, control_code, title")
+    : { data: [] as { id: string; control_code: string; title: string }[] };
+  const controls = new Map((controlRows ?? []).map((c) => [c.id, c]));
+
+  const people = new Map(
+    ((peopleRes.data ?? []) as { id: string; full_name: string; employee_code: string }[]).map((p) => [p.id, p])
+  );
+  const name = (id: string | null) => (id ? people.get(id)?.full_name ?? "Unknown employee" : "System");
+  const code = (id: string | null) => (id ? people.get(id)?.employee_code ?? "" : "");
+  const types = (typesRes.data ?? []) as { id: string; name: string; is_paid: boolean }[];
+  const typeName = new Map(types.map((t) => [t.id, t.name]));
+
+  const items: ApprovalItem[] = [];
+
+  for (const m of (meetingsRes.data ?? []) as { id: string; employee_id: string; requested_at: string }[]) {
+    if (!people.has(m.employee_id)) continue;
+    items.push({
+      id: m.id,
+      kind: "MEETING",
+      title: `${name(m.employee_id)} asked for a meeting`,
+      subtitle: `${code(m.employee_id)} · meeting time counts as working time`,
+      requestedAt: m.requested_at,
+      requesterId: m.employee_id,
+      requesterName: name(m.employee_id),
+      details: [
+        { label: "Employee", value: `${name(m.employee_id)} (${code(m.employee_id)})` },
+        { label: "Requested", value: new Date(m.requested_at).toISOString() },
+      ],
+      rule: "Accepting starts the meeting timer for the employee. Rejecting returns them to their shift.",
+      selfBlocked: m.employee_id === ctx.employeeId,
+    });
+  }
+
+  type LeaveRow = {
+    id: string;
+    employee_id: string;
+    leave_type_id: string;
+    start_date: string;
+    end_date: string;
+    days_count: number;
+    reason: string | null;
+    created_at: string;
+  };
+  for (const l of (leaveRes.data ?? []) as LeaveRow[]) {
+    items.push({
+      id: l.id,
+      kind: "LEAVE",
+      title: `${name(l.employee_id)} · ${Number(l.days_count)} day${Number(l.days_count) === 1 ? "" : "s"} of leave`,
+      subtitle: `${fmtDate(l.start_date)} – ${fmtDate(l.end_date)} · ${typeName.get(l.leave_type_id) ?? "Leave"}`,
+      requestedAt: l.created_at,
+      requesterId: l.employee_id,
+      requesterName: name(l.employee_id),
+      details: [
+        { label: "Employee", value: `${name(l.employee_id)} (${code(l.employee_id)})` },
+        { label: "Dates", value: `${fmtDate(l.start_date)} – ${fmtDate(l.end_date)}` },
+        { label: "Days", value: String(Number(l.days_count)) },
+        { label: "Requested type", value: typeName.get(l.leave_type_id) ?? "—" },
+        { label: "Reason", value: l.reason?.trim() || "No reason given" },
+      ],
+      rule: "Approving deducts the days from the employee's balance. You cannot approve your own leave.",
+      leaveTypeId: l.leave_type_id,
+      selfBlocked: l.employee_id === ctx.employeeId,
+    });
+  }
+
+  type EvidenceRow = {
+    id: string;
+    title: string;
+    evidence_type: string;
+    source_system: string;
+    collected_at: string;
+    collected_by: string | null;
+    period_start: string | null;
+    period_end: string | null;
+    control_id: string;
+  };
+  for (const e of (evidenceRes.data ?? []) as EvidenceRow[]) {
+    const control = controls.get(e.control_id);
+    items.push({
+      id: e.id,
+      kind: "EVIDENCE",
+      title: e.title,
+      subtitle: `${control?.control_code ?? "Control"} · ${e.evidence_type.replaceAll("_", " ").toLowerCase()} from ${e.source_system}`,
+      requestedAt: e.collected_at,
+      requesterId: e.collected_by,
+      requesterName: name(e.collected_by),
+      details: [
+        { label: "Control", value: control ? `${control.control_code} · ${control.title}` : "—" },
+        { label: "Collected by", value: name(e.collected_by) },
+        { label: "Period", value: e.period_start ? `${fmtDate(e.period_start)} – ${fmtDate(e.period_end)}` : "Point in time" },
+      ],
+      rule: "Accepted evidence becomes read-only. The person who collected it cannot review it (ISO A.5.3, SOC 2 CC1.3).",
+      selfBlocked: e.collected_by === ctx.employeeId,
+    });
+  }
+
+  type ExceptionRow = {
+    id: string;
+    kind: string;
+    description: string;
+    compensating_control: string | null;
+    requested_by: string | null;
+    expires_at: string | null;
+    created_at: string;
+    control_id: string | null;
+  };
+  for (const x of (exceptionsRes.data ?? []) as ExceptionRow[]) {
+    items.push({
+      id: x.id,
+      kind: "EXCEPTION",
+      title: `Security exception · ${x.kind.replaceAll("_", " ").toLowerCase()}`,
+      subtitle: `${(x.control_id && controls.get(x.control_id)?.control_code) || "No control"} · requested by ${name(x.requested_by)}`,
+      requestedAt: x.created_at,
+      requesterId: x.requested_by,
+      requesterName: name(x.requested_by),
+      details: [
+        { label: "What", value: x.description },
+        { label: "Compensating control", value: x.compensating_control ?? "Not given" },
+        { label: "Expires", value: fmtDate(x.expires_at) },
+      ],
+      rule: "An exception needs a compensating control and an expiry date, and must be approved by someone other than the requester.",
+      selfBlocked: x.requested_by === ctx.employeeId,
+    });
+  }
+
+  items.sort((a, b) => a.requestedAt.localeCompare(b.requestedAt));
+  const counts = { ...empty.counts };
+  for (const item of items) counts[item.kind] += 1;
+  counts.ALL = items.length;
+  return { items, leaveTypes: types, counts };
+});
+
+export async function countApprovals(ctx: EmployeeContext) {
+  try {
+    return (await loadApprovals(ctx)).counts.ALL;
+  } catch {
+    return 0;
+  }
+}

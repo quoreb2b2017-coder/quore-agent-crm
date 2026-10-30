@@ -1012,6 +1012,10 @@ export interface Database {
           status?: ComplianceControlStatus;
           owner_employee_id?: string | null;
           applicability_rationale?: string | null;
+          current_state?: string | null;
+          gap_remediation?: string | null;
+          priority?: "P0" | "P1" | "P2" | "P3" | null;
+          next_due_at?: string | null;
         }
       >;
       control_requirement_mappings: Table<
@@ -1056,7 +1060,12 @@ export interface Database {
           sha256?: string | null;
           limitations?: string | null;
         },
-        { status?: "ACCEPTED" | "REJECTED" | "SUPERSEDED" | "EXPIRED"; review_note?: string | null }
+        {
+          status?: "ACCEPTED" | "REJECTED" | "SUPERSEDED" | "EXPIRED";
+          review_note?: string | null;
+          reviewed_by?: string | null;
+          reviewed_at?: string | null;
+        }
       >;
       control_tests: Table<
         {
@@ -1109,7 +1118,130 @@ export interface Database {
           created_at: string;
           updated_at: string;
         },
-        { ref: string; source_type: string; title: string }
+        {
+          ref: string;
+          source_type: string;
+          title: string;
+          source_ref?: string | null;
+          control_id?: string | null;
+          description?: string | null;
+          severity?: "CRITICAL" | "HIGH" | "MEDIUM" | "LOW" | null;
+          owner_employee_id?: string | null;
+          due_date?: string | null;
+          status?: "OPEN" | "IN_PROGRESS" | "READY_FOR_VERIFICATION" | "CLOSED" | "RISK_ACCEPTED";
+          closure_evidence_id?: string | null;
+          closed_by?: string | null;
+          closed_at?: string | null;
+        }
+      >;
+      control_exceptions: Table<
+        {
+          id: string;
+          control_id: string | null;
+          kind: "SEGREGATION_OF_DUTIES" | "POLICY" | "CONTROL_FAILURE" | "TECHNICAL";
+          description: string;
+          compensating_control: string | null;
+          requested_by: string | null;
+          approved_by: string | null;
+          approved_at: string | null;
+          expires_at: string | null;
+          status: "REQUESTED" | "APPROVED" | "REJECTED" | "EXPIRED" | "CLOSED";
+          created_at: string;
+          updated_at: string;
+        },
+        {
+          control_id?: string | null;
+          kind: "SEGREGATION_OF_DUTIES" | "POLICY" | "CONTROL_FAILURE" | "TECHNICAL";
+          description: string;
+          compensating_control?: string | null;
+          requested_by?: string | null;
+          approved_by?: string | null;
+          approved_at?: string | null;
+          expires_at?: string | null;
+          status?: "REQUESTED" | "APPROVED" | "REJECTED" | "EXPIRED" | "CLOSED";
+        }
+      >;
+      risks: Table<
+        {
+          id: string;
+          risk_code: string;
+          title: string;
+          description: string | null;
+          asset: string | null;
+          threat: string | null;
+          vulnerability: string | null;
+          impacts_confidentiality: boolean;
+          impacts_integrity: boolean;
+          impacts_availability: boolean;
+          likelihood: number | null;
+          impact: number | null;
+          inherent_score: number | null;
+          residual_likelihood: number | null;
+          residual_impact: number | null;
+          residual_score: number | null;
+          treatment: "MITIGATE" | "AVOID" | "TRANSFER" | "ACCEPT" | null;
+          treatment_plan: string | null;
+          owner_employee_id: string | null;
+          due_date: string | null;
+          acceptance_approved_by: string | null;
+          acceptance_approved_at: string | null;
+          acceptance_expires_at: string | null;
+          status: "IDENTIFIED" | "ASSESSED" | "TREATMENT_IN_PROGRESS" | "TREATED" | "ACCEPTED" | "CLOSED";
+          next_review_date: string | null;
+          methodology_ref: string | null;
+          created_at: string;
+          updated_at: string;
+        },
+        {
+          risk_code: string;
+          title: string;
+          description?: string | null;
+          asset?: string | null;
+          threat?: string | null;
+          vulnerability?: string | null;
+          impacts_confidentiality?: boolean;
+          impacts_integrity?: boolean;
+          impacts_availability?: boolean;
+          likelihood?: number | null;
+          impact?: number | null;
+          residual_likelihood?: number | null;
+          residual_impact?: number | null;
+          treatment?: "MITIGATE" | "AVOID" | "TRANSFER" | "ACCEPT" | null;
+          treatment_plan?: string | null;
+          owner_employee_id?: string | null;
+          due_date?: string | null;
+          acceptance_approved_by?: string | null;
+          acceptance_approved_at?: string | null;
+          acceptance_expires_at?: string | null;
+          status?: "IDENTIFIED" | "ASSESSED" | "TREATMENT_IN_PROGRESS" | "TREATED" | "ACCEPTED" | "CLOSED";
+          next_review_date?: string | null;
+        }
+      >;
+      risk_control_links: Table<
+        { risk_id: string; control_id: string },
+        { risk_id: string; control_id: string }
+      >;
+      soa_entries: Table<
+        {
+          id: string;
+          requirement_id: string;
+          applicable: boolean | null;
+          justification: string | null;
+          implementation_status: "NOT_ASSESSED" | "NOT_IMPLEMENTED" | "PARTIAL" | "IMPLEMENTED";
+          revision: number;
+          approved_by: string | null;
+          approved_at: string | null;
+          updated_at: string;
+        },
+        {
+          requirement_id: string;
+          applicable?: boolean | null;
+          justification?: string | null;
+          implementation_status?: "NOT_ASSESSED" | "NOT_IMPLEMENTED" | "PARTIAL" | "IMPLEMENTED";
+          revision?: number;
+          approved_by?: string | null;
+          approved_at?: string | null;
+        }
       >;
     };
     Views: Record<string, never>;
@@ -1141,6 +1273,18 @@ export interface Database {
       run_automated_control_checks: {
         Args: Record<string, never>;
         Returns: { control_code: string; result: string; exceptions_count: number }[];
+      };
+      log_security_event: {
+        Args: { p_employee_id: string; p_action: string; p_details?: Json };
+        Returns: undefined;
+      };
+      has_verified_mfa: {
+        Args: { p_user_id: string };
+        Returns: boolean;
+      };
+      verify_audit_chain: {
+        Args: { p_from_seq?: number };
+        Returns: { seq: number; expected_hash: string; stored_hash: string; reason: string }[];
       };
     };
     Enums: Record<string, never>;
