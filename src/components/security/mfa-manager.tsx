@@ -52,6 +52,9 @@ export function MfaManager({ required }: { required: boolean }) {
     const { data, error: enrolError } = await supabase.auth.mfa.enroll({
       factorType: "totp",
       friendlyName: `WorkTrack ${stamp} ${tag}`,
+      // Name shown in the authenticator app. Without it Supabase uses the
+      // project's Site URL (often still "localhost:3000").
+      issuer: "WorkTrack by Quore",
     });
     setBusy(false);
     if (enrolError || !data) {
