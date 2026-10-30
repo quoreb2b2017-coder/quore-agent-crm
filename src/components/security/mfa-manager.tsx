@@ -38,13 +38,20 @@ export function MfaManager({ required }: { required: boolean }) {
     setBusy(true);
     setError(null);
     const supabase = createClient();
-    // Clear abandoned set-ups so a new QR code can be issued.
-    for (const factor of factors.filter((f) => f.status !== "verified")) {
+    // A set-up that was started but never confirmed (page closed, wrong code,
+    // browser refreshed) stays on the account as an "unverified" factor.
+    // listFactors().totp only returns VERIFIED factors, so look at .all and
+    // remove the leftovers before issuing a new QR code.
+    const { data: listed } = await supabase.auth.mfa.listFactors();
+    for (const factor of (listed?.all ?? []).filter((f) => f.factor_type === "totp" && f.status !== "verified")) {
       await supabase.auth.mfa.unenroll({ factorId: factor.id });
     }
+    // Supabase requires a unique name per factor, so include time and a short random tag.
+    const stamp = new Date().toISOString().slice(0, 16).replace("T", " ");
+    const tag = Math.random().toString(36).slice(2, 6).toUpperCase();
     const { data, error: enrolError } = await supabase.auth.mfa.enroll({
       factorType: "totp",
-      friendlyName: `WorkTrack ${new Date().toISOString().slice(0, 10)}`,
+      friendlyName: `WorkTrack ${stamp} ${tag}`,
     });
     setBusy(false);
     if (enrolError || !data) {
