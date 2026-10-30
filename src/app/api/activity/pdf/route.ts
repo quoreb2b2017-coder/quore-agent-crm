@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { buildActivityPdf } from "@/lib/activity-pdf";
 import { companyProfile } from "@/lib/company";
 import { isUuid } from "@/lib/attendance-period";
-import { getCurrentEmployeeContext, isSuperAdmin } from "@/lib/permissions/server";
+import { getCurrentEmployeeContext, isManagement } from "@/lib/permissions/server";
 import { listWatchableEmployees } from "@/lib/queries/admin-dashboard";
 import { getProductivityReport } from "@/lib/queries/productivity-report";
 import { getShiftActivity, resolveActivityRange } from "@/lib/queries/shift-activity";
@@ -13,8 +13,8 @@ const PDF_CAP = 2000;
 
 export async function GET(request: Request) {
   const ctx = await getCurrentEmployeeContext();
-  if (!ctx || !isSuperAdmin(ctx.roleKey)) {
-    return NextResponse.json({ error: "Super Admin only" }, { status: 403 });
+  if (!ctx || !isManagement(ctx.roleKey)) {
+    return NextResponse.json({ error: "Super Admin or HR only" }, { status: 403 });
   }
 
   const url = new URL(request.url);

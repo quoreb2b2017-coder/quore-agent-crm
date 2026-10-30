@@ -1,5 +1,5 @@
 import { createServiceClient } from "@/lib/supabase/service";
-import { getCurrentEmployeeContext, isSuperAdmin } from "@/lib/permissions/server";
+import { getCurrentEmployeeContext, isManagement } from "@/lib/permissions/server";
 import { closeWorkSession } from "@/lib/actions/attendance";
 import { shiftDateIso } from "@/lib/format";
 import { shiftWindowUtc } from "@/lib/shift";
@@ -36,7 +36,7 @@ export async function runPresenceHeartbeat(_input: {
   hadSession: boolean;
 }): Promise<PresenceResult> {
   const ctx = await getCurrentEmployeeContext();
-  if (!ctx || isSuperAdmin(ctx.roleKey)) return { expired: false };
+  if (!ctx || isManagement(ctx.roleKey)) return { expired: false };
 
   await ensureGoogleTime();
   const service = createServiceClient();

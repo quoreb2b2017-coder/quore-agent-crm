@@ -2,7 +2,7 @@
 
 import { createDataClient as createClient } from "@/lib/supabase/data";
 import { createServiceClient } from "@/lib/supabase/service";
-import { getCurrentEmployeeContext, isSuperAdmin } from "@/lib/permissions/server";
+import { getCurrentEmployeeContext, isManagement } from "@/lib/permissions/server";
 import type { RecentNotification } from "@/lib/realtime/types";
 
 export async function getNotificationBellState(): Promise<{
@@ -67,7 +67,7 @@ export async function markAllNotificationsRead() {
 
 export async function listSentNotifications() {
   const ctx = await getCurrentEmployeeContext();
-  if (!ctx || !isSuperAdmin(ctx.roleKey)) return [];
+  if (!ctx || !isManagement(ctx.roleKey)) return [];
   const supabase = await createClient();
   const { data: rows } = await supabase
     .from("notifications")
@@ -89,7 +89,7 @@ export async function listSentNotifications() {
 
 export async function listNotificationRecipients() {
   const ctx = await getCurrentEmployeeContext();
-  if (!ctx || !isSuperAdmin(ctx.roleKey)) return [];
+  if (!ctx || !isManagement(ctx.roleKey)) return [];
   const supabase = await createClient();
   const { data } = await supabase
     .from("employees")

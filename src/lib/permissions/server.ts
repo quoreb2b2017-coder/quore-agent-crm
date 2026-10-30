@@ -5,6 +5,7 @@ import { createServiceClient } from "@/lib/supabase/service";
 import { readWorktrackJwtClaims, hasWorktrackProfileClaims } from "@/lib/auth/jwt-claims";
 import type { EmployeeContext } from "./types";
 import {
+  isManagement,
   isStaffOrAdmin,
   isStaffRole,
   isSuperAdmin,
@@ -12,7 +13,7 @@ import {
   staffDepartmentLabel,
   SUPER_ADMIN_ROLE,
 } from "./roles";
-export { isAdminLike, isSuperAdmin } from "./roles";
+export { isAdminLike, isManagement, isSuperAdmin } from "./roles";
 
 const getSession = cache(async () => {
   const supabase = await createClient();
@@ -153,10 +154,17 @@ export function hasAnyPermission(
 export async function requireViewer() {
   const ctx = await getCurrentEmployeeContext();
   if (!ctx) redirect("/login");
-  return { ctx, seesAll: isSuperAdmin(ctx.roleKey) };
+  return { ctx, seesAll: isManagement(ctx.roleKey) };
 }
 
 export async function requireSuperAdmin() {
+  const { ctx } = await requireViewer();
+  if (!isSuperAdmin(ctx.roleKey)) redirect("/admin/dashboard");
+  return ctx;
+}
+
+/** Super Admin or HR. */
+export async function requireManagement() {
   const { ctx, seesAll } = await requireViewer();
   if (!seesAll) redirect("/admin/dashboard");
   return ctx;

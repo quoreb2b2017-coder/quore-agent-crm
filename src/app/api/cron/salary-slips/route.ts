@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getCurrentEmployeeContext, isSuperAdmin } from "@/lib/permissions/server";
+import { getCurrentEmployeeContext, isManagement } from "@/lib/permissions/server";
 import { autoGeneratePayrollMonth } from "@/lib/payroll";
 import { ensureAutoSalarySlips } from "@/lib/salary-slip-generate";
 
@@ -12,7 +12,7 @@ async function run(request: Request) {
 
   if (!cronOk) {
     const ctx = await getCurrentEmployeeContext();
-    if (!ctx || !isSuperAdmin(ctx.roleKey)) {
+    if (!ctx || !isManagement(ctx.roleKey)) {
       return NextResponse.json({ error: "Not authorized" }, { status: 401 });
     }
     const slips = await ensureAutoSalarySlips(ctx.employeeId);

@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { createDataClient as createClient } from "@/lib/supabase/data";
-import { requireSuperAdmin } from "@/lib/permissions/server";
+import { requireManagement } from "@/lib/permissions/server";
 import { todayIso } from "@/lib/format";
 import { isSuperAdminEmployee } from "@/lib/queries/admin-dashboard";
 import { refreshEmployeeSalarySlips } from "@/lib/salary-slip-generate";
@@ -41,7 +41,7 @@ export async function setupPayroll(
   _prev: ActionState,
   formData: FormData
 ): Promise<ActionState> {
-  const ctx = await requireSuperAdmin();
+  const ctx = await requireManagement();
 
   const parsed = schema.safeParse({
     employeeId: formData.get("employeeId"),

@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { ProfileCard } from "@/components/profile/profile-card";
 import { getCurrentEmployeeContext } from "@/lib/permissions/server";
 import {
+  isManagement,
   isSuperAdmin,
   staffDepartmentLabel,
   type StaffRoleKey,
@@ -38,12 +39,15 @@ export default async function EmployeeDetailPage({
   const tab = tabRaw === "profile" ? "profile" : "history";
 
   const ctx = await getCurrentEmployeeContext();
-  if (!ctx || !isSuperAdmin(ctx.roleKey)) {
+  if (!ctx || !isManagement(ctx.roleKey)) {
     redirect("/admin/dashboard");
   }
 
   const supabase = await createClient();
-  const { data: employee } = await supabase.from("employees").select("*").eq("id", id).single();
+  const [{ data: employee }, { data: onboarding }] = await Promise.all([
+    supabase.from("employees").select("*").eq("id", id).single(),
+    supabase.from("employee_onboarding").select("date_of_birth").eq("employee_id", id).maybeSingle(),
+  ]);
   if (!employee) notFound();
 
   const { data: currentRole } = await supabase
@@ -57,11 +61,17 @@ export default async function EmployeeDetailPage({
     ? await supabase.from("roles").select("role_key, display_name").eq("id", currentRole.role_id).maybeSingle()
     : { data: null };
 
+  const viewerIsSuperAdmin = isSuperAdmin(ctx.roleKey);
+  const targetIsManagement = isManagement(role?.role_key ?? "");
+  if (!viewerIsSuperAdmin && targetIsManagement) notFound();
+
   const department = asStaffRole(role?.role_key);
   const roleLabel =
     role?.role_key === "SUPER_ADMIN"
       ? "Super Admin"
-      : department
+      : role?.role_key === "HR"
+        ? "HR"
+        : department
         ? staffDepartmentLabel(department)
         : role?.display_name ?? null;
 
@@ -95,7 +105,7 @@ export default async function EmployeeDetailPage({
           <EmployeeHistory
             employeeId={id}
             data={history}
-            showPayroll={role?.role_key !== "SUPER_ADMIN"}
+            showPayroll={!targetIsManagement}
           />
         </>
       ) : (
@@ -111,6 +121,7 @@ export default async function EmployeeDetailPage({
               fullName={employee.full_name}
               isBlocked={employee.employment_status === "SUSPENDED"}
               isSelf={employee.id === ctx.employeeId}
+              canDelete={viewerIsSuperAdmin}
             />
           }
           contact={[
@@ -141,13 +152,14 @@ export default async function EmployeeDetailPage({
           <div>
             <h2 className="text-sm font-semibold">Edit account</h2>
             <p className="mt-0.5 text-sm text-muted-foreground">
-              Super Admin can change email and set a new login password. Saved passwords stay encrypted.
+              Super Admin and HR can change email and set a new login password. Saved passwords stay encrypted.
             </p>
             <div className="mt-5">
               <EditEmployeeForm
                 employee={employee}
+                dateOfBirth={onboarding?.date_of_birth ?? null}
                 currentDepartment={department}
-                lockDepartment={role?.role_key === "SUPER_ADMIN"}
+                lockDepartment={targetIsManagement}
               />
             </div>
           </div>

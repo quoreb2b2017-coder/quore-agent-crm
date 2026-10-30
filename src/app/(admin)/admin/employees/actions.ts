@@ -5,9 +5,28 @@ import { z } from "zod";
 import { createDataClient as createClient } from "@/lib/supabase/data";
 import { createServiceClient } from "@/lib/supabase/service";
 import { getCurrentEmployeeContext, hasPermission } from "@/lib/permissions/server";
-import { SUPER_ADMIN_ROLE, STAFF_ROLE_KEYS, type StaffRoleKey } from "@/lib/permissions/roles";
+import {
+  isManagement,
+  isSuperAdmin,
+  SUPER_ADMIN_ROLE,
+  STAFF_ROLE_KEYS,
+  type StaffRoleKey,
+} from "@/lib/permissions/roles";
+import { isSuperAdminEmployee } from "@/lib/queries/admin-dashboard";
 
 const staffDepartment = z.enum(STAFF_ROLE_KEYS);
+
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+
+const joiningDateSchema = z.string().regex(ISO_DATE, "Pick the date of joining");
+
+const dateOfBirthSchema = z
+  .string()
+  .regex(ISO_DATE, "Pick the date of birth")
+  .refine((value) => {
+    const age = new Date().getFullYear() - Number(value.slice(0, 4));
+    return age >= 14 && age <= 90;
+  }, "Date of birth looks wrong");
 
 const createSchema = z
   .object({
@@ -18,6 +37,8 @@ const createSchema = z
     password: z.string().min(4, "Password must be at least 4 characters"),
     confirmPassword: z.string().min(1, "Confirm password"),
     department: staffDepartment,
+    joiningDate: joiningDateSchema,
+    dateOfBirth: dateOfBirthSchema,
   })
   .refine((data) => data.password === data.confirmPassword, {
     message: "Passwords do not match",
@@ -31,6 +52,8 @@ const updateSchema = z
     phone: z.string().min(1, "Phone number is required"),
     employeeCode: z.string().min(1, "Employee ID is required"),
     department: staffDepartment.optional(),
+    joiningDate: joiningDateSchema.optional(),
+    dateOfBirth: dateOfBirthSchema.optional(),
     password: z.string().optional(),
     confirmPassword: z.string().optional(),
   })
@@ -43,7 +66,7 @@ const updateSchema = z
     { message: "Passwords do not match", path: ["confirmPassword"] }
   );
 
-export type ActionState = { error?: string; success?: boolean };
+export type ActionState = { error?: string; success?: boolean; employeeId?: string };
 
 async function assertCanManageEmployees() {
   const ctx = await getCurrentEmployeeContext();
@@ -51,6 +74,19 @@ async function assertCanManageEmployees() {
     throw new Error("You do not have permission to manage employees.");
   }
   return ctx;
+}
+
+/** HR may manage staff only, never Super Admin or other HR accounts. */
+async function assertCanManageTarget(
+  ctx: { roleKey: string },
+  employeeId: string
+): Promise<string | null> {
+  if (isSuperAdmin(ctx.roleKey)) return null;
+  const supabase = await createClient();
+  if (await isSuperAdminEmployee(supabase, employeeId)) {
+    return "Only Super Admin can change this account.";
+  }
+  return null;
 }
 
 async function employeeIsLastSuperAdmin(employeeId: string) {
@@ -111,6 +147,8 @@ export async function createEmployee(
     password: formData.get("password"),
     confirmPassword: formData.get("confirmPassword"),
     department: formData.get("department"),
+    joiningDate: String(formData.get("joiningDate") ?? ""),
+    dateOfBirth: String(formData.get("dateOfBirth") ?? ""),
   });
 
   if (!parsed.success) {
@@ -148,6 +186,7 @@ export async function createEmployee(
       phone: data.phone,
       auth_user_id: authUser.user.id,
       employment_status: "ACTIVE",
+      joining_date: data.joiningDate,
     })
     .select("id")
     .single();
@@ -167,8 +206,16 @@ export async function createEmployee(
     return { error: `Employee created, but department assignment failed: ${roleError.message}` };
   }
 
+  await supabase
+    .from("employee_onboarding")
+    .upsert(
+      { employee_id: employee.id, date_of_birth: data.dateOfBirth },
+      { onConflict: "employee_id" }
+    );
+
   revalidatePath("/admin/employees");
-  return { success: true };
+  revalidatePath("/admin/onboarding");
+  return { success: true, employeeId: employee.id };
 }
 
 export async function updateEmployee(
@@ -176,11 +223,14 @@ export async function updateEmployee(
   _prev: ActionState,
   formData: FormData
 ): Promise<ActionState> {
+  let ctx;
   try {
-    await assertCanManageEmployees();
+    ctx = await assertCanManageEmployees();
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Not authorized" };
   }
+  const blocked = await assertCanManageTarget(ctx, employeeId);
+  if (blocked) return { error: blocked };
 
   const password = String(formData.get("password") ?? "");
   const departmentValue = String(formData.get("department") ?? "").trim();
@@ -190,6 +240,8 @@ export async function updateEmployee(
     phone: formData.get("phone"),
     employeeCode: String(formData.get("employeeCode") ?? "").trim(),
     department: departmentValue || undefined,
+    joiningDate: String(formData.get("joiningDate") ?? "") || undefined,
+    dateOfBirth: String(formData.get("dateOfBirth") ?? "") || undefined,
     password: password || undefined,
     confirmPassword: formData.get("confirmPassword") || undefined,
   });
@@ -218,11 +270,19 @@ export async function updateEmployee(
       full_name: data.fullName,
       email: data.email,
       phone: data.phone,
+      ...(data.joiningDate ? { joining_date: data.joiningDate } : {}),
     })
     .eq("id", employeeId);
 
   if (updateError) {
     return { error: updateError.message };
+  }
+
+  if (data.dateOfBirth) {
+    const { error: birthdayError } = await supabase
+      .from("employee_onboarding")
+      .upsert({ employee_id: employeeId, date_of_birth: data.dateOfBirth }, { onConflict: "employee_id" });
+    if (birthdayError) return { error: `Profile saved, but birthday failed: ${birthdayError.message}` };
   }
 
   if (data.department) {
@@ -243,7 +303,7 @@ export async function updateEmployee(
       currentRoleKey = role?.role_key ?? "";
     }
 
-    if (currentRoleKey !== SUPER_ADMIN_ROLE) {
+    if (!isManagement(currentRoleKey)) {
       let roleId: string;
       try {
         roleId = await roleIdForDepartment(data.department);
@@ -279,6 +339,7 @@ export async function updateEmployee(
 
   revalidatePath("/admin/employees");
   revalidatePath(`/admin/employees/${employeeId}`);
+  revalidatePath(`/admin/onboarding/${employeeId}`);
   return { success: true };
 }
 
@@ -296,6 +357,9 @@ export async function setEmployeeBlocked(
   if (ctx.employeeId === employeeId) {
     return { error: "You cannot block your own account." };
   }
+
+  const targetError = await assertCanManageTarget(ctx, employeeId);
+  if (targetError) return { error: targetError };
 
   if (await employeeIsLastSuperAdmin(employeeId)) {
     return { error: "You cannot block the last Super Admin." };
@@ -345,6 +409,10 @@ export async function deleteEmployee(employeeId: string): Promise<ActionState> {
     ctx = await assertCanManageEmployees();
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Not authorized" };
+  }
+
+  if (!isSuperAdmin(ctx.roleKey)) {
+    return { error: "Only Super Admin can delete employees." };
   }
 
   if (ctx.employeeId === employeeId) {

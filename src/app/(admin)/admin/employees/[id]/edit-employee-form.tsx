@@ -17,10 +17,12 @@ type Employee = Database["public"]["Tables"]["employees"]["Row"];
 
 export function EditEmployeeForm({
   employee,
+  dateOfBirth,
   currentDepartment,
   lockDepartment = false,
 }: {
   employee: Employee;
+  dateOfBirth: string | null;
   currentDepartment: StaffRoleKey | "";
   lockDepartment?: boolean;
 }) {
@@ -70,7 +72,7 @@ export function EditEmployeeForm({
       <section className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div className="sm:col-span-2">
           <h3 className="text-sm font-semibold">Profile</h3>
-          <p className="mt-0.5 text-xs text-muted-foreground">Name, ID, and contact details for this employee.</p>
+          <p className="mt-0.5 text-xs text-muted-foreground">Name, ID, contact details, joining date and birthday for this employee.</p>
         </div>
         <div className="grid gap-2">
           <Label htmlFor="fullName">Full name</Label>
@@ -88,6 +90,20 @@ export function EditEmployeeForm({
         <div className="grid gap-2">
           <Label htmlFor="phone">Phone number</Label>
           <Input id="phone" name="phone" type="tel" defaultValue={employee.phone ?? ""} required />
+        </div>
+        <div className="grid gap-2">
+          <Label htmlFor="joiningDate">Date of joining</Label>
+          <Input
+            id="joiningDate"
+            name="joiningDate"
+            type="date"
+            defaultValue={employee.joining_date ?? ""}
+            required
+          />
+        </div>
+        <div className="grid gap-2">
+          <Label htmlFor="dateOfBirth">Date of birth</Label>
+          <Input id="dateOfBirth" name="dateOfBirth" type="date" defaultValue={dateOfBirth ?? ""} />
         </div>
         {!lockDepartment ? (
           <div className="grid gap-2">

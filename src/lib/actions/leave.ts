@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { createDataClient as createClient } from "@/lib/supabase/data";
-import { getCurrentEmployeeContext, isSuperAdmin } from "@/lib/permissions/server";
+import { getCurrentEmployeeContext, isManagement } from "@/lib/permissions/server";
 import { insertAndEmitNotification } from "@/lib/realtime/notify";
 import { eachDateInclusive, isWeekendIso, todayIso } from "@/lib/format";
 import { isUndecidedLeaveType, leaveDaysCount, packLeaveNote, UNDECIDED_LEAVE_TYPE } from "@/lib/leave";
@@ -118,7 +118,7 @@ export async function reviewLeaveRequest(
   leaveTypeId?: string
 ) {
   const ctx = await getCurrentEmployeeContext();
-  if (!ctx || !isSuperAdmin(ctx.roleKey)) return { error: "Not authorized" };
+  if (!ctx || !isManagement(ctx.roleKey)) return { error: "Not authorized" };
 
   const supabase = await createClient();
   const { data: request, error: loadError } = await supabase
@@ -259,7 +259,7 @@ const updateSchema = z.object({
 
 export async function updateLeaveRequest(formData: FormData) {
   const ctx = await getCurrentEmployeeContext();
-  if (!ctx || !isSuperAdmin(ctx.roleKey)) return { error: "Not authorized" };
+  if (!ctx || !isManagement(ctx.roleKey)) return { error: "Not authorized" };
 
   const parsed = updateSchema.safeParse({
     requestId: formData.get("requestId"),
@@ -327,7 +327,7 @@ export async function updateLeaveRequest(formData: FormData) {
     employeeId: request.employee_id,
     type: "LEAVE_UPDATE",
     title: "Leave request updated",
-    body: "A Super Admin updated your leave request.",
+    body: "An admin updated your leave request.",
   });
 
   revalidateLeave();
@@ -336,7 +336,7 @@ export async function updateLeaveRequest(formData: FormData) {
 
 export async function deleteLeaveRequest(requestId: string) {
   const ctx = await getCurrentEmployeeContext();
-  if (!ctx || !isSuperAdmin(ctx.roleKey)) return { error: "Not authorized" };
+  if (!ctx || !isManagement(ctx.roleKey)) return { error: "Not authorized" };
 
   const supabase = await createClient();
   const { data: request, error: loadError } = await supabase
@@ -358,7 +358,7 @@ export async function deleteLeaveRequest(requestId: string) {
     employeeId: request.employee_id,
     type: "LEAVE_UPDATE",
     title: "Leave request removed",
-    body: "A Super Admin deleted your leave request.",
+    body: "An admin deleted your leave request.",
   });
 
   revalidateLeave();
@@ -412,7 +412,7 @@ export async function setLeaveRemaining(
   remaining: number
 ): Promise<{ error?: string }> {
   const ctx = await getCurrentEmployeeContext();
-  if (!ctx || !isSuperAdmin(ctx.roleKey)) return { error: "Not authorized" };
+  if (!ctx || !isManagement(ctx.roleKey)) return { error: "Not authorized" };
   if (!Number.isFinite(remaining) || remaining < 0 || remaining > 366) {
     return { error: "Remaining days must be between 0 and 366." };
   }
@@ -435,7 +435,7 @@ export async function setLeaveRemainingForAll(
   remaining: number
 ): Promise<{ error?: string }> {
   const ctx = await getCurrentEmployeeContext();
-  if (!ctx || !isSuperAdmin(ctx.roleKey)) return { error: "Not authorized" };
+  if (!ctx || !isManagement(ctx.roleKey)) return { error: "Not authorized" };
   if (!Number.isFinite(remaining) || remaining < 0 || remaining > 366) {
     return { error: "Remaining days must be between 0 and 366." };
   }

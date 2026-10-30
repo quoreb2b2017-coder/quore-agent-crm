@@ -6,12 +6,18 @@ import { StatCard } from "@/components/dashboard/stat-card";
 import { EmployeesTable } from "./employees-table";
 import { CreateEmployeeDialog } from "./create-employee-dialog";
 import { getCurrentEmployeeContext } from "@/lib/permissions/server";
-import { isSuperAdmin, staffDepartmentLabel, SUPER_ADMIN_ROLE } from "@/lib/permissions/roles";
+import {
+  HR_ROLE,
+  isManagement,
+  isSuperAdmin,
+  staffDepartmentLabel,
+  SUPER_ADMIN_ROLE,
+} from "@/lib/permissions/roles";
 import { isEmploymentActive } from "@/lib/format";
 
 export default async function EmployeesPage() {
   const ctx = await getCurrentEmployeeContext();
-  if (!ctx || !isSuperAdmin(ctx.roleKey)) {
+  if (!ctx || !isManagement(ctx.roleKey)) {
     redirect("/admin/dashboard");
   }
 
@@ -33,9 +39,16 @@ export default async function EmployeesPage() {
   const roleByEmployee = new Map((employeeRoles ?? []).map((r) => [r.employee_id, r.role_id]));
   const roleKeyById = new Map((roles ?? []).map((r) => [r.id, r.role_key]));
 
-  const rows = (employees ?? []).map((e) => {
-    const roleId = roleByEmployee.get(e.id);
-    const roleKey = roleId ? roleKeyById.get(roleId) ?? "" : "";
+  const viewerIsSuperAdmin = isSuperAdmin(ctx.roleKey);
+  const roleKeyOf = (employeeId: string) => {
+    const roleId = roleByEmployee.get(employeeId);
+    return roleId ? roleKeyById.get(roleId) ?? "" : "";
+  };
+
+  const rows = (employees ?? [])
+    .filter((e) => viewerIsSuperAdmin || !isManagement(roleKeyOf(e.id)))
+    .map((e) => {
+    const roleKey = roleKeyOf(e.id);
     return {
       id: e.id,
       employeeCode: e.employee_code,
@@ -46,7 +59,9 @@ export default async function EmployeesPage() {
       departmentName:
         roleKey === SUPER_ADMIN_ROLE
           ? "Super Admin"
-          : roleKey
+          : roleKey === HR_ROLE
+            ? "HR"
+            : roleKey
             ? staffDepartmentLabel(roleKey)
             : "—",
     };
@@ -84,7 +99,11 @@ export default async function EmployeesPage() {
         />
       </section>
 
-      <EmployeesTable rows={rows} currentEmployeeId={ctx.employeeId} />
+      <EmployeesTable
+        rows={rows}
+        currentEmployeeId={ctx.employeeId}
+        canDelete={viewerIsSuperAdmin}
+      />
     </div>
   );
 }

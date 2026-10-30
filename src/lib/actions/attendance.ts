@@ -4,7 +4,11 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { createDataClient as createClient } from "@/lib/supabase/data";
 import { createServiceClient } from "@/lib/supabase/service";
-import { getCurrentEmployeeContext, isSuperAdmin } from "@/lib/permissions/server";
+import {
+  getCurrentEmployeeContext,
+  isManagement,
+  isSuperAdmin,
+} from "@/lib/permissions/server";
 import { isSuperAdminEmployee } from "@/lib/queries/admin-dashboard";
 import { isWeekendIso, shiftDateIso } from "@/lib/format";
 import { ensureWeekendOff } from "@/lib/attendance-weekend";
@@ -217,7 +221,7 @@ export async function clockIn(): Promise<Result> {
   await ensureGoogleTime();
   const ctx = await getCurrentEmployeeContext();
   if (!ctx) return { error: "Not authenticated" };
-  if (isSuperAdmin(ctx.roleKey)) {
+  if (isManagement(ctx.roleKey)) {
     return { skipped: true };
   }
   const supabase = await createClient();
@@ -301,7 +305,7 @@ export async function clockIn(): Promise<Result> {
 export async function clockOut(): Promise<Result> {
   const ctx = await getCurrentEmployeeContext();
   if (!ctx) return { error: "Not authenticated" };
-  if (isSuperAdmin(ctx.roleKey)) return { skipped: true };
+  if (isManagement(ctx.roleKey)) return { skipped: true };
   const supabase = await createClient();
 
   const { data: session } = await supabase
@@ -447,7 +451,7 @@ export async function startBreak(breakType: PolicyBreakType, clickedAt?: string)
   await ensureGoogleTime();
   const ctx = await getCurrentEmployeeContext();
   if (!ctx) return { error: "Not authenticated" };
-  if (isSuperAdmin(ctx.roleKey)) return { skipped: true };
+  if (isManagement(ctx.roleKey)) return { skipped: true };
   if (!BREAK_SLOTS.includes(breakType)) {
     return { error: "Choose Tea 1, Tea 2 or Lunch." };
   }
@@ -502,7 +506,7 @@ export async function endBreak(): Promise<Result> {
   await ensureGoogleTime();
   const ctx = await getCurrentEmployeeContext();
   if (!ctx) return { error: "Not authenticated" };
-  if (isSuperAdmin(ctx.roleKey)) return { skipped: true };
+  if (isManagement(ctx.roleKey)) return { skipped: true };
   const supabase = await createClient();
 
   const { data: openBreak } = await supabase
@@ -550,7 +554,7 @@ export async function startMeeting(): Promise<Result> {
   await ensureGoogleTime();
   const ctx = await getCurrentEmployeeContext();
   if (!ctx) return { error: "Not authenticated" };
-  if (isSuperAdmin(ctx.roleKey)) return { skipped: true };
+  if (isManagement(ctx.roleKey)) return { skipped: true };
   const service = createServiceClient();
 
   const { data: session } = await service
@@ -615,7 +619,7 @@ export async function endMeeting(): Promise<Result> {
   await ensureGoogleTime();
   const ctx = await getCurrentEmployeeContext();
   if (!ctx) return { error: "Not authenticated" };
-  if (isSuperAdmin(ctx.roleKey)) return { skipped: true };
+  if (isManagement(ctx.roleKey)) return { skipped: true };
 
   await closeOpenMeeting(ctx.employeeId);
   await createServiceClient()
@@ -707,7 +711,7 @@ export async function startWashroom(): Promise<Result> {
   await ensureGoogleTime();
   const ctx = await getCurrentEmployeeContext();
   if (!ctx) return { error: "Not authenticated" };
-  if (isSuperAdmin(ctx.roleKey)) return { skipped: true };
+  if (isManagement(ctx.roleKey)) return { skipped: true };
   const service = createServiceClient();
 
   const { data: session } = await service
@@ -758,7 +762,7 @@ export async function endWashroom(): Promise<Result> {
   await ensureGoogleTime();
   const ctx = await getCurrentEmployeeContext();
   if (!ctx) return { error: "Not authenticated" };
-  if (isSuperAdmin(ctx.roleKey)) return { skipped: true };
+  if (isManagement(ctx.roleKey)) return { skipped: true };
   await closeOpenWashroom(ctx.employeeId);
   revalidateLive();
   return {};
@@ -767,7 +771,7 @@ export async function endWashroom(): Promise<Result> {
 /** Super Admin stops an employee's timer and signs their open tab out (e.g. they left without logging out). */
 export async function logoutEmployeeByAdmin(employeeId: string): Promise<Result> {
   const ctx = await getCurrentEmployeeContext();
-  if (!ctx || !isSuperAdmin(ctx.roleKey)) return { error: "Not authorized" };
+  if (!ctx || !isManagement(ctx.roleKey)) return { error: "Not authorized" };
   if (!z.string().uuid().safeParse(employeeId).success) return { error: "Invalid employee" };
 
   const { data: session } = await createServiceClient()
@@ -798,7 +802,7 @@ export async function logoutEmployeeByAdmin(employeeId: string): Promise<Result>
 export async function endWorkSession(): Promise<Result> {
   const ctx = await getCurrentEmployeeContext();
   if (!ctx) return { error: "Not authenticated" };
-  if (isSuperAdmin(ctx.roleKey)) return { skipped: true };
+  if (isManagement(ctx.roleKey)) return { skipped: true };
   return closeWorkSession(ctx.employeeId, "ENDED");
 }
 
@@ -816,7 +820,7 @@ export async function upsertAttendanceByAdmin(
   formData: FormData
 ): Promise<{ error?: string; success?: boolean }> {
   const ctx = await getCurrentEmployeeContext();
-  if (!ctx || !isSuperAdmin(ctx.roleKey)) return { error: "Not authorized" };
+  if (!ctx || !isManagement(ctx.roleKey)) return { error: "Not authorized" };
 
   const parsed = editSchema.safeParse({
     employeeId: formData.get("employeeId"),

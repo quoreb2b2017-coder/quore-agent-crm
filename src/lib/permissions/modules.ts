@@ -26,7 +26,8 @@ export type ModuleIconName =
   | "map"
   | "user"
   | "key"
-  | "message";
+  | "message"
+  | "clipboard";
 
 export type ModuleGroup =
   | "overview"
@@ -88,7 +89,7 @@ export const ADMIN_MODULES: ModuleDefinition[] = [
     href: "/admin/employees",
     icon: "users",
     group: "operations",
-    rolesOnly: ["SUPER_ADMIN"],
+    rolesOnly: ["SUPER_ADMIN", "HR"],
   },
   { key: "attendance", label: "Attendance", href: "/admin/attendance", icon: "clock", group: "operations" },
   {
@@ -97,9 +98,17 @@ export const ADMIN_MODULES: ModuleDefinition[] = [
     href: "/admin/activity",
     icon: "radio",
     group: "operations",
-    rolesOnly: ["SUPER_ADMIN"],
+    rolesOnly: ["SUPER_ADMIN", "HR"],
   },
   { key: "productivity", label: "Productivity", href: "/admin/productivity", icon: "trending", group: "operations" },
+  {
+    key: "onboarding",
+    label: "Onboarding",
+    href: "/admin/onboarding",
+    icon: "clipboard",
+    group: "hr",
+    rolesOnly: ["SUPER_ADMIN", "HR"],
+  },
   { key: "salary-slips", label: "Salary Slips", href: "/admin/salary-slips", icon: "file", group: "hr" },
   {
     key: "payroll",
@@ -107,7 +116,7 @@ export const ADMIN_MODULES: ModuleDefinition[] = [
     href: "/admin/payroll",
     icon: "wallet",
     group: "hr",
-    rolesOnly: ["SUPER_ADMIN"],
+    rolesOnly: ["SUPER_ADMIN", "HR"],
   },
   { key: "leave", label: "Leave Management", href: "/admin/leave", icon: "calendar", group: "hr" },
   { key: "notifications", label: "Notifications", href: "/admin/notifications", icon: "bell", group: "account" },

@@ -50,9 +50,11 @@ type StatusFilter = "all" | "active" | "inactive";
 export function EmployeesTable({
   rows,
   currentEmployeeId,
+  canDelete,
 }: {
   rows: EmployeeRow[];
   currentEmployeeId: string;
+  canDelete: boolean;
 }) {
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
@@ -193,6 +195,7 @@ export function EmployeesTable({
                       fullName={row.fullName}
                       isBlocked={row.employmentStatus === "SUSPENDED"}
                       isSelf={row.id === currentEmployeeId}
+                      canDelete={canDelete}
                     />
                   </TableCell>
                 </TableRow>

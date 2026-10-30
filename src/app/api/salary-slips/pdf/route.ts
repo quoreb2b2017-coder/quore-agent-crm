@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getCurrentEmployeeContext, isSuperAdmin } from "@/lib/permissions/server";
+import { getCurrentEmployeeContext, isManagement } from "@/lib/permissions/server";
 import { parseMonthParam, isPayrollMonthReleased } from "@/lib/payroll";
 import { isUuid } from "@/lib/attendance-period";
 import { listWatchableEmployees, isSuperAdminEmployee } from "@/lib/queries/admin-dashboard";
@@ -30,14 +30,14 @@ export async function GET(request: Request) {
   const employeeParam = url.searchParams.get("employee") ?? "";
   const month = parseMonthParam(url.searchParams.get("month") ?? undefined);
   const requestedId = isUuid(employeeParam) ? employeeParam : null;
-  const wantsAll = !requestedId && isSuperAdmin(ctx.roleKey);
-  const employeeId = requestedId ?? (isSuperAdmin(ctx.roleKey) ? null : ctx.employeeId);
+  const wantsAll = !requestedId && isManagement(ctx.roleKey);
+  const employeeId = requestedId ?? (isManagement(ctx.roleKey) ? null : ctx.employeeId);
 
   if (!employeeId && !wantsAll) {
     return NextResponse.json({ error: "Select an employee to download a slip." }, { status: 400 });
   }
 
-  if (employeeId && !isSuperAdmin(ctx.roleKey) && employeeId !== ctx.employeeId) {
+  if (employeeId && !isManagement(ctx.roleKey) && employeeId !== ctx.employeeId) {
     return NextResponse.json({ error: "Not authorized" }, { status: 403 });
   }
 

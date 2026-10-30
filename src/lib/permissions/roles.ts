@@ -1,4 +1,8 @@
 export const SUPER_ADMIN_ROLE = "SUPER_ADMIN";
+export const HR_ROLE = "HR";
+
+/** Sees every employee and runs HR work. Not tracked on the shift clock. */
+export const MANAGEMENT_ROLE_KEYS = [SUPER_ADMIN_ROLE, HR_ROLE] as const;
 
 /** The three employee types that share the same app. */
 export const STAFF_ROLE_KEYS = ["AGENT", "DATABASE", "EMAIL_MARKETING"] as const;
@@ -9,7 +13,7 @@ const STAFF_ROLE_SET = new Set<string>(STAFF_ROLE_KEYS);
 
 const ADMIN_SHELL_ROLES = new Set<string>([
   SUPER_ADMIN_ROLE,
-  "HR",
+  HR_ROLE,
   ...STAFF_ROLE_KEYS,
 ]);
 
@@ -18,8 +22,19 @@ const SUPER_ADMIN_ONLY_PERMISSIONS = new Set([
   "audit_logs.view",
 ]);
 
+const HR_BLOCKED_PERMISSIONS = new Set(["audit_logs.view"]);
+
 export function isSuperAdmin(roleKey: string) {
   return roleKey === SUPER_ADMIN_ROLE;
+}
+
+export function isHr(roleKey: string) {
+  return roleKey === HR_ROLE;
+}
+
+/** Super Admin or HR. */
+export function isManagement(roleKey: string) {
+  return isSuperAdmin(roleKey) || isHr(roleKey);
 }
 
 export function isStaffRole(roleKey: string) {
@@ -42,7 +57,7 @@ export function isAdminLike(roleKey: string) {
 }
 
 export function isStaffOrAdmin(roleKey: string) {
-  return isSuperAdmin(roleKey) || isStaffRole(roleKey);
+  return isManagement(roleKey) || isStaffRole(roleKey);
 }
 
 export function assignableRoles<T extends { id?: string; role_key: string }>(
@@ -59,6 +74,7 @@ export function assignableRoles<T extends { id?: string; role_key: string }>(
 
 export function staffHasPermission(roleKey: string, permission: string) {
   if (isSuperAdmin(roleKey)) return true;
+  if (isHr(roleKey)) return !HR_BLOCKED_PERMISSIONS.has(permission);
   if (!isStaffOrAdmin(roleKey)) return false;
   if (SUPER_ADMIN_ONLY_PERMISSIONS.has(permission)) return false;
   return true;

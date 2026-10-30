@@ -315,6 +315,84 @@ export interface Database {
           updated_at?: string;
         }
       >;
+      employee_onboarding: Table<
+        {
+          employee_id: string;
+          status: string;
+          checklist: Json;
+          offer: Json;
+          date_of_birth: string | null;
+          gender: string | null;
+          personal_email: string | null;
+          current_address: string | null;
+          permanent_address: string | null;
+          emergency_contact_name: string | null;
+          emergency_contact_relation: string | null;
+          emergency_contact_phone: string | null;
+          pan_number: string | null;
+          aadhaar_number: string | null;
+          bank_account_holder: string | null;
+          bank_name: string | null;
+          bank_account_number: string | null;
+          bank_ifsc: string | null;
+          previous_company: string | null;
+          notes: string | null;
+          completed_at: string | null;
+          completed_by: string | null;
+          created_at: string;
+          updated_at: string;
+        },
+        {
+          employee_id: string;
+          status?: string;
+          checklist?: Json;
+          offer?: Json;
+          date_of_birth?: string | null;
+          gender?: string | null;
+          personal_email?: string | null;
+          current_address?: string | null;
+          permanent_address?: string | null;
+          emergency_contact_name?: string | null;
+          emergency_contact_relation?: string | null;
+          emergency_contact_phone?: string | null;
+          pan_number?: string | null;
+          aadhaar_number?: string | null;
+          bank_account_holder?: string | null;
+          bank_name?: string | null;
+          bank_account_number?: string | null;
+          bank_ifsc?: string | null;
+          previous_company?: string | null;
+          notes?: string | null;
+          completed_at?: string | null;
+          completed_by?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        }
+      >;
+      onboarding_documents: Table<
+        {
+          id: string;
+          employee_id: string;
+          doc_type: string;
+          file_path: string;
+          file_name: string;
+          mime_type: string;
+          size_bytes: number;
+          uploaded_by: string | null;
+          created_at: string;
+        },
+        {
+          id?: string;
+          employee_id: string;
+          doc_type: string;
+          file_path: string;
+          file_name: string;
+          mime_type: string;
+          size_bytes: number;
+          uploaded_by?: string | null;
+          created_at?: string;
+        }
+      >;
       washroom_visits: Table<
         {
           id: string;

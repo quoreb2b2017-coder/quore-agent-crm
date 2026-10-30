@@ -1,6 +1,6 @@
 "use server";
 
-import { getCurrentEmployeeContext, isSuperAdmin } from "@/lib/permissions/server";
+import { getCurrentEmployeeContext, isManagement } from "@/lib/permissions/server";
 import { listWatchableEmployees } from "@/lib/queries/admin-dashboard";
 import { buildActivityDays, type ActivityDayLog } from "@/lib/queries/shift-activity";
 
@@ -18,7 +18,7 @@ export async function loadEmployeeActivityLog(
   employeeId: string
 ): Promise<EmployeeActivityLog | { error: string }> {
   const ctx = await getCurrentEmployeeContext();
-  if (!ctx || !isSuperAdmin(ctx.roleKey)) return { error: "Not authorized" };
+  if (!ctx || !isManagement(ctx.roleKey)) return { error: "Not authorized" };
 
   const people = await listWatchableEmployees();
   const person = people.find((employee) => employee.id === employeeId);

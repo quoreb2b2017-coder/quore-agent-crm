@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
+import { useRouter } from "next/navigation";
 import { Plus } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -12,13 +13,20 @@ import { useActionForm } from "@/hooks/use-action-form";
 import { STAFF_DEPARTMENTS } from "@/lib/permissions/roles";
 import { createEmployee } from "./actions";
 
-export function CreateEmployeeDialog() {
+export function CreateEmployeeDialog({
+  trigger,
+  redirectToOnboarding = false,
+}: { trigger?: ReactNode; redirectToOnboarding?: boolean } = {}) {
+  const router = useRouter();
   const [open, setOpen] = useState(false);
   const { handleSubmit, isPending, error } = useActionForm(
     (formData) => createEmployee({}, formData),
-    () => {
-      toast.success("Employee created");
+    (result) => {
+      toast.success("Employee created · onboarding started");
       setOpen(false);
+      if (redirectToOnboarding && result.employeeId) {
+        router.push(`/admin/onboarding/${result.employeeId}`);
+      }
     }
   );
 
@@ -33,10 +41,12 @@ export function CreateEmployeeDialog() {
       isPending={isPending}
       error={error}
       trigger={
-        <Button size="sm">
-          <Plus className="size-4" />
-          Add Employee
-        </Button>
+        trigger ?? (
+          <Button size="sm">
+            <Plus className="size-4" />
+            Add Employee
+          </Button>
+        )
       }
     >
       <div className="grid gap-2">
@@ -54,6 +64,26 @@ export function CreateEmployeeDialog() {
       <div className="grid gap-2">
         <Label htmlFor="employeeCode">Employee ID</Label>
         <Input id="employeeCode" name="employeeCode" required />
+      </div>
+      <div className="grid gap-2">
+        <Label htmlFor="joiningDate">Date of joining</Label>
+        <Input
+          id="joiningDate"
+          name="joiningDate"
+          type="date"
+          defaultValue={new Date().toLocaleDateString("en-CA")}
+          required
+        />
+      </div>
+      <div className="grid gap-2">
+        <Label htmlFor="dateOfBirth">Date of birth</Label>
+        <Input
+          id="dateOfBirth"
+          name="dateOfBirth"
+          type="date"
+          max={new Date().toLocaleDateString("en-CA")}
+          required
+        />
       </div>
       <div className="grid gap-2">
         <Label htmlFor="password">Password</Label>

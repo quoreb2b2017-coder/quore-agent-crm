@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { createDataClient as createClient } from "@/lib/supabase/data";
-import { getCurrentEmployeeContext, isSuperAdmin } from "@/lib/permissions/server";
+import { getCurrentEmployeeContext, isManagement } from "@/lib/permissions/server";
 import { emitNotifications } from "@/lib/realtime/emit";
 
 export type ActionState = { error?: string; success?: boolean };
@@ -19,7 +19,7 @@ export async function sendNotification(
   formData: FormData
 ): Promise<ActionState> {
   const ctx = await getCurrentEmployeeContext();
-  if (!ctx || !isSuperAdmin(ctx.roleKey)) {
+  if (!ctx || !isManagement(ctx.roleKey)) {
     return { error: "Not authorized" };
   }
 

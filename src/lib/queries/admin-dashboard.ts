@@ -2,7 +2,7 @@ import { cache } from "react";
 import { createDataClient as createClient } from "@/lib/supabase/data";
 import { createServiceClient } from "@/lib/supabase/service";
 import { todayIso } from "@/lib/format";
-import { SUPER_ADMIN_ROLE } from "@/lib/permissions/roles";
+import { MANAGEMENT_ROLE_KEYS } from "@/lib/permissions/roles";
 import { weekendOrRecordedStatus } from "@/lib/attendance-weekend";
 import { dailyActiveSeconds } from "@/lib/live-time";
 import {
@@ -17,18 +17,19 @@ import {
 
 const NO_EXCESS: BreakExcess = emptyExcess();
 
+/** Super Admin and HR: not on the shift clock, so left out of team lists and payslips. */
 const loadSuperAdminEmployeeIds = cache(async (): Promise<string[]> => {
   const supabase = await createClient();
-  const { data: role } = await supabase
+  const { data: roles } = await supabase
     .from("roles")
     .select("id")
-    .eq("role_key", SUPER_ADMIN_ROLE)
-    .maybeSingle();
-  if (!role) return [];
+    .in("role_key", [...MANAGEMENT_ROLE_KEYS]);
+  const roleIds = (roles ?? []).map((role) => role.id);
+  if (roleIds.length === 0) return [];
   const { data: rows } = await supabase
     .from("employee_roles")
     .select("employee_id")
-    .eq("role_id", role.id);
+    .in("role_id", roleIds);
   return Array.from(new Set((rows ?? []).map((row) => row.employee_id)));
 });
 

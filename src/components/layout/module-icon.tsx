@@ -27,6 +27,7 @@ import {
   User,
   KeyRound,
   MessageCircle,
+  ClipboardCheck,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -90,6 +91,8 @@ export function ModuleIcon({
       return <KeyRound {...props} />;
     case "message":
       return <MessageCircle {...props} />;
+    case "clipboard":
+      return <ClipboardCheck {...props} />;
     default:
       return <LayoutDashboard {...props} />;
   }

@@ -8,7 +8,7 @@ import { SessionPresence } from "@/components/layout/session-presence";
 import { AppSocketProvider } from "@/components/realtime/app-socket";
 import { NavigationLoader } from "@/components/layout/route-loading";
 import { PermissionsProvider } from "@/lib/permissions/context";
-import { isSuperAdmin } from "@/lib/permissions/roles";
+import { isManagement } from "@/lib/permissions/roles";
 import type { ModuleDefinition } from "@/lib/permissions/modules";
 import type { EmployeeContext } from "@/lib/permissions/types";
 import { usePathname } from "next/navigation";
@@ -45,7 +45,7 @@ export function AppShell({
         >
           <AppSidebar modules={modules} brand={brand} ctx={ctx} />
           <SidebarInset className="bg-app-canvas max-h-svh overflow-hidden">
-            <SessionPresence enableClockIn={!isSuperAdmin(ctx.roleKey)} />
+            <SessionPresence enableClockIn={!isManagement(ctx.roleKey)} />
             <Topbar
               modules={modules}
               ctx={ctx}

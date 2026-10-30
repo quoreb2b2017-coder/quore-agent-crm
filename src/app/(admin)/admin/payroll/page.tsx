@@ -2,7 +2,7 @@ import { BadgeIndianRupee, Users, CircleAlert } from "lucide-react";
 import { createDataClient as createClient } from "@/lib/supabase/data";
 import { PageHeader } from "@/components/dashboard/page-header";
 import { StatCard } from "@/components/dashboard/stat-card";
-import { requireSuperAdmin } from "@/lib/permissions/server";
+import { requireManagement } from "@/lib/permissions/server";
 import { formatInr } from "@/lib/format";
 import {
   readSalaryComponents,
@@ -19,7 +19,7 @@ export default async function PayrollPage({
 }: {
   searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
 }) {
-  await requireSuperAdmin();
+  await requireManagement();
   const params = await searchParams;
   const requestedEmployee = Array.isArray(params.employee) ? params.employee[0] : params.employee;
 

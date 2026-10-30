@@ -1,7 +1,7 @@
 import "server-only";
 import { createServiceClient } from "@/lib/supabase/service";
 import { todayIso } from "@/lib/format";
-import { SUPER_ADMIN_ROLE } from "@/lib/permissions/roles";
+import { MANAGEMENT_ROLE_KEYS } from "@/lib/permissions/roles";
 import { federalHolidays } from "@/lib/federal-holidays";
 import { loadWorkSettings } from "@/lib/work-settings-server";
 
@@ -26,13 +26,13 @@ export async function ensureFederalHolidaysMarked() {
     const dates = holidays.map((holiday) => holiday.date);
     const nameByDate = new Map(holidays.map((holiday) => [holiday.date, holiday.name]));
 
-    const { data: role } = await service
+    const { data: roles } = await service
       .from("roles")
       .select("id")
-      .eq("role_key", SUPER_ADMIN_ROLE)
-      .maybeSingle();
-    const { data: superAdmins } = role
-      ? await service.from("employee_roles").select("employee_id").eq("role_id", role.id)
+      .in("role_key", [...MANAGEMENT_ROLE_KEYS]);
+    const roleIds = (roles ?? []).map((role) => role.id);
+    const { data: superAdmins } = roleIds.length
+      ? await service.from("employee_roles").select("employee_id").in("role_id", roleIds)
       : { data: [] };
     const skip = new Set((superAdmins ?? []).map((row) => row.employee_id));
 

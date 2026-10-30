@@ -3,7 +3,17 @@
 import { useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { MoreHorizontal, Pencil, Ban, Unlock, Trash2, Loader2, Wallet, History } from "lucide-react";
+import {
+  MoreHorizontal,
+  Pencil,
+  Ban,
+  Unlock,
+  Trash2,
+  Loader2,
+  Wallet,
+  History,
+  ClipboardCheck,
+} from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
@@ -20,11 +30,13 @@ export function EmployeeRowActions({
   fullName,
   isBlocked,
   isSelf,
+  canDelete,
 }: {
   employeeId: string;
   fullName: string;
   isBlocked: boolean;
   isSelf: boolean;
+  canDelete: boolean;
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -75,6 +87,12 @@ export function EmployeeRowActions({
           </Link>
         </DropdownMenuItem>
         <DropdownMenuItem asChild>
+          <Link href={`/admin/onboarding/${employeeId}`}>
+            <ClipboardCheck className="size-4" />
+            Onboarding
+          </Link>
+        </DropdownMenuItem>
+        <DropdownMenuItem asChild>
           <Link href={`/admin/payroll?employee=${employeeId}`}>
             <Wallet className="size-4" />
             Setup payroll
@@ -98,16 +116,20 @@ export function EmployeeRowActions({
           {isBlocked ? <Unlock className="size-4" /> : <Ban className="size-4" />}
           {isBlocked ? "Unblock" : "Block"}
         </DropdownMenuItem>
-        <DropdownMenuSeparator />
-        <DropdownMenuItem
-          variant="destructive"
-          disabled={isSelf}
-          title={isSelf ? "You cannot delete your own account" : undefined}
-          onClick={runDelete}
-        >
-          <Trash2 className="size-4" />
-          Delete
-        </DropdownMenuItem>
+        {canDelete ? (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              variant="destructive"
+              disabled={isSelf}
+              title={isSelf ? "You cannot delete your own account" : undefined}
+              onClick={runDelete}
+            >
+              <Trash2 className="size-4" />
+              Delete
+            </DropdownMenuItem>
+          </>
+        ) : null}
       </DropdownMenuContent>
     </DropdownMenu>
   );

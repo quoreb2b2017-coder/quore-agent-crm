@@ -8,6 +8,7 @@ import { AppShell } from "@/components/layout/app-shell";
 import { AccountSetupNotice } from "@/components/auth/account-setup-notice";
 import { BlockedAccountGate } from "@/components/auth/blocked-account-gate";
 import { DashboardPageSkeleton } from "@/components/layout/page-skeleton";
+import { TodayCelebrations } from "@/components/celebrations/today-celebrations";
 import { isEmploymentBlocked } from "@/lib/format";
 
 export default async function AdminLayout({
@@ -45,6 +46,9 @@ export default async function AdminLayout({
       defaultSidebarOpen={sidebarOpen}
     >
       <Suspense fallback={<DashboardPageSkeleton />}>{children}</Suspense>
+      <Suspense fallback={null}>
+        <TodayCelebrations viewerId={ctx.employeeId} />
+      </Suspense>
     </AppShell>
   );
 }

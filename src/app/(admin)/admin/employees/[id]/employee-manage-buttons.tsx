@@ -12,11 +12,13 @@ export function EmployeeManageButtons({
   fullName,
   isBlocked,
   isSelf,
+  canDelete,
 }: {
   employeeId: string;
   fullName: string;
   isBlocked: boolean;
   isSelf: boolean;
+  canDelete: boolean;
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -66,17 +68,19 @@ export function EmployeeManageButtons({
         {isPending ? <Loader2 className="size-4 animate-spin" /> : isBlocked ? <Unlock className="size-4" /> : <Ban className="size-4" />}
         {isBlocked ? "Unblock" : "Block"}
       </Button>
-      <Button
-        type="button"
-        size="sm"
-        variant="destructive"
-        disabled={isPending || isSelf}
-        title={isSelf ? "You cannot delete your own account" : undefined}
-        onClick={runDelete}
-      >
-        {isPending ? <Loader2 className="size-4 animate-spin" /> : <Trash2 className="size-4" />}
-        Delete
-      </Button>
+      {canDelete ? (
+        <Button
+          type="button"
+          size="sm"
+          variant="destructive"
+          disabled={isPending || isSelf}
+          title={isSelf ? "You cannot delete your own account" : undefined}
+          onClick={runDelete}
+        >
+          {isPending ? <Loader2 className="size-4 animate-spin" /> : <Trash2 className="size-4" />}
+          Delete
+        </Button>
+      ) : null}
     </div>
   );
 }

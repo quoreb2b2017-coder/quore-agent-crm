@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { createDataClient as createClient } from "@/lib/supabase/data";
-import { getCurrentEmployeeContext, isSuperAdmin } from "@/lib/permissions/server";
+import { getCurrentEmployeeContext, isManagement } from "@/lib/permissions/server";
 import { leaveDaysCount, packLeaveNote, UNDECIDED_LEAVE_TYPE } from "@/lib/leave";
 import { createServiceClient } from "@/lib/supabase/service";
 
@@ -44,7 +44,7 @@ export async function applyForLeave(
 ): Promise<ActionState> {
   const ctx = await getCurrentEmployeeContext();
   if (!ctx) return { error: "Not authenticated" };
-  if (isSuperAdmin(ctx.roleKey)) return { error: "Super Admin does not apply for leave." };
+  if (isManagement(ctx.roleKey)) return { error: "Super Admin and HR do not apply for leave." };
 
   const parsed = schema.safeParse({
     subject: formData.get("subject"),
