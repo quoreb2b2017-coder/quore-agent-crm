@@ -1,0 +1,278 @@
+{
+ "label": "before",
+ "pages": {
+  "super_admin": {
+   "/admin/dashboard": {
+    "ttfb": 856,
+    "dcl": 1194.3,
+    "load": 1196.2,
+    "html": 30921,
+    "js": 355511,
+    "jsFiles": 26,
+    "db_requests": 141,
+    "auth_requests": 13,
+    "db_ms": 1720
+   },
+   "/admin/employees": {
+    "ttfb": 601.4,
+    "dcl": 730.4,
+    "load": 735.3,
+    "html": 24924,
+    "js": 355511,
+    "jsFiles": 26,
+    "db_requests": 163,
+    "auth_requests": 14,
+    "db_ms": 1675
+   },
+   "/admin/employees/068c7c56-e1ca-4950-becf-ce36d77c40d2": {
+    "ttfb": 406.2,
+    "dcl": 710.6,
+    "load": 711.6,
+    "html": 30009,
+    "js": 462809,
+    "jsFiles": 28,
+    "db_requests": 188,
+    "auth_requests": 18,
+    "db_ms": 1854
+   },
+   "/admin/attendance": {
+    "ttfb": 159.6,
+    "dcl": 431.9,
+    "load": 432.8,
+    "html": 33118,
+    "js": 358806,
+    "jsFiles": 27,
+    "db_requests": 175,
+    "auth_requests": 16,
+    "db_ms": 1485
+   },
+   "/admin/productivity": {
+    "ttfb": 289.9,
+    "dcl": 555,
+    "load": 557.5,
+    "html": 29733,
+    "js": 460968,
+    "jsFiles": 28,
+    "db_requests": 178,
+    "auth_requests": 17,
+    "db_ms": 1697
+   },
+   "/admin/activity": {
+    "ttfb": 112.6,
+    "dcl": 3078.7,
+    "load": 3080.5,
+    "html": 235936,
+    "js": 486942,
+    "jsFiles": 36,
+    "db_requests": 192,
+    "auth_requests": 19,
+    "db_ms": 1490
+   },
+   "/admin/leave": {
+    "ttfb": 395,
+    "dcl": 541.8,
+    "load": 542.8,
+    "html": 30123,
+    "js": 360935,
+    "jsFiles": 27,
+    "db_requests": 177,
+    "auth_requests": 16,
+    "db_ms": 1705
+   },
+   "/admin/payroll": {
+    "ttfb": 449.2,
+    "dcl": 690.1,
+    "load": 691.1,
+    "html": 23162,
+    "js": 361465,
+    "jsFiles": 27,
+    "db_requests": 174,
+    "auth_requests": 15,
+    "db_ms": 2063
+   },
+   "/admin/salary-slips": {
+    "ttfb": 286.8,
+    "dcl": 621.5,
+    "load": 623.6,
+    "html": 40339,
+    "js": 358016,
+    "jsFiles": 27,
+    "db_requests": 163,
+    "auth_requests": 16,
+    "db_ms": 1490
+   },
+   "/admin/notifications": {
+    "ttfb": 334.2,
+    "dcl": 433.8,
+    "load": 439.5,
+    "html": 15637,
+    "js": 355511,
+    "jsFiles": 26,
+    "db_requests": 169,
+    "auth_requests": 16,
+    "db_ms": 1685
+   },
+   "/admin/approvals": {
+    "ttfb": 214.1,
+    "dcl": 275.1,
+    "load": 275.9,
+    "html": 14281,
+    "js": 355511,
+    "jsFiles": 26,
+    "db_requests": 143,
+    "auth_requests": 14,
+    "db_ms": 1321
+   },
+   "/admin/compliance": {
+    "ttfb": 370.2,
+    "dcl": 437.4,
+    "load": 437.9,
+    "html": 16163,
+    "js": 356729,
+    "jsFiles": 27,
+    "db_requests": 176,
+    "auth_requests": 16,
+    "db_ms": 1443
+   },
+   "/admin/compliance/controls": {
+    "ttfb": 464,
+    "dcl": 593.5,
+    "load": 594.4,
+    "html": 23319,
+    "js": 356729,
+    "jsFiles": 27,
+    "db_requests": 175,
+    "auth_requests": 16,
+    "db_ms": 1624
+   },
+   "/admin/audit-logs": {
+    "ttfb": 434.4,
+    "dcl": 565.2,
+    "load": 565.7,
+    "html": 23624,
+    "js": 356366,
+    "jsFiles": 27,
+    "db_requests": 174,
+    "auth_requests": 16,
+    "db_ms": 2027
+   },
+   "/admin/roles": {
+    "ttfb": 455.2,
+    "dcl": 592.9,
+    "load": 597.4,
+    "html": 17111,
+    "js": 359576,
+    "jsFiles": 27,
+    "db_requests": 176,
+    "auth_requests": 16,
+    "db_ms": 1702
+   }
+  },
+  "agent": {
+   "/admin/dashboard": {
+    "ttfb": 99.8,
+    "dcl": 183.9,
+    "load": 186.5,
+    "html": 24453,
+    "js": 457028,
+    "jsFiles": 30,
+    "db_requests": 102,
+    "auth_requests": 13,
+    "db_ms": 529
+   },
+   "/admin/attendance": {
+    "ttfb": 49.1,
+    "dcl": 114,
+    "load": 116.2,
+    "html": 13188,
+    "js": 457028,
+    "jsFiles": 30,
+    "db_requests": 102,
+    "auth_requests": 13,
+    "db_ms": 632
+   },
+   "/admin/productivity": {
+    "ttfb": 50.5,
+    "dcl": 194.8,
+    "load": 195.8,
+    "html": 20995,
+    "js": 457028,
+    "jsFiles": 30,
+    "db_requests": 102,
+    "auth_requests": 13,
+    "db_ms": 636
+   },
+   "/admin/leave": {
+    "ttfb": 60.4,
+    "dcl": 110.9,
+    "load": 115.4,
+    "html": 14372,
+    "js": 457028,
+    "jsFiles": 30,
+    "db_requests": 102,
+    "auth_requests": 13,
+    "db_ms": 627
+   },
+   "/admin/notifications": {
+    "ttfb": 63.2,
+    "dcl": 133.3,
+    "load": 137.2,
+    "html": 12749,
+    "js": 457028,
+    "jsFiles": 30,
+    "db_requests": 102,
+    "auth_requests": 13,
+    "db_ms": 470
+   }
+  }
+ },
+ "login": {
+  "super_admin": {
+   "token_ms": 178.7,
+   "to_dashboard_ms": 868.2
+  },
+  "agent": {
+   "token_ms": 159.8,
+   "to_dashboard_ms": 432.2
+  }
+ },
+ "api": {
+  "/api/time": {
+   "median_ms": 37.1,
+   "status": 200
+  }
+ },
+ "client_nav": {
+  "Employees": 319.5,
+  "Attendance": 297.8,
+  "Command center": 267.8
+ },
+ "db_top": [
+  "513.1|139|3.69|139|WITH pgrst_source AS ( SELECT \"public\".\"breaks\".\"id\", \"public\".\"breaks\".\"employee_id\", \"public\".\"breaks\".\"break_type\", \"public\".\"breaks\".\"started_at\", \"public\".",
+  "489.8|21383|0.02|21383|select set_config('search_path', $1, true), set_config('role', $2, true), set_config('request.jwt.claims', $3, true), set_config('request.method', $4, true), se",
+  "489.4|409|1.20|409|WITH pgrst_source AS ( SELECT \"public\".\"breaks\".\"employee_id\", \"public\".\"breaks\".\"break_type\", \"public\".\"breaks\".\"started_at\", \"public\".\"breaks\".\"ended_at\", \"pu",
+  "223.5|109|2.05|109|WITH pgrst_source AS ( SELECT \"public\".\"breaks\".\"session_id\" FROM \"public\".\"breaks\" WHERE \"public\".\"breaks\".\"ended_at\" IS NULL ) SELECT $1::bigint AS total_resu",
+  "208.8|2055|0.10|2055|WITH pgrst_source AS ( SELECT \"public\".\"employees\".\"id\", \"public\".\"employees\".\"employee_code\", \"public\".\"employees\".\"full_name\", \"public\".\"employees\".\"email\", \"",
+  "196.5|139|1.41|139|WITH pgrst_source AS ( SELECT \"public\".\"washroom_visits\".\"id\", \"public\".\"washroom_visits\".\"employee_id\", \"public\".\"washroom_visits\".\"started_at\", \"public\".\"wash",
+  "187.8|134|1.40|134|WITH pgrst_source AS ( SELECT \"public\".\"attendance\".\"employee_id\", \"public\".\"attendance\".\"attendance_date\" FROM \"public\".\"attendance\" WHERE \"public\".\"attendance",
+  "183.5|134|1.37|134|WITH pgrst_source AS ( SELECT \"public\".\"attendance\".\"employee_id\", \"public\".\"attendance\".\"attendance_date\", \"public\".\"attendance\".\"notes\" FROM \"public\".\"attenda",
+  "163.5|139|1.18|139|WITH pgrst_source AS ( SELECT \"public\".\"employee_sessions\".\"id\", \"public\".\"employee_sessions\".\"employee_id\", \"public\".\"employee_sessions\".\"started_at\", \"public\"",
+  "154.5|611|0.25|611|WITH pgrst_source AS ( SELECT \"public\".\"employees\".\"id\", \"public\".\"employees\".\"full_name\", \"public\".\"employees\".\"employee_code\" FROM \"public\".\"employees\" WHERE ",
+  "154.5|304|0.51|304|WITH pgrst_source AS ( SELECT \"public\".\"attendance\".\"employee_id\", \"public\".\"attendance\".\"attendance_date\", \"public\".\"attendance\".\"status\", \"public\".\"attendance",
+  "153.6|1|153.60|1|WITH pgrst_source AS (UPDATE \"public\".\"attendance\" SET \"notes\" = \"pgrst_body\".\"notes\", \"status\" = \"pgrst_body\".\"status\" FROM (SELECT $1 AS json_data) pgrst_payl",
+  "140.6|296|0.47|296|insert into public.audit_logs (actor_employee_id, action, table_name, record_id, old_data, new_data) values ( public.current_employee_id(), tg_op || $16 || tg_t",
+  "112.1|2055|0.05|2055|WITH pgrst_source AS ( SELECT \"public\".\"permissions\".\"permission_key\" FROM \"public\".\"permissions\" WHERE \"public\".\"permissions\".\"id\" = ANY ($1) ) SELECT $2::bigi",
+  "106.4|2055|0.05|2055|WITH pgrst_source AS ( SELECT \"public\".\"role_permissions\".\"permission_id\" FROM \"public\".\"role_permissions\" WHERE \"public\".\"role_permissions\".\"role_id\" = $1 ) SE",
+  "101.3|383|0.26|383|WITH pgrst_source AS ( SELECT \"public\".\"washroom_visits\".\"employee_id\", \"public\".\"washroom_visits\".\"session_id\", \"public\".\"washroom_visits\".\"started_at\", \"publi",
+  "92.8|383|0.24|383|WITH pgrst_source AS ( SELECT \"public\".\"breaks\".\"employee_id\", \"public\".\"breaks\".\"session_id\", \"public\".\"breaks\".\"break_type\", \"public\".\"breaks\".\"started_at\", \"",
+  "88.5|383|0.23|383|WITH pgrst_source AS ( SELECT \"public\".\"employee_sessions\".\"employee_id\", \"public\".\"employee_sessions\".\"status\", \"public\".\"employee_sessions\".\"ended_at\" FROM \"p",
+  "87.0|179|0.49|179|WITH pgrst_source AS (SELECT pgrst_call.pgrst_scalar FROM (SELECT $1 AS json_data) pgrst_payload, LATERAL (SELECT \"p_user_id\" FROM json_to_record(pgrst_payload.",
+  "80.6|592|0.14|0|select id from public.employees where auth_user_id = auth.uid() limit $1",
+  "74.8|135|0.55|135|WITH pgrst_source AS (SELECT pgrst_call.pgrst_scalar FROM (SELECT \"public\".\"purge_old_chat\"() pgrst_scalar) pgrst_call) SELECT $1::bigint AS total_result_set, $",
+  "68.6|2061|0.03|2061|SELECT users.aud, users.banned_until, users.confirmation_sent_at, users.confirmation_token, users.confirmed_at, users.created_at, users.deleted_at, users.email,",
+  "61.6|307|0.20|307|WITH pgrst_source AS ( SELECT \"public\".\"employees\".\"id\", \"public\".\"employees\".\"full_name\", \"public\".\"employees\".\"employee_code\" FROM \"public\".\"employees\" ) SELE",
+  "50.8|304|0.17|304|WITH pgrst_source AS ( SELECT \"public\".\"attendance\".\"id\", \"public\".\"attendance\".\"first_check_in\" FROM \"public\".\"attendance\" WHERE \"public\".\"attendance\".\"employe",
+  "42.2|2063|0.02|2063|SELECT sessions.aal, sessions.created_at, sessions.factor_id, sessions.id, sessions.ip, sessions.not_after, sessions.oauth_client_id, sessions.refreshed_at, ses"
+ ],
+ "db_total": "5156.1 ms over 55879 statements"
+}

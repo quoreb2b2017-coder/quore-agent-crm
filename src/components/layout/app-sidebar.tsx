@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
@@ -40,6 +41,11 @@ export function AppSidebar({
 }) {
   const pathname = usePathname();
   const { isMobile, setOpenMobile } = useSidebar();
+  // Full prefetch only for menu items the user is about to open (pointer over,
+  // keyboard focus or touch), instead of rendering every menu page on every view.
+  const [warm, setWarm] = useState<ReadonlySet<string>>(() => new Set());
+  const warmUp = (href: string) =>
+    setWarm((current) => (current.has(href) ? current : new Set(current).add(href)));
   const order = brand === "admin" ? ADMIN_GROUP_ORDER : EMPLOYEE_GROUP_ORDER;
   const sections = order
     .map((group) => ({
@@ -76,7 +82,13 @@ export function AppSidebar({
                       >
                         <Link
                           href={mod.href}
-                          prefetch
+                          // Every page here is dynamic, so prefetch={true} on all links rendered
+                          // ~18 menu pages on the server on every view. Now: the default (loading
+                          // skeleton only), upgraded to a full prefetch on hover/focus/touch.
+                          prefetch={warm.has(mod.href) ? true : undefined}
+                          onMouseEnter={() => warmUp(mod.href)}
+                          onFocus={() => warmUp(mod.href)}
+                          onTouchStart={() => warmUp(mod.href)}
                           onClick={() => {
                             if (isMobile) setOpenMobile(false);
                           }}

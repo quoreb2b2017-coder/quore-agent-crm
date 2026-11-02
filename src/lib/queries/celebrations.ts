@@ -8,7 +8,22 @@ export function celebrationDateIso() {
   return calendarDateInZone(trustedNowDate(), INDIA_TIME_ZONE);
 }
 
+const CACHE_MS = 10 * 60 * 1000;
+let cached: { date: string; at: number; value: Celebration[] } | null = null;
+
+/**
+ * Today's birthdays and work anniversaries. Rendered by every layout, so the
+ * result is kept for 10 minutes per server instance (it only changes with the
+ * date, new joiners or edited birth dates).
+ */
 export async function getTodayCelebrations(todayIso = celebrationDateIso()): Promise<Celebration[]> {
+  if (cached && cached.date === todayIso && Date.now() - cached.at < CACHE_MS) return cached.value;
+  const value = await loadTodayCelebrations(todayIso);
+  cached = { date: todayIso, at: Date.now(), value };
+  return value;
+}
+
+async function loadTodayCelebrations(todayIso: string): Promise<Celebration[]> {
   const service = createServiceClient();
   const [{ data: employees }, { data: onboarding }] = await Promise.all([
     service

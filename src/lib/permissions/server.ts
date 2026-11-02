@@ -10,10 +10,13 @@ export { isAdminLike, isManagement, isSuperAdmin } from "./roles";
 async function loadEmployeeContextFromDb(userId: string): Promise<EmployeeContext | null> {
   const service = createServiceClient();
 
+  // One round-trip: employee -> primary role -> role permissions -> permission keys.
+  // (Previously three sequential queries; this runs on every server render and
+  // every presence heartbeat.)
   const { data: employee } = await service
     .from("employees")
     .select(
-      "id, employee_code, full_name, email, profile_image_path, employment_status, employee_roles!employee_roles_employee_id_fkey!inner(role_id, is_primary, roles(role_key, display_name))"
+      "id, employee_code, full_name, email, profile_image_path, employment_status, employee_roles!employee_roles_employee_id_fkey!inner(role_id, is_primary, roles(role_key, display_name, role_permissions(permissions(permission_key))))"
     )
     .eq("auth_user_id", userId)
     .eq("employee_roles.is_primary", true)
@@ -21,29 +24,18 @@ async function loadEmployeeContextFromDb(userId: string): Promise<EmployeeContex
 
   if (!employee) return null;
 
-  const assignment = Array.isArray(employee.employee_roles)
+  type PermissionLink = { permissions: { permission_key: string } | { permission_key: string }[] | null };
+  type RoleRow = { role_key: string; display_name: string; role_permissions?: PermissionLink[] | null };
+  const assignment = (Array.isArray(employee.employee_roles)
     ? employee.employee_roles[0]
-    : employee.employee_roles;
+    : employee.employee_roles) as unknown as { role_id: string; roles: RoleRow | RoleRow[] | null } | undefined;
   const roleRow = assignment?.roles;
-  const role =
-    roleRow && !Array.isArray(roleRow) ? roleRow : Array.isArray(roleRow) ? roleRow[0] : null;
+  const role = roleRow && !Array.isArray(roleRow) ? roleRow : Array.isArray(roleRow) ? roleRow[0] : null;
   if (!assignment || !role) return null;
 
-  let permissions: string[] = [];
-  {
-    const { data: permRows } = await service
-      .from("role_permissions")
-      .select("permission_id")
-      .eq("role_id", assignment.role_id);
-    const permissionIds = (permRows ?? []).map((row) => row.permission_id);
-    if (permissionIds.length > 0) {
-      const { data: perms } = await service
-        .from("permissions")
-        .select("permission_key")
-        .in("id", permissionIds);
-      permissions = (perms ?? []).map((row) => row.permission_key);
-    }
-  }
+  const permissions = (role.role_permissions ?? [])
+    .flatMap((link) => (Array.isArray(link.permissions) ? link.permissions : link.permissions ? [link.permissions] : []))
+    .map((perm) => perm.permission_key);
 
   return {
     employeeId: employee.id,

@@ -1,3 +1,4 @@
+import { after } from "next/server";
 import { createDataClient as createClient } from "@/lib/supabase/data";
 import { getCurrentEmployeeContext } from "@/lib/permissions/server";
 import {
@@ -19,7 +20,8 @@ export async function getChatBootstrap(peerId?: string | null): Promise<ChatBoot
 
   const supabase = await createClient();
   const meId = ctx.employeeId;
-  await purgeExpiredChat();
+  // Retention clean-up runs after the response; reads below filter by the retention date.
+  after(() => purgeExpiredChat());
 
   const { data: employees } = await supabase
     .from("employees")

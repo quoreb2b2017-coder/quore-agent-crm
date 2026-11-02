@@ -23,18 +23,15 @@ export default async function EmployeesPage() {
 
   const supabase = await createClient();
 
-  const [{ data: employees }, { data: roles }] = await Promise.all([
+  // Independent reads, fetched in parallel (role assignments no longer wait for the employee list).
+  const [{ data: employees }, { data: roles }, { data: employeeRoles }] = await Promise.all([
     supabase
       .from("employees")
       .select("id, employee_code, full_name, email, phone, employment_status")
       .order("full_name"),
     supabase.from("roles").select("id, role_key").order("display_name"),
+    supabase.from("employee_roles").select("employee_id, role_id").eq("is_primary", true),
   ]);
-
-  const { data: employeeRoles } = await supabase
-    .from("employee_roles")
-    .select("employee_id, role_id")
-    .eq("is_primary", true);
 
   const roleByEmployee = new Map((employeeRoles ?? []).map((r) => [r.employee_id, r.role_id]));
   const roleKeyById = new Map((roles ?? []).map((r) => [r.id, r.role_key]));

@@ -226,9 +226,33 @@ export const loadApprovals = cache(async (ctx: EmployeeContext): Promise<Approva
   return { items, leaveTypes: types, counts };
 });
 
+/**
+ * Badge count for the app bar and side menu, shown on every admin page.
+ * Uses count-only queries (no rows transferred) with exactly the same filters
+ * as loadApprovals, instead of loading every request, person and control.
+ */
 export async function countApprovals(ctx: EmployeeContext) {
+  if (!isManagement(ctx.roleKey) && !canSeeCompliance(ctx)) return 0;
   try {
-    return (await loadApprovals(ctx)).counts.ALL;
+    const service = createServiceClient();
+    const compliance = canSeeCompliance(ctx);
+    const zero = Promise.resolve({ count: 0 });
+    const [meetings, leave, evidence, exceptions] = await Promise.all([
+      isSuperAdmin(ctx.roleKey)
+        ? service.from("meetings").select("id", { count: "exact", head: true }).is("ended_at", null).is("started_at", null)
+        : zero,
+      isManagement(ctx.roleKey)
+        ? service.from("leave_requests").select("id", { count: "exact", head: true }).eq("status", "PENDING")
+        : zero,
+      compliance
+        ? service.from("evidence_items").select("id", { count: "exact", head: true }).eq("status", "PENDING_REVIEW")
+        : zero,
+      compliance
+        ? service.from("control_exceptions").select("id", { count: "exact", head: true }).eq("status", "REQUESTED")
+        : zero,
+    ]);
+    // loadApprovals lists at most 200 evidence items; keep the badge consistent with it.
+    return (meetings.count ?? 0) + (leave.count ?? 0) + Math.min(evidence.count ?? 0, 200) + (exceptions.count ?? 0);
   } catch {
     return 0;
   }

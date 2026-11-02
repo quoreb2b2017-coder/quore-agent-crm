@@ -1,0 +1,278 @@
+{
+ "label": "after",
+ "pages": {
+  "super_admin": {
+   "/admin/dashboard": {
+    "ttfb": 51.6,
+    "dcl": 263.2,
+    "load": 264,
+    "html": 30828,
+    "js": 315060,
+    "jsFiles": 19,
+    "db_requests": 37,
+    "auth_requests": 4,
+    "db_ms": 317
+   },
+   "/admin/employees": {
+    "ttfb": 71.5,
+    "dcl": 190.7,
+    "load": 194,
+    "html": 24940,
+    "js": 309890,
+    "jsFiles": 18,
+    "db_requests": 15,
+    "auth_requests": 4,
+    "db_ms": 83
+   },
+   "/admin/employees/068c7c56-e1ca-4950-becf-ce36d77c40d2": {
+    "ttfb": 47.2,
+    "dcl": 307.1,
+    "load": 309.4,
+    "html": 30257,
+    "js": 411997,
+    "jsFiles": 19,
+    "db_requests": 27,
+    "auth_requests": 5,
+    "db_ms": 220
+   },
+   "/admin/attendance": {
+    "ttfb": 45,
+    "dcl": 217.8,
+    "load": 219.8,
+    "html": 33021,
+    "js": 307246,
+    "jsFiles": 18,
+    "db_requests": 17,
+    "auth_requests": 4,
+    "db_ms": 104
+   },
+   "/admin/productivity": {
+    "ttfb": 44.8,
+    "dcl": 228,
+    "load": 229,
+    "html": 29592,
+    "js": 306991,
+    "jsFiles": 18,
+    "db_requests": 25,
+    "auth_requests": 4,
+    "db_ms": 192
+   },
+   "/admin/activity": {
+    "ttfb": 69.9,
+    "dcl": 2414,
+    "load": 2415.6,
+    "html": 230970,
+    "js": 306366,
+    "jsFiles": 18,
+    "db_requests": 30,
+    "auth_requests": 4,
+    "db_ms": 312
+   },
+   "/admin/leave": {
+    "ttfb": 48,
+    "dcl": 178.2,
+    "load": 180.3,
+    "html": 30033,
+    "js": 308498,
+    "jsFiles": 18,
+    "db_requests": 22,
+    "auth_requests": 4,
+    "db_ms": 160
+   },
+   "/admin/payroll": {
+    "ttfb": 40.2,
+    "dcl": 159.1,
+    "load": 159.8,
+    "html": 25396,
+    "js": 309025,
+    "jsFiles": 18,
+    "db_requests": 16,
+    "auth_requests": 4,
+    "db_ms": 79
+   },
+   "/admin/salary-slips": {
+    "ttfb": 39,
+    "dcl": 230.3,
+    "load": 231.9,
+    "html": 40291,
+    "js": 305576,
+    "jsFiles": 18,
+    "db_requests": 18,
+    "auth_requests": 4,
+    "db_ms": 95
+   },
+   "/admin/notifications": {
+    "ttfb": 63.4,
+    "dcl": 123.3,
+    "load": 125.1,
+    "html": 15550,
+    "js": 309023,
+    "jsFiles": 18,
+    "db_requests": 13,
+    "auth_requests": 4,
+    "db_ms": 58
+   },
+   "/admin/approvals": {
+    "ttfb": 60.4,
+    "dcl": 113,
+    "load": 113.6,
+    "html": 14270,
+    "js": 306447,
+    "jsFiles": 18,
+    "db_requests": 19,
+    "auth_requests": 4,
+    "db_ms": 118
+   },
+   "/admin/compliance": {
+    "ttfb": 66.5,
+    "dcl": 150.3,
+    "load": 151.1,
+    "html": 16239,
+    "js": 304291,
+    "jsFiles": 18,
+    "db_requests": 21,
+    "auth_requests": 4,
+    "db_ms": 201
+   },
+   "/admin/compliance/controls": {
+    "ttfb": 68.1,
+    "dcl": 149,
+    "load": 159.8,
+    "html": 23106,
+    "js": 304291,
+    "jsFiles": 18,
+    "db_requests": 24,
+    "auth_requests": 4,
+    "db_ms": 191
+   },
+   "/admin/audit-logs": {
+    "ttfb": 63.1,
+    "dcl": 134.6,
+    "load": 142.4,
+    "html": 24336,
+    "js": 303927,
+    "jsFiles": 18,
+    "db_requests": 14,
+    "auth_requests": 4,
+    "db_ms": 75
+   },
+   "/admin/roles": {
+    "ttfb": 51.4,
+    "dcl": 116.9,
+    "load": 119.2,
+    "html": 17068,
+    "js": 307137,
+    "jsFiles": 18,
+    "db_requests": 16,
+    "auth_requests": 4,
+    "db_ms": 90
+   }
+  },
+  "agent": {
+   "/admin/dashboard": {
+    "ttfb": 78.5,
+    "dcl": 180.1,
+    "load": 180.9,
+    "html": 24411,
+    "js": 315060,
+    "jsFiles": 19,
+    "db_requests": 26,
+    "auth_requests": 4,
+    "db_ms": 183
+   },
+   "/admin/attendance": {
+    "ttfb": 37.4,
+    "dcl": 96.6,
+    "load": 103.6,
+    "html": 13097,
+    "js": 307246,
+    "jsFiles": 18,
+    "db_requests": 11,
+    "auth_requests": 4,
+    "db_ms": 48
+   },
+   "/admin/productivity": {
+    "ttfb": 40.1,
+    "dcl": 213.1,
+    "load": 213.8,
+    "html": 20836,
+    "js": 410111,
+    "jsFiles": 19,
+    "db_requests": 24,
+    "auth_requests": 4,
+    "db_ms": 225
+   },
+   "/admin/leave": {
+    "ttfb": 44.1,
+    "dcl": 89.7,
+    "load": 95.1,
+    "html": 14371,
+    "js": 308498,
+    "jsFiles": 18,
+    "db_requests": 15,
+    "auth_requests": 4,
+    "db_ms": 103
+   },
+   "/admin/notifications": {
+    "ttfb": 51.1,
+    "dcl": 107.6,
+    "load": 110.9,
+    "html": 12740,
+    "js": 309023,
+    "jsFiles": 18,
+    "db_requests": 9,
+    "auth_requests": 4,
+    "db_ms": 42
+   }
+  }
+ },
+ "login": {
+  "super_admin": {
+   "token_ms": 159.2,
+   "to_dashboard_ms": 586.5
+  },
+  "agent": {
+   "token_ms": 163.6,
+   "to_dashboard_ms": 445.1
+  }
+ },
+ "api": {
+  "/api/time": {
+   "median_ms": 7.3,
+   "status": 200
+  }
+ },
+ "client_nav": {
+  "Employees": 469.0,
+  "Attendance": 486.2,
+  "Command center": 496.8
+ },
+ "db_top": [
+  "155.5|569|0.27|569|WITH pgrst_source AS ( SELECT \"public\".\"employees\".\"id\", \"public\".\"employees\".\"employee_code\", \"public\".\"employees\".\"full_name\", \"public\".\"employees\".\"email\", \"",
+  "69.4|3160|0.02|3160|select set_config('search_path', $1, true), set_config('role', $2, true), set_config('request.jwt.claims', $3, true), set_config('request.method', $4, true), se",
+  "65.1|150|0.43|150|WITH pgrst_source AS (SELECT pgrst_call.pgrst_scalar FROM (SELECT $1 AS json_data) pgrst_payload, LATERAL (SELECT \"p_user_id\" FROM json_to_record(pgrst_payload.",
+  "38.5|15|2.57|15|WITH pgrst_source AS ( SELECT \"public\".\"breaks\".\"session_id\" FROM \"public\".\"breaks\" WHERE \"public\".\"breaks\".\"ended_at\" IS NULL ) SELECT $1::bigint AS total_resu",
+  "32.4|16|2.03|16|WITH pgrst_source AS ( SELECT \"public\".\"breaks\".\"id\", \"public\".\"breaks\".\"employee_id\", \"public\".\"breaks\".\"break_type\", \"public\".\"breaks\".\"started_at\", \"public\".",
+  "31.3|575|0.05|575|SELECT users.aud, users.banned_until, users.confirmation_sent_at, users.confirmation_token, users.confirmed_at, users.created_at, users.deleted_at, users.email,",
+  "27.6|27|1.02|27|WITH pgrst_source AS ( SELECT \"public\".\"attendance\".\"employee_id\", \"public\".\"attendance\".\"attendance_date\" FROM \"public\".\"attendance\" WHERE \"public\".\"attendance",
+  "27.4|65|0.42|65|WITH pgrst_source AS ( SELECT \"public\".\"employees\".\"id\", \"public\".\"employees\".\"full_name\", \"public\".\"employees\".\"employee_code\" FROM \"public\".\"employees\" WHERE ",
+  "24.9|27|0.92|27|WITH pgrst_source AS ( SELECT \"public\".\"attendance\".\"employee_id\", \"public\".\"attendance\".\"attendance_date\", \"public\".\"attendance\".\"notes\" FROM \"public\".\"attenda",
+  "22.1|135|0.16|135|WITH pgrst_source AS ( SELECT \"public\".\"notifications\".\"id\", \"public\".\"notifications\".\"title\", \"public\".\"notifications\".\"body\", \"public\".\"notifications\".\"is_rea",
+  "19.8|42|0.47|42|WITH pgrst_source AS ( SELECT \"public\".\"breaks\".\"employee_id\", \"public\".\"breaks\".\"break_type\", \"public\".\"breaks\".\"started_at\", \"public\".\"breaks\".\"ended_at\", \"pu",
+  "13.8|577|0.02|577|SELECT sessions.aal, sessions.created_at, sessions.factor_id, sessions.id, sessions.ip, sessions.not_after, sessions.oauth_client_id, sessions.refreshed_at, ses",
+  "12.7|16|0.80|16|WITH pgrst_source AS ( SELECT \"public\".\"employee_sessions\".\"id\", \"public\".\"employee_sessions\".\"employee_id\", \"public\".\"employee_sessions\".\"started_at\", \"public\"",
+  "12.6|16|0.79|16|WITH pgrst_source AS ( SELECT \"public\".\"washroom_visits\".\"id\", \"public\".\"washroom_visits\".\"employee_id\", \"public\".\"washroom_visits\".\"started_at\", \"public\".\"wash",
+  "11.1|2|5.57|2|insert into public.audit_logs (actor_employee_id, action, table_name, record_id, old_data, new_data) values ( public.current_employee_id(), tg_op || $16 || tg_t",
+  "10.1|135|0.07|135|WITH pgrst_source AS ( SELECT \"public\".\"notifications\".\"id\" FROM \"public\".\"notifications\" WHERE \"public\".\"notifications\".\"employee_id\" = $1 AND \"public\".\"notifi",
+  "9.9|2|4.96|2|WITH pgrst_source AS ( SELECT \"public\".\"breaks\".\"id\", \"public\".\"breaks\".\"employee_id\", \"public\".\"breaks\".\"started_at\", \"public\".\"breaks\".\"break_type\" FROM \"publ",
+  "9.8|583|0.02|583|SELECT identities.created_at, identities.email, identities.id, identities.identity_data, identities.last_sign_in_at, identities.provider, identities.provider_id",
+  "8.7|44|0.20|44|WITH pgrst_source AS ( SELECT \"public\".\"meetings\".\"employee_id\", \"public\".\"meetings\".\"started_at\" FROM \"public\".\"meetings\" WHERE \"public\".\"meetings\".\"ended_at\" ",
+  "8.6|577|0.01|577|SELECT mfa_amr_claims.authentication_method, mfa_amr_claims.created_at, mfa_amr_claims.id, mfa_amr_claims.session_id, mfa_amr_claims.updated_at FROM mfa_amr_cla",
+  "7.9|1|7.86|1|WITH pgrst_source AS (INSERT INTO \"public\".\"attendance\"(\"attendance_date\", \"employee_id\", \"first_check_in\", \"notes\", \"status\") SELECT \"pgrst_body\".\"attendance_d",
+  "7.2|583|0.01|0|SELECT mfa_factors.created_at, mfa_factors.factor_type, mfa_factors.friendly_name, mfa_factors.id, mfa_factors.last_challenged_at, mfa_factors.phone, mfa_factor",
+  "6.7|44|0.15|44|WITH pgrst_source AS ( SELECT \"public\".\"breaks\".\"employee_id\", \"public\".\"breaks\".\"session_id\", \"public\".\"breaks\".\"break_type\", \"public\".\"breaks\".\"started_at\", \"",
+  "6.5|36|0.18|36|WITH pgrst_source AS ( SELECT \"public\".\"attendance\".\"employee_id\", \"public\".\"attendance\".\"attendance_date\", \"public\".\"attendance\".\"status\", \"public\".\"attendance",
+  "6.5|44|0.15|44|WITH pgrst_source AS ( SELECT \"public\".\"washroom_visits\".\"employee_id\", \"public\".\"washroom_visits\".\"session_id\", \"public\".\"washroom_visits\".\"started_at\", \"publi"
+ ],
+ "db_total": "769.5 ms over 9511 statements"
+}

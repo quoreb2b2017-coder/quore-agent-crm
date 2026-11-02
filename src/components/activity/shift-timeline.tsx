@@ -54,7 +54,11 @@ export function ShiftTimeline({
             </div>
 
             <div className="px-4 py-3">
-              <ActivityFeed events={group.events} />
+              {/* Send the browser only what the feed shows. The employee's name, code and
+                  ids are already in this group's header, so they are not repeated per event. */}
+              <ActivityFeed
+                events={group.events.map(({ id, at, label, detail, tone }) => ({ id, at, label, detail, tone }))}
+              />
             </div>
           </section>
         );

@@ -24,7 +24,10 @@ const dotClass: Record<ActivityTone, string> = {
   meeting: "bg-primary",
 };
 
-export function ActivityFeed({ events }: { events: ShiftActivityEvent[] }) {
+/** Only the fields the feed renders; keeps the page payload small. */
+export type ActivityFeedEvent = Pick<ShiftActivityEvent, "id" | "at" | "label" | "detail" | "tone">;
+
+export function ActivityFeed({ events }: { events: ActivityFeedEvent[] }) {
   const zone = getWorkSettings().timeZone;
   const live = events.some((event) => event.detail === "In progress");
   const now = useLiveNowMs(live);

@@ -66,10 +66,21 @@ export function mapChatMessage(row: MessageRow, url: string | null = null): Chat
 const MESSAGE_COLUMNS =
   "id, conversation_id, sender_id, body, created_at, attachment_path, attachment_name, attachment_mime, attachment_size";
 
-export async function purgeExpiredChat() {
+const PURGE_EVERY_MS = 10 * 60 * 1000;
+let lastPurgeAt = 0;
+
+/**
+ * Deletes chat older than the retention window. Reads already filter by the
+ * retention date, so pages schedule this with after() and it runs at most once
+ * every 10 minutes per server instance. Pass force to run it now.
+ */
+export async function purgeExpiredChat(options?: { force?: boolean }) {
+  const now = Date.now();
+  if (!options?.force && now - lastPurgeAt < PURGE_EVERY_MS) return;
+  lastPurgeAt = now;
   try {
-    const supabase = await createClient();
-    await supabase.rpc("purge_old_chat");
+    // Service client: no request cookies needed, so it is safe inside after().
+    await createServiceClient().rpc("purge_old_chat");
   } catch {
     // Function is added in 0016_chat_retention.sql.
   }
