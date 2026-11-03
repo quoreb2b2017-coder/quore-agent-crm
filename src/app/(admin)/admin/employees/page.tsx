@@ -103,7 +103,7 @@ export default async function EmployeesPage() {
         description="Select an employee to set their shift login/logout. Overtime for a day is set from Attendance or Team today → Edit."
         actions={
           <div className="flex flex-wrap gap-2">
-            <ManageDepartmentsDialog departments={departments} />
+            <ManageDepartmentsDialog departments={departments} employees={directory} />
             <CreateEmployeeDialog
               key={`add-emp-${directory.length}-${departments.map((d) => d.id).join(",")}`}
               employees={directory}

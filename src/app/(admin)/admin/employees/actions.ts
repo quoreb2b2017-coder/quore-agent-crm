@@ -335,6 +335,99 @@ export async function deleteDepartment(
   return { success: true, departmentId: existing.id, name: existing.name };
 }
 
+const assignEmployeeSchema = z.object({
+  departmentId: z.string().uuid("Pick a department"),
+  employeeId: z.string().uuid("Pick an employee"),
+  roleKey: assignableRole,
+});
+
+/** Put an existing employee into a department and set their app role. */
+export async function assignEmployeeToDepartment(
+  _prev: ActionState,
+  formData: FormData
+): Promise<ActionState> {
+  let ctx;
+  try {
+    ctx = await assertCanManageEmployees();
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Not authorized" };
+  }
+
+  const parsed = assignEmployeeSchema.safeParse({
+    departmentId: String(formData.get("departmentId") ?? "").trim(),
+    employeeId: String(formData.get("employeeId") ?? "").trim(),
+    roleKey: formData.get("roleKey"),
+  });
+  if (!parsed.success) {
+    return { error: parsed.error.issues[0]?.message ?? "Invalid assignment" };
+  }
+
+  const { departmentId, employeeId, roleKey } = parsed.data;
+  if (isHr(roleKey) && !isSuperAdmin(ctx.roleKey)) {
+    return { error: "Only Super Admin can assign the HR role" };
+  }
+
+  const blocked = await assertCanManageTarget(ctx, employeeId);
+  if (blocked) return { error: blocked };
+
+  const kind = await departmentKindForId(departmentId);
+  if (!kind || !roleAllowedForKind(kind, roleKey)) {
+    return { error: "That role does not belong to the selected department" };
+  }
+
+  let roleId: string;
+  try {
+    roleId = await roleIdForKey(roleKey);
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Role not found" };
+  }
+
+  const supabase = await createClient();
+  const { data: employee, error: employeeError } = await supabase
+    .from("employees")
+    .select("id")
+    .eq("id", employeeId)
+    .maybeSingle();
+  if (employeeError || !employee) {
+    return { error: employeeError?.message ?? "Employee not found" };
+  }
+
+  const { error: deptError } = await supabase
+    .from("employees")
+    .update({ department_id: departmentId, updated_at: new Date().toISOString() })
+    .eq("id", employeeId);
+  if (deptError) return { error: deptError.message };
+
+  const { data: currentRole } = await supabase
+    .from("employee_roles")
+    .select("id, role_id")
+    .eq("employee_id", employeeId)
+    .eq("is_primary", true)
+    .maybeSingle();
+
+  if (currentRole) {
+    if (currentRole.role_id !== roleId) {
+      const { error: roleError } = await supabase
+        .from("employee_roles")
+        .update({ role_id: roleId })
+        .eq("id", currentRole.id);
+      if (roleError) return { error: roleError.message };
+    }
+  } else {
+    const { error: roleError } = await supabase.from("employee_roles").insert({
+      employee_id: employeeId,
+      role_id: roleId,
+      is_primary: true,
+    });
+    if (roleError) return { error: roleError.message };
+  }
+
+  revalidatePath("/admin/employees");
+  revalidatePath(`/admin/employees/${employeeId}`);
+  revalidatePath("/admin/onboarding");
+  return { success: true, employeeId };
+}
+
 async function roleIdForKey(roleKey: AssignableRoleKey) {
   const supabase = await createClient();
   const { data: role, error } = await supabase
