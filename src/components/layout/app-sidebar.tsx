@@ -6,7 +6,7 @@ import { usePathname } from "next/navigation";
 import {
   Sidebar,
   SidebarContent,
-  SidebarFooter,
+  // SidebarFooter, // TEMP: used by paused MFA badge
   SidebarGroup,
   SidebarGroupContent,
   SidebarGroupLabel,
@@ -30,8 +30,8 @@ export function AppSidebar({
   modules,
   brand,
   badges,
-  mfaEnabled,
-  securityHref,
+  mfaEnabled: _mfaEnabled,
+  securityHref: _securityHref,
 }: {
   modules: ModuleDefinition[];
   brand: "admin" | "employee";
@@ -39,6 +39,8 @@ export function AppSidebar({
   mfaEnabled: boolean;
   securityHref: string;
 }) {
+  void _mfaEnabled;
+  void _securityHref;
   const pathname = usePathname();
   const { isMobile, setOpenMobile } = useSidebar();
   // Full prefetch only for menu items the user is about to open (pointer over,
@@ -113,23 +115,25 @@ export function AppSidebar({
         ))}
       </SidebarContent>
 
+      {/* TEMP: two-factor sidebar badge paused while MFA_ENFORCED is false
       <SidebarFooter className="p-3 group-data-[collapsible=icon]:hidden">
         <Link
-          href={securityHref}
+          href={_securityHref}
           className={cn(
             "flex items-start gap-2.5 rounded-lg border px-3 py-2.5 text-[12.5px] leading-snug transition",
-            mfaEnabled
+            _mfaEnabled
               ? "border-[#abefc6] bg-[#ecfdf3] text-[#067647] hover:bg-[#dcfae6]"
               : "border-[#fecdca] bg-[#fef3f2] text-[#b42318] hover:bg-[#fee4e2]"
           )}
         >
-          <span className={cn("mt-1 size-2 shrink-0 rounded-full", mfaEnabled ? "bg-[#17b26a]" : "bg-[#f04438]")} aria-hidden />
+          <span className={cn("mt-1 size-2 shrink-0 rounded-full", _mfaEnabled ? "bg-[#17b26a]" : "bg-[#f04438]")} aria-hidden />
           <span>
-            <span className="block font-semibold">{mfaEnabled ? "Two-factor sign-in on" : "Two-factor sign-in off"}</span>
-            <span className="block opacity-90">{mfaEnabled ? "Your account is protected." : "Turn it on to protect your account."}</span>
+            <span className="block font-semibold">{_mfaEnabled ? "Two-factor sign-in on" : "Two-factor sign-in off"}</span>
+            <span className="block opacity-90">{_mfaEnabled ? "Your account is protected." : "Turn it on to protect your account."}</span>
           </span>
         </Link>
       </SidebarFooter>
+      */}
       <SidebarRail />
     </Sidebar>
   );

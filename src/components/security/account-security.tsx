@@ -1,8 +1,10 @@
 import { PageHeader } from "@/components/dashboard/page-header";
-import { MfaManager } from "@/components/security/mfa-manager";
+// TEMP: two-factor UI paused — restore MfaManager when MFA_ENFORCED is true again.
+// import { MfaManager } from "@/components/security/mfa-manager";
 import { createServiceClient } from "@/lib/supabase/service";
 import { getMfaStatus } from "@/lib/auth/mfa";
-import { isManagement } from "@/lib/permissions/roles";
+// import { isManagement } from "@/lib/permissions/roles";
+import { MFA_ENFORCED } from "@/lib/auth/mfa-flags";
 import { describeAudit, changedKeys } from "@/lib/audit/describe";
 import { formatDateTime } from "@/lib/format";
 import type { EmployeeContext } from "@/lib/permissions/types";
@@ -39,8 +41,21 @@ export async function AccountSecurity({ ctx }: { ctx: EmployeeContext }) {
         title="Account security"
         description="Protect your sign-in and see what has changed on your account."
       />
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
+      <div
+        className={
+          MFA_ENFORCED
+            ? "grid gap-6 xl:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]"
+            : "grid gap-6"
+        }
+      >
+        {/* TEMP: two-factor paused
         <MfaManager required={isManagement(ctx.roleKey)} />
+        */}
+        {!MFA_ENFORCED ? (
+          <section className="rounded-xl border bg-card px-5 py-4 text-sm text-muted-foreground">
+            Two-factor sign-in is temporarily turned off. A different method will be added later.
+          </section>
+        ) : null}
         <div className="flex flex-col gap-5">
           <section aria-labelledby="about-heading" className="rounded-xl border bg-card">
             <h2 id="about-heading" className="border-b px-5 py-3.5 text-base font-semibold">Changes to your record</h2>

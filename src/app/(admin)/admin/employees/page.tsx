@@ -5,6 +5,7 @@ import { PageHeader } from "@/components/dashboard/page-header";
 import { StatCard } from "@/components/dashboard/stat-card";
 import { EmployeesTable } from "./employees-table";
 import { CreateEmployeeDialog } from "./create-employee-dialog";
+import { loadEmployeeDirectory } from "@/lib/queries/employee-directory";
 import { getCurrentEmployeeContext } from "@/lib/permissions/server";
 import {
   HR_ROLE,
@@ -30,7 +31,7 @@ export default async function EmployeesPage() {
   const supabase = await createClient();
 
   // Independent reads, fetched in parallel (role assignments no longer wait for the employee list).
-  const [{ data: employees }, { data: roles }, { data: employeeRoles }, companySettings] =
+  const [{ data: employees }, { data: roles }, { data: employeeRoles }, companySettings, directory] =
     await Promise.all([
       supabase
         .from("employees")
@@ -39,6 +40,7 @@ export default async function EmployeesPage() {
       supabase.from("roles").select("id, role_key").order("display_name"),
       supabase.from("employee_roles").select("employee_id, role_id").eq("is_primary", true),
       loadWorkSettings(),
+      loadEmployeeDirectory(),
     ]);
 
   const roleByEmployee = new Map((employeeRoles ?? []).map((r) => [r.employee_id, r.role_id]));
@@ -85,7 +87,7 @@ export default async function EmployeesPage() {
       <PageHeader
         title="Employees"
         description="Select an employee to set their shift login/logout. Overtime for a day is set from Attendance or Team today → Edit."
-        actions={<CreateEmployeeDialog />}
+        actions={<CreateEmployeeDialog employees={directory} />}
       />
 
       <section className="grid grid-cols-1 gap-3 sm:grid-cols-3">

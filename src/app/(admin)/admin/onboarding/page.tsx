@@ -6,13 +6,14 @@ import { requireManagement } from "@/lib/permissions/server";
 import { listOnboarding } from "@/lib/queries/onboarding";
 import { todayIso } from "@/lib/format";
 import { ONBOARDING_STEPS } from "@/lib/onboarding";
+import { loadEmployeeDirectory } from "@/lib/queries/employee-directory";
 import { CreateEmployeeDialog } from "../employees/create-employee-dialog";
 import { OnboardingTable } from "./onboarding-table";
 import { MigrationNotice } from "./migration-notice";
 
 export default async function OnboardingPage() {
   await requireManagement();
-  const result = await listOnboarding();
+  const [result, directory] = await Promise.all([listOnboarding(), loadEmployeeDirectory()]);
 
   if (result.missingTable) {
     return (
@@ -38,6 +39,7 @@ export default async function OnboardingPage() {
         actions={
           <CreateEmployeeDialog
             redirectToOnboarding
+            employees={directory}
             trigger={
               <Button>
                 <UserPlus className="size-4" />

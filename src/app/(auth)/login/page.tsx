@@ -105,11 +105,12 @@ export default function LoginPage() {
       return;
     }
 
-    const { data: aal } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
-    if (aal?.nextLevel === "aal2" && aal.currentLevel !== "aal2") {
-      window.location.assign("/verify");
-      return;
-    }
+    // TEMP: two-factor paused (MFA_ENFORCED=false). Re-enable with the block below.
+    // const { data: aal } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+    // if (aal?.nextLevel === "aal2" && aal.currentLevel !== "aal2") {
+    //   window.location.assign("/verify");
+    //   return;
+    // }
 
     const claims = readWorktrackJwtClaims(signInData.session?.access_token);
     // Hard navigation is faster than soft RSC replace after auth cookie write.

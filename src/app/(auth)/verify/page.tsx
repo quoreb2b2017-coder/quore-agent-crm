@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label";
 import { PublicShell } from "@/components/layout/public-shell";
 import { createClient } from "@/lib/supabase/client";
 import { postLoginPath, readWorktrackJwtClaims } from "@/lib/auth/jwt-claims";
+import { MFA_ENFORCED } from "@/lib/auth/mfa-flags";
 
 /** Second step of sign-in for accounts with two-factor turned on. */
 export default function VerifyPage() {
@@ -21,12 +22,18 @@ export default function VerifyPage() {
   useEffect(() => {
     const supabase = createClient();
     void (async () => {
-      const { data: aal } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
       const { data: session } = await supabase.auth.getSession();
       if (!session.session) {
         window.location.assign("/login");
         return;
       }
+      // TEMP: two-factor paused — skip verify and continue to the app.
+      if (!MFA_ENFORCED) {
+        const claims = readWorktrackJwtClaims(session.session.access_token);
+        window.location.assign(postLoginPath(claims.roleKey));
+        return;
+      }
+      const { data: aal } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
       if (aal?.currentLevel === "aal2" || aal?.nextLevel !== "aal2") {
         const claims = readWorktrackJwtClaims(session.session.access_token);
         window.location.assign(postLoginPath(claims.roleKey));

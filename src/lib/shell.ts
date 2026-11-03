@@ -17,9 +17,10 @@ export async function loadShell(ctx: EmployeeContext, brand: "admin" | "employee
   if (approvals) {
     paletteActions.push({ label: `Review ${approvals} pending approval${approvals === 1 ? "" : "s"}`, hint: "Approvals", href: "/admin/approvals", icon: "inbox" });
   }
-  if (!mfaEnabled) {
-    paletteActions.push({ label: "Turn on two-factor sign-in", hint: "Account security", href: `${base}/security`, icon: "fingerprint" });
-  }
+  // TEMP: two-factor paused — don't nag in the command palette.
+  // if (!mfaEnabled) {
+  //   paletteActions.push({ label: "Turn on two-factor sign-in", hint: "Account security", href: `${base}/security`, icon: "fingerprint" });
+  // }
   if (isSuperAdmin(ctx.roleKey)) {
     paletteActions.push(
       { label: "Open the control register", hint: "Compliance", href: "/admin/compliance/controls", icon: "shield" },

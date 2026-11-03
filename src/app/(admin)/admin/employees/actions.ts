@@ -303,6 +303,7 @@ export async function updateEmployee(
   }
 
   const previousSchedule = parseWorkSchedule(existing.work_schedule);
+  const skipWorkSchedule = formData.get("skipWorkSchedule") === "1";
   const workSchedule = workSchedulePayload(scheduleFromUpdate(data), previousSchedule) as Json;
 
   const { error: updateError } = await supabase
@@ -312,9 +313,9 @@ export async function updateEmployee(
       full_name: data.fullName,
       email: data.email,
       phone: data.phone,
-      work_schedule: workSchedule,
       updated_at: new Date().toISOString(),
       ...(data.joiningDate ? { joining_date: data.joiningDate } : {}),
+      ...(skipWorkSchedule ? {} : { work_schedule: workSchedule }),
     })
     .eq("id", employeeId);
 
@@ -414,7 +415,7 @@ export async function updateEmployee(
     /* shift is saved; totals catch up on next clock-out */
   }
 
-  return { success: true };
+  return { success: true, employeeId };
 }
 
 const optionalHrText = z
