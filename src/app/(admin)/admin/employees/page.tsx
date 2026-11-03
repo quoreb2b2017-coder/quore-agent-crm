@@ -104,7 +104,11 @@ export default async function EmployeesPage() {
         actions={
           <div className="flex flex-wrap gap-2">
             <ManageDepartmentsDialog departments={departments} />
-            <CreateEmployeeDialog employees={directory} departments={departments} />
+            <CreateEmployeeDialog
+              key={`add-emp-${directory.length}-${departments.map((d) => d.id).join(",")}`}
+              employees={directory}
+              departments={departments}
+            />
           </div>
         }
       />

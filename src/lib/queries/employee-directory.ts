@@ -1,5 +1,5 @@
 import "server-only";
-import { createDataClient as createClient } from "@/lib/supabase/data";
+import { createServiceClient } from "@/lib/supabase/service";
 import { excludeIds, superAdminEmployeeIds } from "@/lib/queries/admin-dashboard";
 import {
   HR_ROLE,
@@ -27,7 +27,8 @@ export type EmployeeDirectoryOption = {
 
 /** Active staff for Add Employee: department filter → pick → autofill. */
 export async function loadEmployeeDirectory(): Promise<EmployeeDirectoryOption[]> {
-  const supabase = await createClient();
+  // Service client: admin directory must see every staff/HR role link (RLS can hide rows).
+  const supabase = createServiceClient();
   const adminIds = await superAdminEmployeeIds(supabase);
   const skip = excludeIds(adminIds);
 
@@ -56,11 +57,14 @@ export async function loadEmployeeDirectory(): Promise<EmployeeDirectoryOption[]
     (onboarding ?? []).map((row) => [row.employee_id, row.date_of_birth ?? ""])
   );
 
+  const assignableRoles = new Set<string>(["AGENT", "DATABASE", "EMAIL_MARKETING", HR_ROLE]);
+
   const rows: EmployeeDirectoryOption[] = [];
   for (const employee of employees ?? []) {
-    const roleKey = roleByEmployee.get(employee.id) ?? "";
-    if (roleKey === SUPER_ADMIN_ROLE) continue;
-    if (!isStaffRole(roleKey) && !isHr(roleKey)) continue;
+    const roleKey = String(roleByEmployee.get(employee.id) ?? "").trim();
+    if (!roleKey || roleKey === SUPER_ADMIN_ROLE) continue;
+    // Explicit include — do not use isManagement() here (that would drop HR).
+    if (!assignableRoles.has(roleKey) && !isStaffRole(roleKey) && !isHr(roleKey)) continue;
     rows.push({
       id: employee.id,
       fullName: employee.full_name,

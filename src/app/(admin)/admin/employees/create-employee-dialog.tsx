@@ -14,6 +14,7 @@ import { minutesToTimeValue } from "@/lib/work-settings";
 import { NATIVE_SELECT_CLASS } from "@/lib/shift";
 import {
   DEPARTMENT_KIND_OPTIONS,
+  effectiveDepartmentKind,
   roleAllowedForKind,
   rolesForDepartmentKind,
   type AssignableRoleKey,
@@ -63,16 +64,17 @@ export function CreateEmployeeDialog({
   const [fields, setFields] = useState<FormFields>(EMPTY_FORM);
 
   const selectedDepartment = departments.find((row) => row.id === departmentId) ?? null;
-  const roleOptions = rolesForDepartmentKind(selectedDepartment?.kind);
+  const selectedKind = selectedDepartment ? effectiveDepartmentKind(selectedDepartment) : null;
+  const roleOptions = rolesForDepartmentKind(selectedKind);
 
-  // Match linked department_id, or legacy staff with no department_id but the right role.
+  // Show people linked to this department OR whose app role belongs to this department kind.
+  // Example: Human Resources → every HR role employee (even if department_id was empty before).
   const departmentEmployees =
-    !departmentId || !selectedDepartment
+    !departmentId || !selectedKind
       ? []
       : employees.filter((row) => {
           if (row.departmentId === departmentId) return true;
-          if (row.departmentId != null) return false;
-          return roleAllowedForKind(selectedDepartment.kind, row.roleKey);
+          return roleAllowedForKind(selectedKind, row.roleKey);
         });
   const selected = departmentEmployees.find((row) => row.id === employeeId) ?? null;
   const isExisting = Boolean(selected);
@@ -114,7 +116,8 @@ export function CreateEmployeeDialog({
     setDepartmentId(nextId);
     setEmployeeId("");
     applyEmployee(null);
-    const kind = departments.find((row) => row.id === nextId)?.kind;
+    const dept = departments.find((row) => row.id === nextId) ?? null;
+    const kind = dept ? effectiveDepartmentKind(dept) : null;
     const roles = rolesForDepartmentKind(kind);
     setRoleKey(roles.length === 1 ? roles[0].roleKey : "");
   }

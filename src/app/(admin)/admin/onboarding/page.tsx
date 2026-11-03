@@ -43,6 +43,7 @@ export default async function OnboardingPage() {
         description={`${ONBOARDING_STEPS.length} simple steps for every new joiner — offer letter to first week.`}
         actions={
           <CreateEmployeeDialog
+            key={`add-emp-${directory.length}-${departments.map((d) => d.id).join(",")}`}
             redirectToOnboarding
             employees={directory}
             departments={departments}

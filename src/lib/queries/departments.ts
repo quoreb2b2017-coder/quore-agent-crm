@@ -1,5 +1,5 @@
 import "server-only";
-import { createDataClient as createClient } from "@/lib/supabase/data";
+import { createServiceClient } from "@/lib/supabase/service";
 import {
   DEPARTMENT_KIND_OPTIONS,
   isDepartmentKind,
@@ -14,7 +14,7 @@ export type DepartmentOption = {
 };
 
 async function ensureDepartmentKinds(
-  supabase: Awaited<ReturnType<typeof createClient>>,
+  supabase: ReturnType<typeof createServiceClient>,
   rows: { id: string; name: string; kind: string | null }[]
 ) {
   const byKind = new Map(
@@ -62,7 +62,7 @@ async function ensureDepartmentKinds(
 
 /** Org departments with role-group kind. Ensures the three core departments exist. */
 export async function loadDepartments(): Promise<DepartmentOption[]> {
-  const supabase = await createClient();
+  const supabase = createServiceClient();
   const { data, error } = await supabase
     .from("departments")
     .select("id, name, kind")
