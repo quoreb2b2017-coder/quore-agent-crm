@@ -11,6 +11,7 @@ import {
   shiftSpansMidnight,
   wallToUtc,
   zonedWallToUtc,
+  type WorkSettings,
 } from "@/lib/work-settings";
 
 /** Productivity targets are counted from this shift date onward. */
@@ -65,12 +66,18 @@ export function istLocalToUtc(dateIso: string, hour: number, minute: number, sec
   return zonedWallToUtc(dateIso, hour, minute, getWorkSettings().timeZone, second);
 }
 
-export function shiftWindowUtc(shiftDate = todayIso()): { start: Date; end: Date } {
-  const settings = getWorkSettings();
+export function shiftWindowUtc(
+  shiftDate = todayIso(),
+  settings: WorkSettings = getWorkSettings(),
+  /** Admin-approved minutes past official logout. */
+  overtimeMinutes = 0
+): { start: Date; end: Date } {
   const endDate = shiftSpansMidnight(settings) ? addDaysIso(shiftDate, 1) : shiftDate;
+  const end = wallToUtc(endDate, settings.logoutMinutes, settings.timeZone);
+  const extraMs = Math.max(0, Math.floor(overtimeMinutes)) * 60_000;
   return {
     start: wallToUtc(shiftDate, settings.loginMinutes, settings.timeZone),
-    end: wallToUtc(endDate, settings.logoutMinutes, settings.timeZone),
+    end: extraMs > 0 ? new Date(end.getTime() + extraMs) : end,
   };
 }
 
@@ -78,12 +85,17 @@ export function shiftWindowUtc(shiftDate = todayIso()): { start: Date; end: Date
 export const INDIA_LATE_MINUTES = 19 * 60;
 export const INDIA_LATE_TIME = "7:00 PM";
 
-/** Productive time starts at 6:30 PM even if they signed in earlier, and stops at 3:30 AM. */
-export function creditedWorkBounds(startedAt: string | Date, endedAt: Date | number = trustedNowMs()) {
+/** Productive time starts at login even if they signed in earlier, and stops at logout (+ overtime). */
+export function creditedWorkBounds(
+  startedAt: string | Date,
+  endedAt: Date | number = trustedNowMs(),
+  settings: WorkSettings = getWorkSettings(),
+  overtimeMinutes = 0
+) {
   const start = typeof startedAt === "string" ? new Date(startedAt) : startedAt;
   const endAt = typeof endedAt === "number" ? new Date(endedAt) : endedAt;
   const shiftDate = shiftDateIso(start);
-  const { start: official, end } = shiftWindowUtc(shiftDate);
+  const { start: official, end } = shiftWindowUtc(shiftDate, settings, overtimeMinutes);
   const from = Math.max(start.getTime(), official.getTime());
   const to = Math.min(endAt.getTime(), end.getTime());
   return {
@@ -94,14 +106,20 @@ export function creditedWorkBounds(startedAt: string | Date, endedAt: Date | num
   };
 }
 
-/** Part of a break / washroom visit that falls inside the session's credited 6:30 PM–3:30 AM window. */
+/** Part of a break / washroom visit that falls inside the session's credited shift window. */
 export function creditedAwaySeconds(
   sessionStartedAt: string | Date,
   row: { started_at: string; ended_at: string | null; duration_seconds?: number | null },
-  now = trustedNowMs()
+  now = trustedNowMs(),
+  settings: WorkSettings = getWorkSettings(),
+  overtimeMinutes = 0
 ) {
   const sessionStart = typeof sessionStartedAt === "string" ? new Date(sessionStartedAt) : sessionStartedAt;
-  const { start: official, end } = shiftWindowUtc(shiftDateIso(sessionStart));
+  const { start: official, end } = shiftWindowUtc(
+    shiftDateIso(sessionStart),
+    settings,
+    overtimeMinutes
+  );
   const windowFrom = Math.max(sessionStart.getTime(), official.getTime());
   const startedAt = new Date(row.started_at).getTime();
   const endedAt = startedAt + breakDurationSeconds(row, now) * 1000;
@@ -151,16 +169,20 @@ export function breakPoolLeftSeconds(used: Record<BreakSlot, number>, _washroomS
 }
 
 /** True when the clock-in is after the shift login time in the configured time zone. */
-export function isLateClockIn(at: Date | string = trustedNowDate()) {
+export function isLateClockIn(
+  at: Date | string = trustedNowDate(),
+  settings: WorkSettings = getWorkSettings()
+) {
   const date = typeof at === "string" ? new Date(at) : at;
-  const settings = getWorkSettings();
   const shiftDate = shiftDateIso(date);
   return date.getTime() > wallToUtc(shiftDate, settings.loginMinutes, settings.timeZone).getTime();
 }
 
 /** From logout (or midnight) on the shift date through the next boundary — includes early login. */
-export function shiftAccountingWindowUtc(shiftDate = todayIso()): { start: Date; end: Date } {
-  const settings = getWorkSettings();
+export function shiftAccountingWindowUtc(
+  shiftDate = todayIso(),
+  settings: WorkSettings = getWorkSettings()
+): { start: Date; end: Date } {
   if (!shiftSpansMidnight(settings)) {
     return {
       start: wallToUtc(shiftDate, 0, settings.timeZone),
@@ -173,8 +195,10 @@ export function shiftAccountingWindowUtc(shiftDate = todayIso()): { start: Date;
   };
 }
 
-export function isInShiftWindow(date = trustedNowDate()): boolean {
-  const settings = getWorkSettings();
+export function isInShiftWindow(
+  date = trustedNowDate(),
+  settings: WorkSettings = getWorkSettings()
+): boolean {
   const minutes = minutesInTimeZone(date, settings.timeZone);
   if (shiftSpansMidnight(settings)) {
     return minutes >= settings.loginMinutes || minutes < settings.logoutMinutes;
@@ -182,8 +206,10 @@ export function isInShiftWindow(date = trustedNowDate()): boolean {
   return minutes >= settings.loginMinutes && minutes < settings.logoutMinutes;
 }
 
-export function shiftCountdown(date = trustedNowDate()): { open: boolean; minutesRemaining: number } {
-  const settings = getWorkSettings();
+export function shiftCountdown(
+  date = trustedNowDate(),
+  settings: WorkSettings = getWorkSettings()
+): { open: boolean; minutesRemaining: number } {
   const minutes = minutesInTimeZone(date, settings.timeZone);
   const { loginMinutes: login, logoutMinutes: logout } = settings;
   const overnight = shiftSpansMidnight(settings);

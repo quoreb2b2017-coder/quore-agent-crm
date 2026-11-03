@@ -3,7 +3,8 @@ import { createServiceClient } from "@/lib/supabase/service";
 import { shiftDateIso, todayIso } from "@/lib/format";
 import { formatLeaveComment } from "@/lib/leave";
 import { leaveNotesByDay } from "@/lib/queries/leave";
-import { formatMinutesLabel, getWorkSettings } from "@/lib/work-settings";
+import { applyWorkSchedule, formatMinutesLabel, parseWorkSchedule } from "@/lib/work-settings";
+import { loadWorkSettings } from "@/lib/work-settings-server";
 import { dailyActiveSeconds } from "@/lib/live-time";
 import {
   breakExcess,
@@ -166,29 +167,41 @@ function leaveCommentFor(
   return note.reason || null;
 }
 
-/** Marks Present rows whose clock-in is after the shift login time as Late. */
+/** Marks Present rows whose clock-in is after that employee's login time as Late. */
 async function syncLateClockIns(employeeIds: string[], start: string, end: string) {
   if (employeeIds.length === 0) return;
   const service = createServiceClient();
-  const { data } = await service
-    .from("attendance")
-    .select("id, first_check_in")
-    .in("employee_id", employeeIds)
-    .gte("attendance_date", start)
-    .lte("attendance_date", end)
-    .eq("status", "PRESENT")
-    .not("first_check_in", "is", null);
-  const lateIds = (data ?? [])
-    .filter((row) => row.first_check_in && isLateClockIn(row.first_check_in))
-    .map((row) => row.id);
-  if (lateIds.length === 0) return;
-  await service
-    .from("attendance")
-    .update({
-      status: "LATE",
-      notes: `Late after ${formatMinutesLabel(getWorkSettings().loginMinutes)}`,
-    })
-    .in("id", lateIds);
+  const company = await loadWorkSettings();
+  const [{ data }, { data: schedules }] = await Promise.all([
+    service
+      .from("attendance")
+      .select("id, employee_id, first_check_in")
+      .in("employee_id", employeeIds)
+      .gte("attendance_date", start)
+      .lte("attendance_date", end)
+      .eq("status", "PRESENT")
+      .not("first_check_in", "is", null),
+    service.from("employees").select("id, work_schedule").in("id", employeeIds),
+  ]);
+  const settingsByEmployee = new Map(
+    (schedules ?? []).map((row) => [
+      row.id,
+      applyWorkSchedule(company, parseWorkSchedule(row.work_schedule)),
+    ])
+  );
+  const lateByNote = new Map<string, string[]>();
+  for (const row of data ?? []) {
+    if (!row.first_check_in) continue;
+    const settings = settingsByEmployee.get(row.employee_id) ?? company;
+    if (!isLateClockIn(row.first_check_in, settings)) continue;
+    const note = `Late after ${formatMinutesLabel(settings.loginMinutes, settings.timeZone)}`;
+    const ids = lateByNote.get(note) ?? [];
+    ids.push(row.id);
+    lateByNote.set(note, ids);
+  }
+  for (const [notes, ids] of lateByNote) {
+    await service.from("attendance").update({ status: "LATE", notes }).in("id", ids);
+  }
 }
 
 export async function getProductivityReport(

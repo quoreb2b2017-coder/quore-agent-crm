@@ -236,6 +236,7 @@ export interface Database {
           total_active_seconds: number;
           total_break_seconds: number;
           total_idle_seconds: number;
+          overtime_minutes: number;
           status:
             | "PRESENT"
             | "LATE"
@@ -258,6 +259,7 @@ export interface Database {
           total_active_seconds?: number;
           total_break_seconds?: number;
           total_idle_seconds?: number;
+          overtime_minutes?: number;
           status?:
             | "PRESENT"
             | "LATE"

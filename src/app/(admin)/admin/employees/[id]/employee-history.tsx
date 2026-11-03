@@ -16,6 +16,7 @@ import { EmptyState } from "@/components/dashboard/empty-state";
 import { ProductivityChart } from "@/components/dashboard/productivity-chart";
 import { BreaksPanel } from "@/components/dashboard/breaks-panel";
 import { AttendanceStatusBadge } from "@/components/attendance/attendance-status-badge";
+import { EditAttendanceDialog } from "@/components/attendance/edit-attendance-dialog";
 import {
   Table,
   TableBody,
@@ -51,10 +52,12 @@ const leaveTone: Record<string, string> = {
 
 export function EmployeeHistory({
   employeeId,
+  employeeName,
   data,
   showPayroll = true,
 }: {
   employeeId: string;
+  employeeName: string;
   data: EmployeeHistoryPayload;
   showPayroll?: boolean;
 }) {
@@ -161,7 +164,9 @@ export function EmployeeHistory({
                   <TableHead>Check out</TableHead>
                   <TableHead>Productive</TableHead>
                   <TableHead>Break</TableHead>
-                  <TableHead className="pr-5">Excess break</TableHead>
+                  <TableHead>Overtime</TableHead>
+                  <TableHead>Excess break</TableHead>
+                  <TableHead className="pr-5 text-right">Edit</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -179,8 +184,19 @@ export function EmployeeHistory({
                     </TableCell>
                     <TableCell className="tabular-nums">{formatDuration(row.total_active_seconds)}</TableCell>
                     <TableCell className="tabular-nums">{formatBreakDuration(row.total_break_seconds)}</TableCell>
-                    <TableCell className="pr-5">
+                    <TableCell className="tabular-nums text-muted-foreground">
+                      {row.overtime_minutes > 0 ? `${row.overtime_minutes} min` : "—"}
+                    </TableCell>
+                    <TableCell>
                       <BreakExcessCell excess={data.excessByDate[row.attendance_date] ?? emptyExcess()} />
+                    </TableCell>
+                    <TableCell className="pr-5 text-right">
+                      <EditAttendanceDialog
+                        employeeId={employeeId}
+                        employeeName={employeeName}
+                        attendanceDate={row.attendance_date}
+                        attendance={row}
+                      />
                     </TableCell>
                   </TableRow>
                 ))}

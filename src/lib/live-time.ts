@@ -1,5 +1,6 @@
 import { trustedNowMs } from "@/lib/clock-anchor";
 import { creditedAwaySeconds, creditedWorkBounds } from "@/lib/shift";
+import { getWorkSettings, type WorkSettings } from "@/lib/work-settings";
 
 /** `sessionClosed*Seconds` must already be limited to the credited window (see `creditedAwaySeconds`). */
 export function dailyActiveSeconds(input: {
@@ -10,13 +11,23 @@ export function dailyActiveSeconds(input: {
   sessionClosedWashroomSeconds?: number;
   openWashroomStartedAt?: string | null;
   now?: number;
+  settings?: WorkSettings;
+  overtimeMinutes?: number;
 }) {
   if (!input.sessionStartedAt) return input.storedActiveSeconds;
   const now = input.now ?? trustedNowMs();
-  const elapsed = creditedWorkBounds(input.sessionStartedAt, now).seconds;
+  const settings = input.settings ?? getWorkSettings();
+  const overtimeMinutes = input.overtimeMinutes ?? 0;
+  const elapsed = creditedWorkBounds(input.sessionStartedAt, now, settings, overtimeMinutes).seconds;
   const openAway = (startedAt: string | null | undefined) =>
     startedAt
-      ? creditedAwaySeconds(input.sessionStartedAt as string, { started_at: startedAt, ended_at: null }, now)
+      ? creditedAwaySeconds(
+          input.sessionStartedAt as string,
+          { started_at: startedAt, ended_at: null },
+          now,
+          settings,
+          overtimeMinutes
+        )
       : 0;
   const closedAway = input.sessionClosedWashroomSeconds ?? 0;
   return (

@@ -31,6 +31,8 @@ export type EmployeeHistoryAttendance = {
   total_active_seconds: number;
   total_break_seconds: number;
   total_idle_seconds: number;
+  overtime_minutes: number;
+  notes: string | null;
 };
 
 export type EmployeeHistoryLeave = {
@@ -94,7 +96,7 @@ export async function getEmployeeHistory(employeeId: string): Promise<EmployeeHi
     supabase
       .from("attendance")
       .select(
-        "id, attendance_date, status, first_check_in, last_check_out, total_active_seconds, total_break_seconds, total_idle_seconds"
+        "id, attendance_date, status, first_check_in, last_check_out, total_active_seconds, total_break_seconds, total_idle_seconds, overtime_minutes, notes"
       )
       .eq("employee_id", employeeId)
       .gte("attendance_date", since)
@@ -228,6 +230,8 @@ export async function getEmployeeHistory(employeeId: string): Promise<EmployeeHi
     chartData,
     attendance: rows.map((row) => ({
       ...row,
+      overtime_minutes: row.overtime_minutes ?? 0,
+      notes: row.notes ?? null,
       total_active_seconds: creditedProductiveSeconds(row.total_active_seconds, row.status),
     })),
     breaks: (breakRows ?? []).map((row) => ({

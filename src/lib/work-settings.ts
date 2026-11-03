@@ -10,6 +10,12 @@ export type WorkSettings = {
   annualPaidLeaveDays: number;
 };
 
+/** Per-employee override stored in `employees.work_schedule`. Empty = company default. */
+export type WorkSchedule = {
+  loginMinutes: number;
+  logoutMinutes: number;
+};
+
 export const DEFAULT_WORK_SETTINGS: WorkSettings = {
   timeZone: "Asia/Kolkata",
   loginMinutes: 18 * 60 + 30,
@@ -17,6 +23,42 @@ export const DEFAULT_WORK_SETTINGS: WorkSettings = {
   lateMinutes: 19 * 60,
   annualPaidLeaveDays: 18,
 };
+
+function asFiniteMinutes(value: unknown): number | null {
+  if (typeof value !== "number" || !Number.isFinite(value)) return null;
+  const minutes = Math.floor(value);
+  if (minutes < 0 || minutes >= 24 * 60) return null;
+  return minutes;
+}
+
+/** Reads a saved employee schedule from jsonb. Null means use company shift. */
+export function parseWorkSchedule(raw: unknown): WorkSchedule | null {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const row = raw as Record<string, unknown>;
+  const loginMinutes = asFiniteMinutes(row.loginMinutes);
+  const logoutMinutes = asFiniteMinutes(row.logoutMinutes);
+  if (loginMinutes == null || logoutMinutes == null) return null;
+  if (loginMinutes === logoutMinutes) return null;
+  return { loginMinutes, logoutMinutes };
+}
+
+/** Company settings with optional employee login/logout override. Late = login + 1 min. */
+export function applyWorkSchedule(
+  company: WorkSettings,
+  schedule: WorkSchedule | null | undefined
+): WorkSettings {
+  if (!schedule) return company;
+  return {
+    ...company,
+    loginMinutes: schedule.loginMinutes,
+    logoutMinutes: schedule.logoutMinutes,
+    lateMinutes: (schedule.loginMinutes + 1) % (24 * 60),
+  };
+}
+
+export function workSchedulePayload(schedule: WorkSchedule | null): WorkSchedule | Record<string, never> {
+  return schedule ?? {};
+}
 
 export const TIME_ZONE_OPTIONS: { id: string; label: string }[] = [
   { id: "Asia/Kolkata", label: "India — Asia/Kolkata" },

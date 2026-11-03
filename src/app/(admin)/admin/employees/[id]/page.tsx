@@ -15,7 +15,10 @@ import {
 import { formatDate, formatEmploymentStatus, initials } from "@/lib/format";
 import { Pill } from "@/components/wt/panel";
 import { getEmployeeHistory } from "@/lib/queries/employee-history";
+import { applyWorkSchedule, formatMinutesLabel, parseWorkSchedule } from "@/lib/work-settings";
+import { loadWorkSettings } from "@/lib/work-settings-server";
 import { EditEmployeeForm } from "./edit-employee-form";
+import { EmployeeOvertimeForm } from "./employee-overtime-form";
 import { EmployeeManageButtons } from "./employee-manage-buttons";
 import { EmployeeTabs } from "./employee-tabs";
 import { EmployeeHistory } from "./employee-history";
@@ -46,11 +49,15 @@ export default async function EmployeeDetailPage({
   }
 
   const supabase = await createClient();
-  const [{ data: employee }, { data: onboarding }] = await Promise.all([
+  const [{ data: employee }, { data: onboarding }, companySettings] = await Promise.all([
     supabase.from("employees").select("*").eq("id", id).single(),
     supabase.from("employee_onboarding").select("date_of_birth").eq("employee_id", id).maybeSingle(),
+    loadWorkSettings(),
   ]);
   if (!employee) notFound();
+  const schedule = parseWorkSchedule(employee.work_schedule);
+  const effectiveShift = applyWorkSchedule(companySettings, schedule);
+  const shiftLabel = `${formatMinutesLabel(effectiveShift.loginMinutes, effectiveShift.timeZone)} – ${formatMinutesLabel(effectiveShift.logoutMinutes, effectiveShift.timeZone)}${schedule ? "" : " (company)"}`;
 
   const { data: currentRole } = await supabase
     .from("employee_roles")
@@ -131,6 +138,7 @@ export default async function EmployeeDetailPage({
           </div>
           <EmployeeHistory
             employeeId={id}
+            employeeName={employee.full_name}
             data={history}
             showPayroll={!targetIsManagement}
           />
@@ -174,20 +182,25 @@ export default async function EmployeeDetailPage({
               label: "Joined",
               value: employee.joining_date ? formatDate(employee.joining_date) : "",
             },
+            { label: "Shift", value: shiftLabel },
           ]}
         >
           <div>
             <h2 className="text-sm font-semibold">Edit account</h2>
             <p className="mt-0.5 text-sm text-muted-foreground">
-              Super Admin and HR can change email and set a new login password. Saved passwords stay encrypted.
+              Super Admin and HR can change email, password, and this employee&apos;s login / logout times.
             </p>
             <div className="mt-5">
               <EditEmployeeForm
                 employee={employee}
                 dateOfBirth={onboarding?.date_of_birth ?? null}
                 currentDepartment={department}
+                companySettings={companySettings}
                 lockDepartment={targetIsManagement}
               />
+            </div>
+            <div className="mt-8 border-t pt-6">
+              <EmployeeOvertimeForm employeeId={employee.id} employeeName={employee.full_name} />
             </div>
           </div>
         </ProfileCard>

@@ -1,9 +1,14 @@
 import "server-only";
 import { createServiceClient } from "@/lib/supabase/service";
+import { getAuthUser } from "@/lib/supabase/server";
 import {
   DEFAULT_WORK_SETTINGS,
+  applyWorkSchedule,
+  getWorkSettings,
   lateIsInsideShift,
+  parseWorkSchedule,
   setWorkSettings,
+  type WorkSchedule,
   type WorkSettings,
 } from "@/lib/work-settings";
 
@@ -81,4 +86,69 @@ export function validateWorkSettings(settings: WorkSettings): string | null {
     return "Choose a valid time zone.";
   }
   return null;
+}
+
+export function validateWorkSchedule(schedule: WorkSchedule): string | null {
+  if (schedule.loginMinutes === schedule.logoutMinutes) {
+    return "Login and logout time cannot be the same.";
+  }
+  return null;
+}
+
+/** Per-employee login/logout override, or null when they use the company shift. */
+export async function loadEmployeeWorkSchedule(employeeId: string): Promise<WorkSchedule | null> {
+  try {
+    const { data, error } = await createServiceClient()
+      .from("employees")
+      .select("work_schedule")
+      .eq("id", employeeId)
+      .maybeSingle();
+    if (error || !data) return null;
+    return parseWorkSchedule(data.work_schedule);
+  } catch {
+    return null;
+  }
+}
+
+/** Company shift with this employee's login/logout override applied. */
+export async function loadEffectiveWorkSettings(employeeId?: string | null): Promise<WorkSettings> {
+  const company = await loadWorkSettings();
+  if (!employeeId) return company;
+  const schedule = await loadEmployeeWorkSchedule(employeeId);
+  const settings = applyWorkSchedule(company, schedule);
+  setWorkSettings(settings);
+  return settings;
+}
+
+/** Signed-in employee's effective shift (company + their override). */
+export async function loadEffectiveWorkSettingsForCurrentUser(): Promise<WorkSettings> {
+  const company = await loadWorkSettings();
+  try {
+    const user = await getAuthUser();
+    if (!user) return company;
+    const { data } = await createServiceClient()
+      .from("employees")
+      .select("work_schedule")
+      .eq("auth_user_id", user.id)
+      .maybeSingle();
+    const settings = applyWorkSchedule(company, parseWorkSchedule(data?.work_schedule));
+    setWorkSettings(settings);
+    return settings;
+  } catch {
+    return company;
+  }
+}
+
+/** Temporarily apply one employee's shift for a server calculation, then restore. */
+export async function withEmployeeWorkSettings<T>(
+  employeeId: string,
+  fn: (settings: WorkSettings) => T | Promise<T>
+): Promise<T> {
+  const previous = { ...getWorkSettings() };
+  const settings = await loadEffectiveWorkSettings(employeeId);
+  try {
+    return await fn(settings);
+  } finally {
+    setWorkSettings(previous);
+  }
 }

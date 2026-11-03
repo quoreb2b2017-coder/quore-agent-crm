@@ -13,6 +13,13 @@ import {
   type StaffRoleKey,
 } from "@/lib/permissions/roles";
 import { isSuperAdminEmployee } from "@/lib/queries/admin-dashboard";
+import {
+  timeValueToMinutes,
+  workSchedulePayload,
+  type WorkSchedule,
+} from "@/lib/work-settings";
+import { validateWorkSchedule } from "@/lib/work-settings-server";
+import type { Json } from "@/types/supabase";
 
 const staffDepartment = z.enum(STAFF_ROLE_KEYS);
 
@@ -56,6 +63,9 @@ const updateSchema = z
     dateOfBirth: dateOfBirthSchema.optional(),
     password: z.string().optional(),
     confirmPassword: z.string().optional(),
+    customShift: z.boolean(),
+    login: z.string().optional(),
+    logout: z.string().optional(),
   })
   .refine(
     (data) => !data.password || data.password.length >= 4,
@@ -64,7 +74,32 @@ const updateSchema = z
   .refine(
     (data) => !data.password || data.password === data.confirmPassword,
     { message: "Passwords do not match", path: ["confirmPassword"] }
-  );
+  )
+  .superRefine((data, ctx) => {
+    if (!data.customShift) return;
+    const loginMinutes = timeValueToMinutes(data.login ?? "");
+    const logoutMinutes = timeValueToMinutes(data.logout ?? "");
+    if (loginMinutes == null) {
+      ctx.addIssue({ code: "custom", message: "Pick a login time", path: ["login"] });
+      return;
+    }
+    if (logoutMinutes == null) {
+      ctx.addIssue({ code: "custom", message: "Pick a logout time", path: ["logout"] });
+      return;
+    }
+    const scheduleError = validateWorkSchedule({ loginMinutes, logoutMinutes });
+    if (scheduleError) {
+      ctx.addIssue({ code: "custom", message: scheduleError, path: ["login"] });
+    }
+  });
+
+function scheduleFromUpdate(data: z.infer<typeof updateSchema>): WorkSchedule | null {
+  if (!data.customShift) return null;
+  const loginMinutes = timeValueToMinutes(data.login ?? "");
+  const logoutMinutes = timeValueToMinutes(data.logout ?? "");
+  if (loginMinutes == null || logoutMinutes == null) return null;
+  return { loginMinutes, logoutMinutes };
+}
 
 export type ActionState = { error?: string; success?: boolean; employeeId?: string };
 
@@ -244,6 +279,9 @@ export async function updateEmployee(
     dateOfBirth: String(formData.get("dateOfBirth") ?? "") || undefined,
     password: password || undefined,
     confirmPassword: formData.get("confirmPassword") || undefined,
+    customShift: formData.get("customShift") === "on" || formData.get("customShift") === "true",
+    login: String(formData.get("login") ?? "") || undefined,
+    logout: String(formData.get("logout") ?? "") || undefined,
   });
 
   if (!parsed.success) {
@@ -251,6 +289,7 @@ export async function updateEmployee(
   }
 
   const data = parsed.data;
+  const workSchedule = workSchedulePayload(scheduleFromUpdate(data)) as Json;
   const supabase = await createClient();
 
   const { data: existing, error: existingError } = await supabase
@@ -270,6 +309,7 @@ export async function updateEmployee(
       full_name: data.fullName,
       email: data.email,
       phone: data.phone,
+      work_schedule: workSchedule,
       ...(data.joiningDate ? { joining_date: data.joiningDate } : {}),
     })
     .eq("id", employeeId);

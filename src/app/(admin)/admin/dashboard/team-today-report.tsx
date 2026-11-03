@@ -45,6 +45,7 @@ export function TeamTodayReport({ rows, attendanceDate }: { rows: TeamTodayRow[]
               sessionClosedWashroomSeconds: row.sessionClosedWashroomSeconds,
               openWashroomStartedAt: row.openWashroomStartedAt,
               now: now ?? undefined,
+              overtimeMinutes: row.overtimeMinutes,
             }), row.status);
             const washroomLive =
               row.inWashroom && row.openWashroomStartedAt && now != null

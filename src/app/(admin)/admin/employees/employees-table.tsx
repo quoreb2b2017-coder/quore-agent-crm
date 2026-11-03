@@ -29,6 +29,8 @@ export type EmployeeRow = {
   phone: string | null;
   employmentStatus: string;
   departmentName: string;
+  /** Login – logout label for this person (custom or company). */
+  shiftLabel: string;
 };
 
 const statusTone: Record<string, string> = {
@@ -143,6 +145,7 @@ export function EmployeesTable({
                 <TableHead className="pl-5">Employee</TableHead>
                 <TableHead>Employee ID</TableHead>
                 <TableHead>Department</TableHead>
+                <TableHead>Shift</TableHead>
                 <TableHead>Phone</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead className="w-12 pr-4">
@@ -180,6 +183,7 @@ export function EmployeesTable({
                     </Badge>
                   </TableCell>
                   <TableCell className="text-sm">{row.departmentName}</TableCell>
+                  <TableCell className="text-sm tabular-nums text-muted-foreground">{row.shiftLabel}</TableCell>
                   <TableCell className="text-sm text-muted-foreground">{row.phone || "—"}</TableCell>
                   <TableCell>
                     <Badge

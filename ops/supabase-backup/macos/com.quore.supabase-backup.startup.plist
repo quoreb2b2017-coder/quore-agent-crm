@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.quore.supabase-backup.startup</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>__NODE_BIN__</string>
+    <string>__RUN_JS__</string>
+    <string>--startup</string>
+  </array>
+
+  <key>WorkingDirectory</key>
+  <string>__TOOLKIT_ROOT__</string>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>BACKUP_ENV_FILE</key>
+    <string>__CREDENTIALS_ENV__</string>
+    <key>PATH</key>
+    <string>__PATH__</string>
+  </dict>
+
+  <!-- Fire on login / agent load (covers reboot after missed hours) -->
+  <key>RunAtLoad</key>
+  <true/>
+
+  <!-- Re-check shortly after wake when network may return -->
+  <key>StartCalendarInterval</key>
+  <array>
+    <dict>
+      <key>Minute</key>
+      <integer>5</integer>
+    </dict>
+    <dict>
+      <key>Minute</key>
+      <integer>35</integer>
+    </dict>
+  </array>
+
+  <key>StandardOutPath</key>
+  <string>__LOG_DIR__/launchd-startup.out.log</string>
+  <key>StandardErrorPath</key>
+  <string>__LOG_DIR__/launchd-startup.err.log</string>
+</dict>
+</plist>

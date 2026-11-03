@@ -18,6 +18,7 @@ type AttendanceEdit = {
   first_check_in?: string | null;
   last_check_out?: string | null;
   notes?: string | null;
+  overtime_minutes?: number | null;
 };
 
 const STATUSES = [
@@ -57,7 +58,7 @@ export function EditAttendanceDialog({
       open={open}
       onOpenChange={setOpen}
       title="Edit attendance"
-      description={`${employeeName} · ${attendanceDate} · enter times in IST (US Eastern follows India 6:30 PM)`}
+      description={`${employeeName} · ${attendanceDate} · times use the company time zone. Overtime is admin-only.`}
       onSubmit={handleSubmit}
       submitLabel="Save"
       isPending={isPending}
@@ -88,7 +89,7 @@ export function EditAttendanceDialog({
         </select>
       </div>
       <div className="grid gap-2">
-        <Label htmlFor={`checkIn-${employeeId}-${attendanceDate}`}>Check in (IST · maps to US ET)</Label>
+        <Label htmlFor={`checkIn-${employeeId}-${attendanceDate}`}>Check in</Label>
         <Input
           id={`checkIn-${employeeId}-${attendanceDate}`}
           name="checkIn"
@@ -97,13 +98,31 @@ export function EditAttendanceDialog({
         />
       </div>
       <div className="grid gap-2">
-        <Label htmlFor={`checkOut-${employeeId}-${attendanceDate}`}>Check out (IST · maps to US ET)</Label>
+        <Label htmlFor={`checkOut-${employeeId}-${attendanceDate}`}>Check out</Label>
         <Input
           id={`checkOut-${employeeId}-${attendanceDate}`}
           name="checkOut"
           type="datetime-local"
           defaultValue={toDatetimeLocalIst(attendance?.last_check_out)}
         />
+      </div>
+      <div className="grid gap-2 sm:col-span-2">
+        <Label htmlFor={`overtime-${employeeId}-${attendanceDate}`}>
+          Overtime after shift (minutes)
+        </Label>
+        <Input
+          id={`overtime-${employeeId}-${attendanceDate}`}
+          name="overtimeMinutes"
+          type="number"
+          min={0}
+          max={720}
+          step={15}
+          defaultValue={attendance?.overtime_minutes ?? 0}
+        />
+        <p className="text-xs text-muted-foreground">
+          Extra minutes past this employee&apos;s logout that count as work. 0 = no overtime. Max 12 hours.
+          Saving recalculates that day&apos;s productive time.
+        </p>
       </div>
       <div className="grid gap-2 sm:col-span-2">
         <Label htmlFor={`notes-${employeeId}-${attendanceDate}`}>Notes</Label>

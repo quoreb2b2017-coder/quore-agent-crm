@@ -52,6 +52,7 @@ type AttendanceRecord = {
   total_active_seconds: number;
   total_break_seconds: number;
   notes: string | null;
+  overtime_minutes: number;
 };
 
 type EmployeeOption = {
@@ -61,7 +62,7 @@ type EmployeeOption = {
 };
 
 const ATTENDANCE_COLUMNS =
-  "id, employee_id, attendance_date, status, first_check_in, last_check_out, total_active_seconds, total_break_seconds, notes";
+  "id, employee_id, attendance_date, status, first_check_in, last_check_out, total_active_seconds, total_break_seconds, notes, overtime_minutes";
 
 function periodLabel(query: ReturnType<typeof parseAttendanceQuery>) {
   if (query.view === "daily") return formatIsoDate(query.date);

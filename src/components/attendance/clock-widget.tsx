@@ -151,6 +151,7 @@ export function ClockWidget({
     meetingRequestedAt = null,
     washroomStartedAt = null,
     sessionClosedWashroomSeconds = 0,
+    overtimeMinutes = 0,
     onLeave,
     weekOff = false,
     halfDay = false,
@@ -168,23 +169,36 @@ export function ClockWidget({
   const breakActive = (isOnBreak || localBreak != null) && breakResume == null;
   const breakStartedAt = openBreakStartedAt ?? localBreak?.startedAt ?? null;
   const breakType = openBreakType ?? localBreak?.slot ?? null;
+  const settings = getWorkSettings();
   const countedFrom = sessionStartedAt
-    ? new Date(creditedWorkBounds(sessionStartedAt).from).toISOString()
+    ? new Date(creditedWorkBounds(sessionStartedAt, trustedNowMs(), settings, overtimeMinutes).from).toISOString()
     : null;
   const elapsed = useElapsed(countedFrom, isClockedIn);
   const nowMs = trustedNowMs();
-  const elapsedCapped = sessionStartedAt ? creditedWorkBounds(sessionStartedAt, nowMs).seconds : (elapsed ?? 0);
+  const elapsedCapped = sessionStartedAt
+    ? creditedWorkBounds(sessionStartedAt, nowMs, settings, overtimeMinutes).seconds
+    : (elapsed ?? 0);
   const shiftEndMs = sessionStartedAt
-    ? shiftWindowUtc(shiftDateIso(new Date(sessionStartedAt))).end.getTime()
+    ? shiftWindowUtc(shiftDateIso(new Date(sessionStartedAt)), settings, overtimeMinutes).end.getTime()
+    : null;
+  const officialLogoutMs = sessionStartedAt
+    ? shiftWindowUtc(shiftDateIso(new Date(sessionStartedAt)), settings, 0).end.getTime()
     : null;
   const pastLogout = shiftEndMs != null && nowMs >= shiftEndMs;
-  const logoutLabel = formatMinutesLabel(getWorkSettings().logoutMinutes);
+  const inOvertime =
+    overtimeMinutes > 0 &&
+    officialLogoutMs != null &&
+    nowMs >= officialLogoutMs &&
+    !pastLogout;
+  const logoutLabel = formatMinutesLabel(settings.logoutMinutes);
   const awayInside = (startedAt: string | null, seconds: number) => {
     if (!sessionStartedAt || !startedAt || seconds <= 0) return 0;
     return creditedAwaySeconds(
       sessionStartedAt,
       { started_at: startedAt, ended_at: null },
-      new Date(startedAt).getTime() + seconds * 1000
+      new Date(startedAt).getTime() + seconds * 1000,
+      settings,
+      overtimeMinutes
     );
   };
   const breakElapsed = useElapsed(breakStartedAt, breakActive);
@@ -451,9 +465,17 @@ export function ClockWidget({
                     Meeting requested · waiting for admin to accept before time starts
                   </p>
                 ) : null}
+                {inOvertime ? (
+                  <p className="text-xs font-medium text-muted-foreground">
+                    Overtime approved · counting past {logoutLabel} ({overtimeMinutes} min)
+                  </p>
+                ) : null}
                 {pastLogout ? (
                   <p className="text-xs font-medium text-muted-foreground">
-                    Productive time stopped at {logoutLabel}
+                    Productive time stopped
+                    {overtimeMinutes > 0
+                      ? ` after ${overtimeMinutes} min overtime past ${logoutLabel}`
+                      : ` at ${logoutLabel}`}
                   </p>
                 ) : null}
               </>

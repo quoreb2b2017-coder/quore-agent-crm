@@ -10,7 +10,7 @@ import "./globals.css";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { WorkSettingsBridge } from "@/components/layout/work-settings-bridge";
-import { loadWorkSettings } from "@/lib/work-settings-server";
+import { loadEffectiveWorkSettingsForCurrentUser } from "@/lib/work-settings-server";
 import { ensureFederalHolidaysMarked } from "@/lib/federal-holiday-sync";
 import { ensureGoogleTime } from "@/lib/google-time";
 
@@ -20,7 +20,10 @@ export const metadata: Metadata = {
 };
 
 export default async function RootLayout({ children }: LayoutProps<"/">) {
-  const [settings] = await Promise.all([loadWorkSettings(), ensureGoogleTime().catch(() => null)]);
+  const [settings] = await Promise.all([
+    loadEffectiveWorkSettingsForCurrentUser(),
+    ensureGoogleTime().catch(() => null),
+  ]);
   after(() => ensureFederalHolidaysMarked());
   return (
     <html

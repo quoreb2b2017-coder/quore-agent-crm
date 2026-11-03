@@ -1,0 +1,19 @@
+{
+  "name": "quore-supabase-backup",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Zero-missed-data hourly Supabase DB + Storage backup for Mac mini (launchd).",
+  "scripts": {
+    "backup": "node src/run.mjs",
+    "backup:force": "node src/run.mjs --force",
+    "status": "node src/status.mjs",
+    "verify-local": "node src/verify-local.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.112.3"
+  }
+}

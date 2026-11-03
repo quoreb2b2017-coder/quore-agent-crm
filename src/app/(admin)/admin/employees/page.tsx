@@ -14,6 +14,12 @@ import {
   SUPER_ADMIN_ROLE,
 } from "@/lib/permissions/roles";
 import { isEmploymentActive } from "@/lib/format";
+import {
+  applyWorkSchedule,
+  formatMinutesLabel,
+  parseWorkSchedule,
+} from "@/lib/work-settings";
+import { loadWorkSettings } from "@/lib/work-settings-server";
 
 export default async function EmployeesPage() {
   const ctx = await getCurrentEmployeeContext();
@@ -24,14 +30,16 @@ export default async function EmployeesPage() {
   const supabase = await createClient();
 
   // Independent reads, fetched in parallel (role assignments no longer wait for the employee list).
-  const [{ data: employees }, { data: roles }, { data: employeeRoles }] = await Promise.all([
-    supabase
-      .from("employees")
-      .select("id, employee_code, full_name, email, phone, employment_status")
-      .order("full_name"),
-    supabase.from("roles").select("id, role_key").order("display_name"),
-    supabase.from("employee_roles").select("employee_id, role_id").eq("is_primary", true),
-  ]);
+  const [{ data: employees }, { data: roles }, { data: employeeRoles }, companySettings] =
+    await Promise.all([
+      supabase
+        .from("employees")
+        .select("id, employee_code, full_name, email, phone, employment_status, work_schedule")
+        .order("full_name"),
+      supabase.from("roles").select("id, role_key").order("display_name"),
+      supabase.from("employee_roles").select("employee_id, role_id").eq("is_primary", true),
+      loadWorkSettings(),
+    ]);
 
   const roleByEmployee = new Map((employeeRoles ?? []).map((r) => [r.employee_id, r.role_id]));
   const roleKeyById = new Map((roles ?? []).map((r) => [r.id, r.role_key]));
@@ -46,6 +54,9 @@ export default async function EmployeesPage() {
     .filter((e) => viewerIsSuperAdmin || !isManagement(roleKeyOf(e.id)))
     .map((e) => {
     const roleKey = roleKeyOf(e.id);
+    const schedule = parseWorkSchedule(e.work_schedule);
+    const shift = applyWorkSchedule(companySettings, schedule);
+    const shiftLabel = `${formatMinutesLabel(shift.loginMinutes, shift.timeZone)} – ${formatMinutesLabel(shift.logoutMinutes, shift.timeZone)}`;
     return {
       id: e.id,
       employeeCode: e.employee_code,
@@ -53,6 +64,7 @@ export default async function EmployeesPage() {
       email: e.email,
       phone: e.phone,
       employmentStatus: e.employment_status,
+      shiftLabel: schedule ? shiftLabel : `${shiftLabel} · company`,
       departmentName:
         roleKey === SUPER_ADMIN_ROLE
           ? "Super Admin"
@@ -72,7 +84,7 @@ export default async function EmployeesPage() {
     <div className="flex flex-col gap-6">
       <PageHeader
         title="Employees"
-        description="People in this workspace. Active includes on-leave. Inactive is blocked or terminated."
+        description="Select an employee to set their shift login/logout. Overtime for a day is set from Attendance or Team today → Edit."
         actions={<CreateEmployeeDialog />}
       />
 

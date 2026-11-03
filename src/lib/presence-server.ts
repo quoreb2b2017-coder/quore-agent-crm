@@ -5,6 +5,8 @@ import { shiftDateIso } from "@/lib/format";
 import { shiftWindowUtc } from "@/lib/shift";
 import { ensureGoogleTime, googleDate } from "@/lib/google-time";
 import { ADMIN_LOGOUT_TYPE } from "@/lib/realtime/notify";
+import { loadEffectiveWorkSettings } from "@/lib/work-settings-server";
+import type { WorkSettings } from "@/lib/work-settings";
 
 export type PresenceResult = {
   expired: boolean;
@@ -22,9 +24,25 @@ let lastSweepAt = 0;
 
 type OpenBreak = { started_at: string };
 
-/** A break may run over its slot (counted as excess); it is closed at 3:30 AM shift end. */
-function openBreakEndsAt(openBreak: OpenBreak): Date {
-  return shiftWindowUtc(shiftDateIso(new Date(openBreak.started_at))).end;
+/** A break may run over its slot (counted as excess); it is closed at shift end (+ overtime). */
+function openBreakEndsAt(
+  openBreak: OpenBreak,
+  settings: WorkSettings,
+  overtimeMinutes = 0
+): Date {
+  return shiftWindowUtc(shiftDateIso(new Date(openBreak.started_at)), settings, overtimeMinutes).end;
+}
+
+async function overtimeForBreak(employeeId: string, startedAt: string) {
+  const service = createServiceClient();
+  const shiftDate = shiftDateIso(new Date(startedAt));
+  const { data } = await service
+    .from("attendance")
+    .select("overtime_minutes")
+    .eq("employee_id", employeeId)
+    .eq("attendance_date", shiftDate)
+    .maybeSingle();
+  return data?.overtime_minutes ?? 0;
 }
 
 /**
@@ -39,6 +57,7 @@ export async function runPresenceHeartbeat(_input: {
   if (!ctx || isManagement(ctx.roleKey)) return { expired: false };
 
   await ensureGoogleTime();
+  const settings = await loadEffectiveWorkSettings(ctx.employeeId);
   const service = createServiceClient();
   const now = googleDate().getTime();
 
@@ -83,7 +102,8 @@ export async function runPresenceHeartbeat(_input: {
     .maybeSingle();
 
   if (openBreak) {
-    const endsAt = openBreakEndsAt(openBreak);
+    const overtimeMinutes = await overtimeForBreak(ctx.employeeId, openBreak.started_at);
+    const endsAt = openBreakEndsAt(openBreak, settings, overtimeMinutes);
     if (endsAt.getTime() <= now) {
       await closeWorkSession(ctx.employeeId, "TIMED_OUT", { endedAt: endsAt });
       return { expired: true, reason: "break", at: endsAt.getTime() };
@@ -111,7 +131,9 @@ export async function sweepIdleSessions(options?: { force?: boolean }) {
     .is("ended_at", null);
 
   for (const openBreak of openBreaks ?? []) {
-    const endsAt = openBreakEndsAt(openBreak);
+    const settings = await loadEffectiveWorkSettings(openBreak.employee_id);
+    const overtimeMinutes = await overtimeForBreak(openBreak.employee_id, openBreak.started_at);
+    const endsAt = openBreakEndsAt(openBreak, settings, overtimeMinutes);
     if (endsAt.getTime() <= now) {
       await closeWorkSession(openBreak.employee_id, "TIMED_OUT", { revalidate: false, endedAt: endsAt });
     }

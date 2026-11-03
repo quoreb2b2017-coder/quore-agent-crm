@@ -27,6 +27,8 @@ export type MySessionState = {
   /** Closed washroom time this shift (all visits today). */
   closedWashroomSeconds: number;
   sessionClosedWashroomSeconds: number;
+  /** Admin-approved minutes past official logout for this shift day. */
+  overtimeMinutes: number;
   onLeave: boolean;
   weekOff: boolean;
   halfDay: boolean;
@@ -102,7 +104,7 @@ export async function getEmployeeDashboardBundle(employeeId: string): Promise<Em
       .maybeSingle(),
     supabase
       .from("attendance")
-      .select("status, total_active_seconds, total_break_seconds, total_idle_seconds")
+      .select("status, total_active_seconds, total_break_seconds, total_idle_seconds, overtime_minutes")
       .eq("employee_id", employeeId)
       .eq("attendance_date", today)
       .maybeSingle(),
@@ -111,6 +113,7 @@ export async function getEmployeeDashboardBundle(employeeId: string): Promise<Em
 
   const shiftDate = session ? shiftDateIso(new Date(session.started_at)) : today;
   const { start, end } = shiftAccountingWindowUtc(shiftDate);
+  const overtimeMinutes = attendance?.overtime_minutes ?? 0;
 
   const { data: shiftBreaks } = await supabase
     .from("breaks")
@@ -157,6 +160,7 @@ export async function getEmployeeDashboardBundle(employeeId: string): Promise<Em
         washroomStartedAt: null,
         closedWashroomSeconds: 0,
         sessionClosedWashroomSeconds: 0,
+        overtimeMinutes,
         onLeave: attendance?.status === "ON_LEAVE",
         weekOff,
         halfDay: attendance?.status === "HALF_DAY",
@@ -185,6 +189,7 @@ export async function getEmployeeDashboardBundle(employeeId: string): Promise<Em
       washroomStartedAt: away.washroomStartedAt,
       closedWashroomSeconds: washroom.closedWashroomSeconds,
       sessionClosedWashroomSeconds: washroom.sessionClosedSeconds(session),
+      overtimeMinutes,
       onLeave: attendance?.status === "ON_LEAVE",
       weekOff,
       halfDay: attendance?.status === "HALF_DAY",
@@ -209,7 +214,7 @@ export async function getMySessionState(employeeId: string): Promise<MySessionSt
   const [{ data: attendance }, { data: shiftBreaks }] = await Promise.all([
     supabase
       .from("attendance")
-      .select("status, total_active_seconds")
+      .select("status, total_active_seconds, overtime_minutes")
       .eq("employee_id", employeeId)
       .eq("attendance_date", shiftDate)
       .maybeSingle(),
@@ -223,6 +228,7 @@ export async function getMySessionState(employeeId: string): Promise<MySessionSt
 
   const breaks = shiftBreaks ?? [];
   const closedBreakSeconds = breakSecondsBySlot(breaks, { closedOnly: true });
+  const overtimeMinutes = attendance?.overtime_minutes ?? 0;
 
   const weekOff =
     attendance?.status === "WEEK_OFF" || (!attendance && isWeekendIso(shiftDate));
@@ -235,14 +241,15 @@ export async function getMySessionState(employeeId: string): Promise<MySessionSt
       accruedActiveSeconds: attendance?.total_active_seconds ?? 0,
       sessionClosedBreakSeconds: 0,
       closedBreakSeconds,
-        openBreakType: null,
-        openBreakStartedAt: null,
-        meetingStartedAt: null,
-        meetingRequestedAt: null,
-        washroomStartedAt: null,
-        closedWashroomSeconds: 0,
-        sessionClosedWashroomSeconds: 0,
-        onLeave: attendance?.status === "ON_LEAVE",
+      openBreakType: null,
+      openBreakStartedAt: null,
+      meetingStartedAt: null,
+      meetingRequestedAt: null,
+      washroomStartedAt: null,
+      closedWashroomSeconds: 0,
+      sessionClosedWashroomSeconds: 0,
+      overtimeMinutes,
+      onLeave: attendance?.status === "ON_LEAVE",
       weekOff,
       halfDay: attendance?.status === "HALF_DAY",
     };
@@ -269,6 +276,7 @@ export async function getMySessionState(employeeId: string): Promise<MySessionSt
     washroomStartedAt: away.washroomStartedAt,
     closedWashroomSeconds: washroom.closedWashroomSeconds,
     sessionClosedWashroomSeconds: washroom.sessionClosedSeconds(session),
+    overtimeMinutes,
     onLeave: attendance?.status === "ON_LEAVE",
     weekOff,
     halfDay: attendance?.status === "HALF_DAY",
