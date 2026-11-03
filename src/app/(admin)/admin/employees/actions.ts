@@ -44,7 +44,10 @@ const createSchema = z
     employeeCode: z.string().min(1, "Employee ID is required"),
     password: z.string().min(4, "Password must be at least 4 characters"),
     confirmPassword: z.string().min(1, "Confirm password"),
+    /** Staff app role (Agent / Database / Email Marketing). */
     department: staffDepartment,
+    /** Org department from public.departments. */
+    departmentId: z.string().uuid("Pick a department"),
     joiningDate: joiningDateSchema,
     dateOfBirth: dateOfBirthSchema,
   })
@@ -60,6 +63,7 @@ const updateSchema = z
     phone: z.string().min(1, "Phone number is required"),
     employeeCode: z.string().min(1, "Employee ID is required"),
     department: staffDepartment.optional(),
+    departmentId: z.string().uuid().optional(),
     joiningDate: joiningDateSchema.optional(),
     dateOfBirth: dateOfBirthSchema.optional(),
     password: z.string().optional(),
@@ -103,6 +107,12 @@ function scheduleFromUpdate(data: z.infer<typeof updateSchema>): WorkSchedule | 
 }
 
 export type ActionState = { error?: string; success?: boolean; employeeId?: string };
+export type DepartmentActionState = {
+  error?: string;
+  success?: boolean;
+  departmentId?: string;
+  name?: string;
+};
 
 async function assertCanManageEmployees() {
   const ctx = await getCurrentEmployeeContext();
@@ -149,6 +159,52 @@ async function employeeIsLastSuperAdmin(employeeId: string) {
   return (count ?? 0) <= 1;
 }
 
+const createDepartmentSchema = z.object({
+  name: z
+    .string()
+    .trim()
+    .min(2, "Department name is too short")
+    .max(80, "Department name is too long"),
+});
+
+/** Create an org department (Add Employee → Add department). */
+export async function createDepartment(
+  _prev: DepartmentActionState,
+  formData: FormData
+): Promise<DepartmentActionState> {
+  try {
+    await assertCanManageEmployees();
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Not authorized" };
+  }
+
+  const parsed = createDepartmentSchema.safeParse({
+    name: formData.get("name"),
+  });
+  if (!parsed.success) {
+    return { error: parsed.error.issues[0]?.message ?? "Invalid department name" };
+  }
+
+  const name = parsed.data.name.replace(/\s+/g, " ");
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("departments")
+    .insert({ name })
+    .select("id, name")
+    .single();
+
+  if (error) {
+    if (/duplicate|unique/i.test(error.message)) {
+      return { error: "That department already exists" };
+    }
+    return { error: error.message };
+  }
+
+  revalidatePath("/admin/employees");
+  revalidatePath("/admin/onboarding");
+  return { success: true, departmentId: data.id, name: data.name };
+}
+
 async function roleIdForDepartment(department: StaffRoleKey) {
   const supabase = await createClient();
   const { data: role, error } = await supabase
@@ -183,6 +239,7 @@ export async function createEmployee(
     password: formData.get("password"),
     confirmPassword: formData.get("confirmPassword"),
     department: formData.get("department"),
+    departmentId: String(formData.get("departmentId") ?? "").trim(),
     joiningDate: String(formData.get("joiningDate") ?? ""),
     dateOfBirth: String(formData.get("dateOfBirth") ?? ""),
   });
@@ -195,11 +252,20 @@ export async function createEmployee(
   const supabase = await createClient();
   const service = createServiceClient();
 
+  const { data: departmentRow, error: departmentError } = await supabase
+    .from("departments")
+    .select("id")
+    .eq("id", data.departmentId)
+    .maybeSingle();
+  if (departmentError || !departmentRow) {
+    return { error: departmentError?.message ?? "Pick a department" };
+  }
+
   let roleId: string;
   try {
     roleId = await roleIdForDepartment(data.department);
   } catch (e) {
-    return { error: e instanceof Error ? e.message : "Department not found" };
+    return { error: e instanceof Error ? e.message : "Role not found" };
   }
 
   const { data: authUser, error: authError } = await service.auth.admin.createUser({
@@ -223,6 +289,7 @@ export async function createEmployee(
       auth_user_id: authUser.user.id,
       employment_status: "ACTIVE",
       joining_date: data.joiningDate,
+      department_id: data.departmentId,
     })
     .select("id")
     .single();
@@ -270,12 +337,14 @@ export async function updateEmployee(
 
   const password = String(formData.get("password") ?? "");
   const departmentValue = String(formData.get("department") ?? "").trim();
+  const departmentIdValue = String(formData.get("departmentId") ?? "").trim();
   const parsed = updateSchema.safeParse({
     fullName: formData.get("fullName"),
     email: formData.get("email"),
     phone: formData.get("phone"),
     employeeCode: String(formData.get("employeeCode") ?? "").trim(),
     department: departmentValue || undefined,
+    departmentId: departmentIdValue || undefined,
     joiningDate: String(formData.get("joiningDate") ?? "") || undefined,
     dateOfBirth: String(formData.get("dateOfBirth") ?? "") || undefined,
     password: password || undefined,
@@ -306,6 +375,17 @@ export async function updateEmployee(
   const skipWorkSchedule = formData.get("skipWorkSchedule") === "1";
   const workSchedule = workSchedulePayload(scheduleFromUpdate(data), previousSchedule) as Json;
 
+  if (data.departmentId) {
+    const { data: departmentRow, error: departmentError } = await supabase
+      .from("departments")
+      .select("id")
+      .eq("id", data.departmentId)
+      .maybeSingle();
+    if (departmentError || !departmentRow) {
+      return { error: departmentError?.message ?? "Pick a department" };
+    }
+  }
+
   const { error: updateError } = await supabase
     .from("employees")
     .update({
@@ -315,6 +395,7 @@ export async function updateEmployee(
       phone: data.phone,
       updated_at: new Date().toISOString(),
       ...(data.joiningDate ? { joining_date: data.joiningDate } : {}),
+      ...(data.departmentId ? { department_id: data.departmentId } : {}),
       ...(skipWorkSchedule ? {} : { work_schedule: workSchedule }),
     })
     .eq("id", employeeId);

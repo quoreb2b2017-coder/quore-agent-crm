@@ -16,7 +16,10 @@ export type EmployeeDirectoryOption = {
   employeeCode: string;
   joiningDate: string;
   dateOfBirth: string;
-  department: StaffRoleKey;
+  /** App staff role (Agent / Database / Email Marketing). */
+  roleKey: StaffRoleKey;
+  /** Org department row id when set. */
+  departmentId: string | null;
   schedule: WorkSchedule | null;
 };
 
@@ -28,7 +31,9 @@ export async function loadEmployeeDirectory(): Promise<EmployeeDirectoryOption[]
 
   let employeesQuery = supabase
     .from("employees")
-    .select("id, full_name, email, phone, employee_code, joining_date, work_schedule, employment_status")
+    .select(
+      "id, full_name, email, phone, employee_code, joining_date, work_schedule, employment_status, department_id"
+    )
     .neq("employment_status", "TERMINATED")
     .order("full_name");
   if (skip) employeesQuery = employeesQuery.not("id", "in", skip);
@@ -61,7 +66,8 @@ export async function loadEmployeeDirectory(): Promise<EmployeeDirectoryOption[]
       employeeCode: employee.employee_code,
       joiningDate: employee.joining_date,
       dateOfBirth: dobByEmployee.get(employee.id) ?? "",
-      department: roleKey as StaffRoleKey,
+      roleKey: roleKey as StaffRoleKey,
+      departmentId: employee.department_id,
       schedule: parseWorkSchedule(employee.work_schedule),
     });
   }

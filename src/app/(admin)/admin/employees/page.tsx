@@ -6,6 +6,7 @@ import { StatCard } from "@/components/dashboard/stat-card";
 import { EmployeesTable } from "./employees-table";
 import { CreateEmployeeDialog } from "./create-employee-dialog";
 import { loadEmployeeDirectory } from "@/lib/queries/employee-directory";
+import { loadDepartments } from "@/lib/queries/departments";
 import { getCurrentEmployeeContext } from "@/lib/permissions/server";
 import {
   HR_ROLE,
@@ -31,20 +32,30 @@ export default async function EmployeesPage() {
   const supabase = await createClient();
 
   // Independent reads, fetched in parallel (role assignments no longer wait for the employee list).
-  const [{ data: employees }, { data: roles }, { data: employeeRoles }, companySettings, directory] =
-    await Promise.all([
-      supabase
-        .from("employees")
-        .select("id, employee_code, full_name, email, phone, employment_status, work_schedule")
-        .order("full_name"),
-      supabase.from("roles").select("id, role_key").order("display_name"),
-      supabase.from("employee_roles").select("employee_id, role_id").eq("is_primary", true),
-      loadWorkSettings(),
-      loadEmployeeDirectory(),
-    ]);
+  const [
+    { data: employees },
+    { data: roles },
+    { data: employeeRoles },
+    companySettings,
+    directory,
+    departments,
+  ] = await Promise.all([
+    supabase
+      .from("employees")
+      .select(
+        "id, employee_code, full_name, email, phone, employment_status, work_schedule, department_id"
+      )
+      .order("full_name"),
+    supabase.from("roles").select("id, role_key").order("display_name"),
+    supabase.from("employee_roles").select("employee_id, role_id").eq("is_primary", true),
+    loadWorkSettings(),
+    loadEmployeeDirectory(),
+    loadDepartments(),
+  ]);
 
   const roleByEmployee = new Map((employeeRoles ?? []).map((r) => [r.employee_id, r.role_id]));
   const roleKeyById = new Map((roles ?? []).map((r) => [r.id, r.role_key]));
+  const departmentNameById = new Map(departments.map((row) => [row.id, row.name]));
 
   const viewerIsSuperAdmin = isSuperAdmin(ctx.roleKey);
   const roleKeyOf = (employeeId: string) => {
@@ -59,6 +70,7 @@ export default async function EmployeesPage() {
     const schedule = parseWorkSchedule(e.work_schedule);
     const shift = applyWorkSchedule(companySettings, schedule);
     const shiftLabel = `${formatMinutesLabel(shift.loginMinutes, shift.timeZone)} – ${formatMinutesLabel(shift.logoutMinutes, shift.timeZone)}`;
+    const orgDepartment = e.department_id ? departmentNameById.get(e.department_id) : null;
     return {
       id: e.id,
       employeeCode: e.employee_code,
@@ -68,13 +80,14 @@ export default async function EmployeesPage() {
       employmentStatus: e.employment_status,
       shiftLabel: schedule ? shiftLabel : `${shiftLabel} · company`,
       departmentName:
-        roleKey === SUPER_ADMIN_ROLE
+        orgDepartment ||
+        (roleKey === SUPER_ADMIN_ROLE
           ? "Super Admin"
           : roleKey === HR_ROLE
             ? "HR"
             : roleKey
-            ? staffDepartmentLabel(roleKey)
-            : "—",
+              ? staffDepartmentLabel(roleKey)
+              : "—"),
     };
   });
 
@@ -87,7 +100,7 @@ export default async function EmployeesPage() {
       <PageHeader
         title="Employees"
         description="Select an employee to set their shift login/logout. Overtime for a day is set from Attendance or Team today → Edit."
-        actions={<CreateEmployeeDialog employees={directory} />}
+        actions={<CreateEmployeeDialog employees={directory} departments={departments} />}
       />
 
       <section className="grid grid-cols-1 gap-3 sm:grid-cols-3">
