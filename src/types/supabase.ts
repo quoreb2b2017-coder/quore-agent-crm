@@ -237,6 +237,8 @@ export interface Database {
           total_break_seconds: number;
           total_idle_seconds: number;
           overtime_minutes: number;
+          /** Present after migration 0030; pending OT under 1h awaiting admin. */
+          overtime_pending_minutes: number;
           status:
             | "PRESENT"
             | "LATE"
@@ -260,6 +262,7 @@ export interface Database {
           total_break_seconds?: number;
           total_idle_seconds?: number;
           overtime_minutes?: number;
+          overtime_pending_minutes?: number;
           status?:
             | "PRESENT"
             | "LATE"

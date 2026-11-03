@@ -34,6 +34,10 @@ import { ADMIN_LOGOUT_TYPE, insertAndEmitNotification, notifySuperAdmins } from 
 import { ensureGoogleTime, googleDate } from "@/lib/google-time";
 import { formatMinutesLabel } from "@/lib/work-settings";
 import { loadEffectiveWorkSettings } from "@/lib/work-settings-server";
+import type { Database } from "@/types/supabase";
+
+type AttendanceUpdate = Database["public"]["Tables"]["attendance"]["Update"];
+type AttendanceInsert = Database["public"]["Tables"]["attendance"]["Insert"];
 
 type Result = { error?: string; activated?: boolean; skipped?: boolean };
 
@@ -141,7 +145,8 @@ export async function recomputeShiftTotals(
     const endedAtMs = new Date(session.ended_at).getTime();
     const sessionBreaks = breakRows.filter((row) => row.session_id === session.id);
     const sessionWash = washRows.filter((row) => row.session_id === session.id);
-    const awayAt = (ot: number) => (rows: typeof sessionBreaks) =>
+    type AwayRow = { started_at: string; ended_at: string | null; duration_seconds?: number | null };
+    const awayAt = (ot: number) => (rows: AwayRow[]) =>
       rows.reduce(
         (sum, row) => sum + creditedAwaySeconds(session.started_at, row, endedAtMs, settings, ot),
         0
@@ -170,7 +175,7 @@ export async function recomputeShiftTotals(
   const storedOtMinutes = Math.floor(allocation.overtimeSeconds / 60);
 
   const notes = withOtPendingNotes(attendance.notes, allocation.pendingOvertimeMinutes);
-  const payload: Record<string, unknown> = {
+  const payload: AttendanceUpdate = {
     // Productive only (shift + shortfall fill). Approved OT is separate for graphs.
     total_active_seconds: allocation.productiveSeconds,
     total_break_seconds: breakSeconds,
@@ -178,7 +183,10 @@ export async function recomputeShiftTotals(
     notes,
   };
   // Prefer dedicated column when migration 0030 is applied; notes marker is the fallback.
-  const withColumn = { ...payload, overtime_pending_minutes: allocation.pendingOvertimeMinutes };
+  const withColumn: AttendanceUpdate = {
+    ...payload,
+    overtime_pending_minutes: allocation.pendingOvertimeMinutes,
+  };
   const first = await supabase.from("attendance").update(withColumn).eq("id", attendance.id);
   if (first.error && /overtime_pending_minutes/i.test(first.error.message)) {
     await supabase.from("attendance").update(payload).eq("id", attendance.id);
@@ -1030,16 +1038,20 @@ export async function setEmployeeOvertimeByAdmin(
         ? `Overtime approved: ${parsed.data.overtimeMinutes} min after shift`
         : existing.notes;
     const notes = withOtPendingNotes(baseNotes, 0);
-    const updatePayload: Record<string, unknown> = {
+    const updateWithPending: AttendanceUpdate = {
       overtime_minutes: parsed.data.overtimeMinutes,
       source: "CORRECTED",
       notes,
       overtime_pending_minutes: 0,
     };
-    let { error } = await supabase.from("attendance").update(updatePayload).eq("id", existing.id);
+    const updateFallback: AttendanceUpdate = {
+      overtime_minutes: parsed.data.overtimeMinutes,
+      source: "CORRECTED",
+      notes,
+    };
+    let { error } = await supabase.from("attendance").update(updateWithPending).eq("id", existing.id);
     if (error && /overtime_pending_minutes/i.test(error.message)) {
-      delete updatePayload.overtime_pending_minutes;
-      ({ error } = await supabase.from("attendance").update(updatePayload).eq("id", existing.id));
+      ({ error } = await supabase.from("attendance").update(updateFallback).eq("id", existing.id));
     }
     if (error) return { error: error.message };
   } else {
@@ -1049,7 +1061,7 @@ export async function setEmployeeOvertimeByAdmin(
         : null,
       0
     );
-    const insertPayload: Record<string, unknown> = {
+    const insertWithPending: AttendanceInsert = {
       employee_id: parsed.data.employeeId,
       attendance_date: parsed.data.attendanceDate,
       status: "PRESENT",
@@ -1058,10 +1070,17 @@ export async function setEmployeeOvertimeByAdmin(
       source: "MANUAL",
       notes,
     };
-    let { error } = await supabase.from("attendance").insert(insertPayload);
+    const insertFallback: AttendanceInsert = {
+      employee_id: parsed.data.employeeId,
+      attendance_date: parsed.data.attendanceDate,
+      status: "PRESENT",
+      overtime_minutes: parsed.data.overtimeMinutes,
+      source: "MANUAL",
+      notes,
+    };
+    let { error } = await supabase.from("attendance").insert(insertWithPending);
     if (error && /overtime_pending_minutes/i.test(error.message)) {
-      delete insertPayload.overtime_pending_minutes;
-      ({ error } = await supabase.from("attendance").insert(insertPayload));
+      ({ error } = await supabase.from("attendance").insert(insertFallback));
     }
     if (error) return { error: error.message };
   }
@@ -1104,16 +1123,21 @@ export async function approvePendingOvertime(
   const pending = parseOtPendingMinutes(row.notes);
   if (pending <= 0) return { error: "No pending overtime to approve." };
   const next = Math.min(OT_WINDOW_MINUTES, (row.overtime_minutes ?? 0) + pending);
-  const updatePayload: Record<string, unknown> = {
+  const notes = withOtPendingNotes(`Overtime approved: ${next} min after shift`, 0);
+  const updateWithPending: AttendanceUpdate = {
     overtime_minutes: next,
     overtime_pending_minutes: 0,
     source: "CORRECTED",
-    notes: withOtPendingNotes(`Overtime approved: ${next} min after shift`, 0),
+    notes,
   };
-  let { error } = await supabase.from("attendance").update(updatePayload).eq("id", row.id);
+  const updateFallback: AttendanceUpdate = {
+    overtime_minutes: next,
+    source: "CORRECTED",
+    notes,
+  };
+  let { error } = await supabase.from("attendance").update(updateWithPending).eq("id", row.id);
   if (error && /overtime_pending_minutes/i.test(error.message)) {
-    delete updatePayload.overtime_pending_minutes;
-    ({ error } = await supabase.from("attendance").update(updatePayload).eq("id", row.id));
+    ({ error } = await supabase.from("attendance").update(updateFallback).eq("id", row.id));
   }
   if (error) return { error: error.message };
 
