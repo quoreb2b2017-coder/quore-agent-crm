@@ -197,7 +197,7 @@ export function CreateEmployeeDialog({
         else resetForm();
       }}
       title="Add employee"
-      description="Sales → Agent · Management → Database / Email Marketing · HR → HR. Department names are editable."
+      description="Human Resources → HR · Sales Operations → Agent · Executive and Operations → Database / Email Marketing."
       onSubmit={handleSubmit}
       submitLabel={isExisting ? "Save employee" : "Create employee"}
       isPending={isPending}

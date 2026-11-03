@@ -124,7 +124,7 @@ export function ManageDepartmentsDialog({
         }
       }}
       title="Departments"
-      description="Rename departments anytime. Roles under each kind stay the same."
+      description="Human Resources (HR) · Sales Operations (Agent) · Executive and Operations (Database / Email Marketing). Names editable."
       onSubmit={(event) => {
         event.preventDefault();
         setOpen(false);

@@ -3,6 +3,7 @@ import { createDataClient as createClient } from "@/lib/supabase/data";
 import {
   DEPARTMENT_KIND_OPTIONS,
   isDepartmentKind,
+  matchesDepartmentName,
   type DepartmentKind,
 } from "@/lib/departments";
 
@@ -17,21 +18,36 @@ async function ensureDepartmentKinds(
   rows: { id: string; name: string; kind: string | null }[]
 ) {
   const byKind = new Map(
-    rows.filter((row) => row.kind && isDepartmentKind(row.kind)).map((row) => [row.kind as DepartmentKind, row])
+    rows
+      .filter((row) => row.kind && isDepartmentKind(row.kind))
+      .map((row) => [row.kind as DepartmentKind, row])
   );
 
   for (const item of DEPARTMENT_KIND_OPTIONS) {
-    if (byKind.has(item.kind)) continue;
-    // Prefer renaming a legacy row that still uses the default name.
+    const existing = byKind.get(item.kind);
+    if (existing) {
+      // Bring old seeded names up to the current default (admin can still rename later).
+      if (matchesDepartmentName(existing.name, item) && existing.name !== item.defaultName) {
+        await supabase.from("departments").update({ name: item.defaultName }).eq("id", existing.id);
+        existing.name = item.defaultName;
+      }
+      continue;
+    }
+
     const legacy = rows.find(
-      (row) => !row.kind && row.name.trim().toLowerCase() === item.defaultName.toLowerCase()
+      (row) => !row.kind && matchesDepartmentName(row.name, item)
     );
     if (legacy) {
-      await supabase.from("departments").update({ kind: item.kind }).eq("id", legacy.id);
+      await supabase
+        .from("departments")
+        .update({ kind: item.kind, name: item.defaultName })
+        .eq("id", legacy.id);
       legacy.kind = item.kind;
+      legacy.name = item.defaultName;
       byKind.set(item.kind, legacy);
       continue;
     }
+
     const { data: created } = await supabase
       .from("departments")
       .insert({ name: item.defaultName, kind: item.kind })
@@ -44,7 +60,7 @@ async function ensureDepartmentKinds(
   }
 }
 
-/** Org departments with role-group kind. Ensures Sales / Management / HR exist. */
+/** Org departments with role-group kind. Ensures the three core departments exist. */
 export async function loadDepartments(): Promise<DepartmentOption[]> {
   const supabase = await createClient();
   const { data, error } = await supabase
@@ -83,9 +99,15 @@ export async function loadDepartments(): Promise<DepartmentOption[]> {
 
 function inferKindFromName(name: string): DepartmentKind {
   const normalized = name.trim().toLowerCase();
-  if (normalized.includes("sale") || normalized.includes("agent")) return "SALES";
-  if (normalized.includes("hr") || normalized === "human resources") return "HR";
   if (
+    normalized.includes("human resource") ||
+    normalized === "hr" ||
+    normalized.includes("hr ")
+  ) {
+    return "HR";
+  }
+  if (
+    normalized.includes("executive") ||
     normalized.includes("manage") ||
     normalized.includes("database") ||
     normalized.includes("email") ||
@@ -93,9 +115,13 @@ function inferKindFromName(name: string): DepartmentKind {
   ) {
     return "MANAGEMENT";
   }
+  if (normalized.includes("sale") || normalized.includes("agent") || normalized.includes("operation")) {
+    return "SALES";
+  }
   return "SALES";
 }
 
 function kindSort(kind: DepartmentKind) {
-  return kind === "SALES" ? 0 : kind === "MANAGEMENT" ? 1 : 2;
+  // Human Resources, Sales Operations, Executive and Operations
+  return kind === "HR" ? 0 : kind === "SALES" ? 1 : 2;
 }
