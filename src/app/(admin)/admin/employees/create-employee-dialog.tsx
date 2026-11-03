@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { Plus } from "lucide-react";
 import { toast } from "sonner";
@@ -66,14 +66,14 @@ export function CreateEmployeeDialog({
   const roleOptions = rolesForDepartmentKind(selectedDepartment?.kind);
 
   // Match linked department_id, or legacy staff with no department_id but the right role.
-  const departmentEmployees = useMemo(() => {
-    if (!departmentId || !selectedDepartment) return [];
-    return employees.filter((row) => {
-      if (row.departmentId === departmentId) return true;
-      if (row.departmentId != null) return false;
-      return roleAllowedForKind(selectedDepartment.kind, row.roleKey);
-    });
-  }, [departmentId, employees, selectedDepartment]);
+  const departmentEmployees =
+    !departmentId || !selectedDepartment
+      ? []
+      : employees.filter((row) => {
+          if (row.departmentId === departmentId) return true;
+          if (row.departmentId != null) return false;
+          return roleAllowedForKind(selectedDepartment.kind, row.roleKey);
+        });
   const selected = departmentEmployees.find((row) => row.id === employeeId) ?? null;
   const isExisting = Boolean(selected);
 

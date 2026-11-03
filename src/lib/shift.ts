@@ -214,7 +214,7 @@ export type BreakExcess = Record<BreakSlot, number> & { washroom: number; total:
  * Time over each slot (Tea 1 / Tea 2 15 min, Lunch 45 min). Washroom is a separate time log and
  * does not use the 1 hr 15 min break allowance.
  */
-export function breakExcess(used: Record<BreakSlot, number>, _washroomSeconds = 0): BreakExcess {
+export function breakExcess(used: Record<BreakSlot, number>): BreakExcess {
   const excess = { TEA_1: 0, TEA_2: 0, LUNCH: 0, washroom: 0, total: 0 };
   for (const slot of BREAK_SLOTS) {
     const seconds = Math.max(0, used[slot]);
@@ -240,7 +240,7 @@ export function addExcess(sum: BreakExcess, next: BreakExcess): BreakExcess {
 }
 
 /** Break allowance not yet used, out of 1 hr 15 min. Washroom does not reduce this. */
-export function breakPoolLeftSeconds(used: Record<BreakSlot, number>, _washroomSeconds = 0) {
+export function breakPoolLeftSeconds(used: Record<BreakSlot, number>) {
   const withinSlots = BREAK_SLOTS.reduce(
     (sum, slot) => sum + Math.min(Math.max(0, used[slot]), slotBudgetSeconds(slot)),
     0
