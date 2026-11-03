@@ -2,10 +2,12 @@ import "server-only";
 import { createDataClient as createClient } from "@/lib/supabase/data";
 import { excludeIds, superAdminEmployeeIds } from "@/lib/queries/admin-dashboard";
 import {
-  isManagement,
+  HR_ROLE,
+  isHr,
   isStaffRole,
-  type StaffRoleKey,
+  SUPER_ADMIN_ROLE,
 } from "@/lib/permissions/roles";
+import type { AssignableRoleKey } from "@/lib/departments";
 import { parseWorkSchedule, type WorkSchedule } from "@/lib/work-settings";
 
 export type EmployeeDirectoryOption = {
@@ -16,8 +18,8 @@ export type EmployeeDirectoryOption = {
   employeeCode: string;
   joiningDate: string;
   dateOfBirth: string;
-  /** App staff role (Agent / Database / Email Marketing). */
-  roleKey: StaffRoleKey;
+  /** App role under the department (Agent / Database / Email Marketing / HR). */
+  roleKey: AssignableRoleKey;
   /** Org department row id when set. */
   departmentId: string | null;
   schedule: WorkSchedule | null;
@@ -57,7 +59,8 @@ export async function loadEmployeeDirectory(): Promise<EmployeeDirectoryOption[]
   const rows: EmployeeDirectoryOption[] = [];
   for (const employee of employees ?? []) {
     const roleKey = roleByEmployee.get(employee.id) ?? "";
-    if (isManagement(roleKey) || !isStaffRole(roleKey)) continue;
+    if (roleKey === SUPER_ADMIN_ROLE) continue;
+    if (!isStaffRole(roleKey) && !isHr(roleKey)) continue;
     rows.push({
       id: employee.id,
       fullName: employee.full_name,
@@ -66,7 +69,7 @@ export async function loadEmployeeDirectory(): Promise<EmployeeDirectoryOption[]
       employeeCode: employee.employee_code,
       joiningDate: employee.joining_date,
       dateOfBirth: dobByEmployee.get(employee.id) ?? "",
-      roleKey: roleKey as StaffRoleKey,
+      roleKey: (isHr(roleKey) ? HR_ROLE : roleKey) as AssignableRoleKey,
       departmentId: employee.department_id,
       schedule: parseWorkSchedule(employee.work_schedule),
     });

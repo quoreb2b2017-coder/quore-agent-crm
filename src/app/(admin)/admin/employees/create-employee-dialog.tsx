@@ -10,9 +10,14 @@ import { Label } from "@/components/ui/label";
 import { PasswordInput } from "@/components/ui/password-input";
 import { FormSheet } from "@/components/ui/form-sheet";
 import { useActionForm } from "@/hooks/use-action-form";
-import { STAFF_DEPARTMENTS, type StaffRoleKey } from "@/lib/permissions/roles";
 import { minutesToTimeValue } from "@/lib/work-settings";
 import { NATIVE_SELECT_CLASS } from "@/lib/shift";
+import {
+  DEPARTMENT_KIND_OPTIONS,
+  rolesForDepartmentKind,
+  type AssignableRoleKey,
+  type DepartmentKind,
+} from "@/lib/departments";
 import type { DepartmentOption } from "@/lib/queries/departments";
 import type { EmployeeDirectoryOption } from "@/lib/queries/employee-directory";
 import { createDepartment, createEmployee, updateEmployee } from "./actions";
@@ -49,17 +54,19 @@ export function CreateEmployeeDialog({
   const [departmentId, setDepartmentId] = useState("");
   const [addingDepartment, setAddingDepartment] = useState(false);
   const [newDepartmentName, setNewDepartmentName] = useState("");
+  const [newDepartmentKind, setNewDepartmentKind] = useState<DepartmentKind>("SALES");
   const [departmentBusy, setDepartmentBusy] = useState(false);
   const [departmentError, setDepartmentError] = useState<string | null>(null);
-  const [roleKey, setRoleKey] = useState<StaffRoleKey | "">("");
+  const [roleKey, setRoleKey] = useState<AssignableRoleKey | "">("");
   const [employeeId, setEmployeeId] = useState("");
   const [fields, setFields] = useState<FormFields>(EMPTY_FORM);
 
+  const selectedDepartment = departments.find((row) => row.id === departmentId) ?? null;
+  const roleOptions = rolesForDepartmentKind(selectedDepartment?.kind);
+
   const departmentEmployees = useMemo(
     () =>
-      departmentId
-        ? employees.filter((row) => row.departmentId === departmentId)
-        : [],
+      departmentId ? employees.filter((row) => row.departmentId === departmentId) : [],
     [departmentId, employees]
   );
   const selected = departmentEmployees.find((row) => row.id === employeeId) ?? null;
@@ -69,6 +76,7 @@ export function CreateEmployeeDialog({
     setDepartmentId("");
     setAddingDepartment(false);
     setNewDepartmentName("");
+    setNewDepartmentKind("SALES");
     setDepartmentError(null);
     setRoleKey("");
     setEmployeeId("");
@@ -97,6 +105,15 @@ export function CreateEmployeeDialog({
     });
   }
 
+  function selectDepartment(nextId: string) {
+    setDepartmentId(nextId);
+    setEmployeeId("");
+    applyEmployee(null);
+    const kind = departments.find((row) => row.id === nextId)?.kind;
+    const roles = rolesForDepartmentKind(kind);
+    setRoleKey(roles.length === 1 ? roles[0].roleKey : "");
+  }
+
   function patchField<K extends keyof FormFields>(key: K, value: FormFields[K]) {
     setFields((prev) => ({ ...prev, [key]: value }));
   }
@@ -106,23 +123,30 @@ export function CreateEmployeeDialog({
     setDepartmentError(null);
     const formData = new FormData();
     formData.set("name", newDepartmentName);
+    formData.set("kind", newDepartmentKind);
     const result = await createDepartment({}, formData);
     setDepartmentBusy(false);
-    if (result.error || !result.departmentId || !result.name) {
+    if (result.error || !result.departmentId || !result.name || !result.kind) {
       setDepartmentError(result.error ?? "Could not add department");
       return;
     }
-    const created = { id: result.departmentId, name: result.name };
+    const created: DepartmentOption = {
+      id: result.departmentId,
+      name: result.name,
+      kind: result.kind,
+    };
     setDepartments((rows) =>
       [...rows.filter((row) => row.id !== created.id), created].sort((a, b) =>
         a.name.localeCompare(b.name)
       )
     );
-    setDepartmentId(created.id);
     setAddingDepartment(false);
     setNewDepartmentName("");
+    setDepartmentId(created.id);
     setEmployeeId("");
     applyEmployee(null);
+    const roles = rolesForDepartmentKind(created.kind);
+    setRoleKey(roles.length === 1 ? roles[0].roleKey : "");
     toast.success(`Department “${created.name}” added`);
   }
 
@@ -130,7 +154,7 @@ export function CreateEmployeeDialog({
     async (formData) => {
       if (addingDepartment) return { error: "Finish adding the department first" };
       if (!departmentId) return { error: "Pick a department" };
-      if (!roleKey) return { error: "Pick a role" };
+      if (!roleKey) return { error: "Pick a role for this department" };
       formData.set("departmentId", departmentId);
       formData.set("department", roleKey);
       if (selected?.schedule) {
@@ -168,7 +192,7 @@ export function CreateEmployeeDialog({
         else resetForm();
       }}
       title="Add employee"
-      description="Pick or add a department, then a person. Existing profiles fill in automatically."
+      description="Sales → Agent · Management → Database / Email Marketing · HR → HR. Department names are editable."
       onSubmit={handleSubmit}
       submitLabel={isExisting ? "Save employee" : "Create employee"}
       isPending={isPending}
@@ -197,9 +221,7 @@ export function CreateEmployeeDialog({
                 setDepartmentError(null);
                 return;
               }
-              setDepartmentId(next);
-              setEmployeeId("");
-              applyEmployee(null);
+              selectDepartment(next);
             }}
             className={NATIVE_SELECT_CLASS}
           >
@@ -220,9 +242,22 @@ export function CreateEmployeeDialog({
               id="newDepartmentName"
               value={newDepartmentName}
               onChange={(event) => setNewDepartmentName(event.target.value)}
-              placeholder="e.g. Sales, Support, QA"
+              placeholder="e.g. Sales North"
               autoFocus
             />
+            <Label htmlFor="newDepartmentKind">Type (roles inside)</Label>
+            <select
+              id="newDepartmentKind"
+              value={newDepartmentKind}
+              onChange={(event) => setNewDepartmentKind(event.target.value as DepartmentKind)}
+              className={NATIVE_SELECT_CLASS}
+            >
+              {DEPARTMENT_KIND_OPTIONS.map((item) => (
+                <option key={item.kind} value={item.kind}>
+                  {item.defaultName} — {item.roles.map((role) => role.label).join(", ")}
+                </option>
+              ))}
+            </select>
             {departmentError ? (
               <p className="text-sm text-destructive">{departmentError}</p>
             ) : null}
@@ -251,6 +286,12 @@ export function CreateEmployeeDialog({
             </div>
           </div>
         )}
+        {selectedDepartment ? (
+          <p className="text-xs text-muted-foreground">
+            Roles here:{" "}
+            {roleOptions.map((role) => role.label).join(" · ") || "—"}
+          </p>
+        ) : null}
       </div>
 
       <div className="grid gap-2 sm:col-span-2">
@@ -291,21 +332,19 @@ export function CreateEmployeeDialog({
           name="department"
           required
           value={roleKey}
-          onChange={(event) => setRoleKey(event.target.value as StaffRoleKey | "")}
+          disabled={!selectedDepartment}
+          onChange={(event) => setRoleKey(event.target.value as AssignableRoleKey | "")}
           className={NATIVE_SELECT_CLASS}
         >
           <option value="" disabled>
-            Select role
+            {selectedDepartment ? "Select role" : "Select department first"}
           </option>
-          {STAFF_DEPARTMENTS.map((item) => (
+          {roleOptions.map((item) => (
             <option key={item.roleKey} value={item.roleKey}>
               {item.label}
             </option>
           ))}
         </select>
-        <p className="text-xs text-muted-foreground">
-          App access type for this person (Agent, Database, or Email Marketing).
-        </p>
       </div>
 
       <div className="grid gap-2">

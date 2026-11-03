@@ -6,12 +6,19 @@ import { createDataClient as createClient } from "@/lib/supabase/data";
 import { createServiceClient } from "@/lib/supabase/service";
 import { getCurrentEmployeeContext, hasPermission } from "@/lib/permissions/server";
 import {
+  HR_ROLE,
+  isHr,
   isManagement,
   isSuperAdmin,
   SUPER_ADMIN_ROLE,
   STAFF_ROLE_KEYS,
-  type StaffRoleKey,
 } from "@/lib/permissions/roles";
+import {
+  isDepartmentKind,
+  roleAllowedForKind,
+  type AssignableRoleKey,
+  type DepartmentKind,
+} from "@/lib/departments";
 import { isSuperAdminEmployee } from "@/lib/queries/admin-dashboard";
 import {
   parseWorkSchedule,
@@ -22,7 +29,8 @@ import {
 import { validateWorkSchedule } from "@/lib/work-settings-server";
 import type { Json } from "@/types/supabase";
 
-const staffDepartment = z.enum(STAFF_ROLE_KEYS);
+const assignableRole = z.enum([...STAFF_ROLE_KEYS, HR_ROLE] as [AssignableRoleKey, ...AssignableRoleKey[]]);
+const departmentKindSchema = z.enum(["SALES", "MANAGEMENT", "HR"]);
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -44,8 +52,8 @@ const createSchema = z
     employeeCode: z.string().min(1, "Employee ID is required"),
     password: z.string().min(4, "Password must be at least 4 characters"),
     confirmPassword: z.string().min(1, "Confirm password"),
-    /** Staff app role (Agent / Database / Email Marketing). */
-    department: staffDepartment,
+    /** App role under the selected department kind. */
+    department: assignableRole,
     /** Org department from public.departments. */
     departmentId: z.string().uuid("Pick a department"),
     joiningDate: joiningDateSchema,
@@ -62,7 +70,7 @@ const updateSchema = z
     email: z.email("Enter a valid email"),
     phone: z.string().min(1, "Phone number is required"),
     employeeCode: z.string().min(1, "Employee ID is required"),
-    department: staffDepartment.optional(),
+    department: assignableRole.optional(),
     departmentId: z.string().uuid().optional(),
     joiningDate: joiningDateSchema.optional(),
     dateOfBirth: dateOfBirthSchema.optional(),
@@ -112,6 +120,7 @@ export type DepartmentActionState = {
   success?: boolean;
   departmentId?: string;
   name?: string;
+  kind?: DepartmentKind;
 };
 
 async function assertCanManageEmployees() {
@@ -165,9 +174,19 @@ const createDepartmentSchema = z.object({
     .trim()
     .min(2, "Department name is too short")
     .max(80, "Department name is too long"),
+  kind: departmentKindSchema,
 });
 
-/** Create an org department (Add Employee → Add department). */
+const renameDepartmentSchema = z.object({
+  departmentId: z.string().uuid(),
+  name: z
+    .string()
+    .trim()
+    .min(2, "Department name is too short")
+    .max(80, "Department name is too long"),
+});
+
+/** Create an org department with a role-group kind. */
 export async function createDepartment(
   _prev: DepartmentActionState,
   formData: FormData
@@ -180,6 +199,56 @@ export async function createDepartment(
 
   const parsed = createDepartmentSchema.safeParse({
     name: formData.get("name"),
+    kind: formData.get("kind"),
+  });
+  if (!parsed.success) {
+    return { error: parsed.error.issues[0]?.message ?? "Invalid department" };
+  }
+
+  const name = parsed.data.name.replace(/\s+/g, " ");
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("departments")
+    .insert({ name, kind: parsed.data.kind })
+    .select("id, name, kind")
+    .single();
+
+  if (error) {
+    if (/kind/i.test(error.message) && /column/i.test(error.message)) {
+      return {
+        error: "Run supabase/migrations/0032_department_kinds.sql in Supabase first.",
+      };
+    }
+    if (/duplicate|unique/i.test(error.message)) {
+      return { error: "That department already exists" };
+    }
+    return { error: error.message };
+  }
+
+  revalidatePath("/admin/employees");
+  revalidatePath("/admin/onboarding");
+  return {
+    success: true,
+    departmentId: data.id,
+    name: data.name,
+    kind: parsed.data.kind,
+  };
+}
+
+/** Rename a department (display name only — kind / roles stay the same). */
+export async function renameDepartment(
+  _prev: DepartmentActionState,
+  formData: FormData
+): Promise<DepartmentActionState> {
+  try {
+    await assertCanManageEmployees();
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Not authorized" };
+  }
+
+  const parsed = renameDepartmentSchema.safeParse({
+    departmentId: formData.get("departmentId"),
+    name: formData.get("name"),
   });
   if (!parsed.success) {
     return { error: parsed.error.issues[0]?.message ?? "Invalid department name" };
@@ -189,44 +258,69 @@ export async function createDepartment(
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("departments")
-    .insert({ name })
-    .select("id, name")
+    .update({ name, updated_at: new Date().toISOString() })
+    .eq("id", parsed.data.departmentId)
+    .select("id, name, kind")
     .single();
 
   if (error) {
     if (/duplicate|unique/i.test(error.message)) {
-      return { error: "That department already exists" };
+      return { error: "That department name is already used" };
     }
     return { error: error.message };
   }
 
   revalidatePath("/admin/employees");
   revalidatePath("/admin/onboarding");
-  return { success: true, departmentId: data.id, name: data.name };
+  return {
+    success: true,
+    departmentId: data.id,
+    name: data.name,
+    kind: data.kind && isDepartmentKind(data.kind) ? data.kind : undefined,
+  };
 }
 
-async function roleIdForDepartment(department: StaffRoleKey) {
+async function roleIdForKey(roleKey: AssignableRoleKey) {
   const supabase = await createClient();
   const { data: role, error } = await supabase
     .from("roles")
     .select("id")
-    .eq("role_key", department)
+    .eq("role_key", roleKey)
     .maybeSingle();
 
   if (error || !role) {
     throw new Error(
-      "That department is missing. Run scripts/sync-staff-roles.sql in Supabase."
+      "That role is missing. Run scripts/sync-staff-roles.sql in Supabase."
     );
   }
   return role.id;
+}
+
+async function departmentKindForId(departmentId: string): Promise<DepartmentKind | null> {
+  const supabase = await createClient();
+  const { data } = await supabase
+    .from("departments")
+    .select("kind, name")
+    .eq("id", departmentId)
+    .maybeSingle();
+  if (!data) return null;
+  if (data.kind && isDepartmentKind(data.kind)) return data.kind;
+  const name = data.name.trim().toLowerCase();
+  if (name.includes("sale") || name.includes("agent")) return "SALES";
+  if (name.includes("hr")) return "HR";
+  if (name.includes("manage") || name.includes("database") || name.includes("email")) {
+    return "MANAGEMENT";
+  }
+  return null;
 }
 
 export async function createEmployee(
   _prev: ActionState,
   formData: FormData
 ): Promise<ActionState> {
+  let ctx;
   try {
-    await assertCanManageEmployees();
+    ctx = await assertCanManageEmployees();
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Not authorized" };
   }
@@ -249,21 +343,32 @@ export async function createEmployee(
   }
 
   const data = parsed.data;
+  if (isHr(data.department) && !isSuperAdmin(ctx.roleKey)) {
+    return { error: "Only Super Admin can add HR accounts" };
+  }
+
   const supabase = await createClient();
   const service = createServiceClient();
 
   const { data: departmentRow, error: departmentError } = await supabase
     .from("departments")
-    .select("id")
+    .select("id, kind, name")
     .eq("id", data.departmentId)
     .maybeSingle();
   if (departmentError || !departmentRow) {
     return { error: departmentError?.message ?? "Pick a department" };
   }
+  const kind =
+    departmentRow.kind && isDepartmentKind(departmentRow.kind)
+      ? departmentRow.kind
+      : await departmentKindForId(data.departmentId);
+  if (!kind || !roleAllowedForKind(kind, data.department)) {
+    return { error: "That role does not belong to the selected department" };
+  }
 
   let roleId: string;
   try {
-    roleId = await roleIdForDepartment(data.department);
+    roleId = await roleIdForKey(data.department);
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Role not found" };
   }
@@ -429,12 +534,21 @@ export async function updateEmployee(
       currentRoleKey = role?.role_key ?? "";
     }
 
-    if (!isManagement(currentRoleKey)) {
+    if (!isManagement(currentRoleKey) || (isHr(currentRoleKey) && isSuperAdmin(ctx.roleKey))) {
+      if (isHr(data.department) && !isSuperAdmin(ctx.roleKey)) {
+        return { error: "Only Super Admin can assign the HR role" };
+      }
+      if (data.departmentId) {
+        const kind = await departmentKindForId(data.departmentId);
+        if (!kind || !roleAllowedForKind(kind, data.department)) {
+          return { error: "That role does not belong to the selected department" };
+        }
+      }
       let roleId: string;
       try {
-        roleId = await roleIdForDepartment(data.department);
+        roleId = await roleIdForKey(data.department);
       } catch (e) {
-        return { error: e instanceof Error ? e.message : "Department not found" };
+        return { error: e instanceof Error ? e.message : "Role not found" };
       }
 
       if (currentRole && currentRole.role_id !== roleId) {

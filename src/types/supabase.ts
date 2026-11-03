@@ -58,6 +58,8 @@ export interface Database {
         {
           id: string;
           name: string;
+          /** SALES | MANAGEMENT | HR — stable role group; name is editable. */
+          kind: string | null;
           description: string | null;
           head_employee_id: string | null;
           created_at: string;
@@ -66,6 +68,7 @@ export interface Database {
         {
           id?: string;
           name: string;
+          kind?: string | null;
           description?: string | null;
           head_employee_id?: string | null;
           created_at?: string;

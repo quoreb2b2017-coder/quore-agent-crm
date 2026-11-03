@@ -5,6 +5,7 @@ import { PageHeader } from "@/components/dashboard/page-header";
 import { StatCard } from "@/components/dashboard/stat-card";
 import { EmployeesTable } from "./employees-table";
 import { CreateEmployeeDialog } from "./create-employee-dialog";
+import { ManageDepartmentsDialog } from "./manage-departments-dialog";
 import { loadEmployeeDirectory } from "@/lib/queries/employee-directory";
 import { loadDepartments } from "@/lib/queries/departments";
 import { getCurrentEmployeeContext } from "@/lib/permissions/server";
@@ -100,7 +101,12 @@ export default async function EmployeesPage() {
       <PageHeader
         title="Employees"
         description="Select an employee to set their shift login/logout. Overtime for a day is set from Attendance or Team today → Edit."
-        actions={<CreateEmployeeDialog employees={directory} departments={departments} />}
+        actions={
+          <div className="flex flex-wrap gap-2">
+            <ManageDepartmentsDialog departments={departments} />
+            <CreateEmployeeDialog employees={directory} departments={departments} />
+          </div>
+        }
       />
 
       <section className="grid grid-cols-1 gap-3 sm:grid-cols-3">
