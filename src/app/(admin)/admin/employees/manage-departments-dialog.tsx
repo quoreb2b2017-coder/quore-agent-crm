@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Pencil, Plus } from "lucide-react";
+import { Pencil, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -15,7 +15,7 @@ import {
   type DepartmentKind,
 } from "@/lib/departments";
 import type { DepartmentOption } from "@/lib/queries/departments";
-import { createDepartment, renameDepartment } from "./actions";
+import { createDepartment, deleteDepartment, renameDepartment } from "./actions";
 
 export function ManageDepartmentsDialog({
   departments: initialDepartments,
@@ -89,6 +89,29 @@ export function ManageDepartmentsDialog({
     router.refresh();
   }
 
+  async function removeDepartment(departmentId: string, name: string) {
+    if (
+      !window.confirm(
+        `Delete department “${name}”? People stay in the system; only the department link is removed.`
+      )
+    ) {
+      return;
+    }
+    setBusyId(departmentId);
+    setError(null);
+    const formData = new FormData();
+    formData.set("departmentId", departmentId);
+    const result = await deleteDepartment({}, formData);
+    setBusyId(null);
+    if (result.error) {
+      setError(result.error);
+      return;
+    }
+    syncFrom(departments.filter((row) => row.id !== departmentId));
+    toast.success(`Deleted “${name}”`);
+    router.refresh();
+  }
+
   return (
     <FormSheet
       open={open}
@@ -146,6 +169,17 @@ export function ManageDepartmentsDialog({
                   onClick={() => void saveRename(row.id)}
                 >
                   {busyId === row.id ? "Saving…" : "Save name"}
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+                  disabled={busyId === row.id}
+                  onClick={() => void removeDepartment(row.id, row.name)}
+                >
+                  <Trash2 className="size-3.5" />
+                  Delete
                 </Button>
               </div>
             </div>

@@ -14,6 +14,7 @@ import { minutesToTimeValue } from "@/lib/work-settings";
 import { NATIVE_SELECT_CLASS } from "@/lib/shift";
 import {
   DEPARTMENT_KIND_OPTIONS,
+  roleAllowedForKind,
   rolesForDepartmentKind,
   type AssignableRoleKey,
   type DepartmentKind,
@@ -64,11 +65,15 @@ export function CreateEmployeeDialog({
   const selectedDepartment = departments.find((row) => row.id === departmentId) ?? null;
   const roleOptions = rolesForDepartmentKind(selectedDepartment?.kind);
 
-  const departmentEmployees = useMemo(
-    () =>
-      departmentId ? employees.filter((row) => row.departmentId === departmentId) : [],
-    [departmentId, employees]
-  );
+  // Match linked department_id, or legacy staff with no department_id but the right role.
+  const departmentEmployees = useMemo(() => {
+    if (!departmentId || !selectedDepartment) return [];
+    return employees.filter((row) => {
+      if (row.departmentId === departmentId) return true;
+      if (row.departmentId != null) return false;
+      return roleAllowedForKind(selectedDepartment.kind, row.roleKey);
+    });
+  }, [departmentId, employees, selectedDepartment]);
   const selected = departmentEmployees.find((row) => row.id === employeeId) ?? null;
   const isExisting = Boolean(selected);
 

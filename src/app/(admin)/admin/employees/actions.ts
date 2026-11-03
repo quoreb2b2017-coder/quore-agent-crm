@@ -280,6 +280,61 @@ export async function renameDepartment(
   };
 }
 
+const deleteDepartmentSchema = z.object({
+  departmentId: z.string().uuid(),
+});
+
+/** Delete a department. Employees keep their roles; department_id is cleared by FK. */
+export async function deleteDepartment(
+  _prev: DepartmentActionState,
+  formData: FormData
+): Promise<DepartmentActionState> {
+  try {
+    await assertCanManageEmployees();
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Not authorized" };
+  }
+
+  const parsed = deleteDepartmentSchema.safeParse({
+    departmentId: formData.get("departmentId"),
+  });
+  if (!parsed.success) {
+    return { error: parsed.error.issues[0]?.message ?? "Pick a department" };
+  }
+
+  const supabase = await createClient();
+  const { data: existing, error: loadError } = await supabase
+    .from("departments")
+    .select("id, name")
+    .eq("id", parsed.data.departmentId)
+    .maybeSingle();
+  if (loadError || !existing) {
+    return { error: loadError?.message ?? "Department not found" };
+  }
+
+  const { count } = await supabase
+    .from("employees")
+    .select("id", { count: "exact", head: true })
+    .eq("department_id", existing.id)
+    .neq("employment_status", "TERMINATED");
+
+  // Unlink first so delete never fails if ON DELETE SET NULL is missing.
+  if ((count ?? 0) > 0) {
+    const { error: clearError } = await supabase
+      .from("employees")
+      .update({ department_id: null, updated_at: new Date().toISOString() })
+      .eq("department_id", existing.id);
+    if (clearError) return { error: clearError.message };
+  }
+
+  const { error } = await supabase.from("departments").delete().eq("id", existing.id);
+  if (error) return { error: error.message };
+
+  revalidatePath("/admin/employees");
+  revalidatePath("/admin/onboarding");
+  return { success: true, departmentId: existing.id, name: existing.name };
+}
+
 async function roleIdForKey(roleKey: AssignableRoleKey) {
   const supabase = await createClient();
   const { data: role, error } = await supabase
