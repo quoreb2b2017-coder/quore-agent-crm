@@ -10,6 +10,7 @@ import { AppBar } from "@/components/layout/app-bar";
 import { CommandPalette, type PaletteAction } from "@/components/layout/command-palette";
 import { SessionPresence } from "@/components/layout/session-presence";
 import { AppSocketProvider } from "@/components/realtime/app-socket";
+import { EnablePushNotifications } from "@/components/notifications/enable-push-notifications";
 import { NavigationLoader } from "@/components/layout/route-loading";
 import { PermissionsProvider } from "@/lib/permissions/context";
 import { isManagement } from "@/lib/permissions/roles";
@@ -75,6 +76,7 @@ export function AppShell({
             />
             <SidebarInset className="bg-app-canvas min-h-0 overflow-hidden">
               <SessionPresence enableClockIn={!isManagement(ctx.roleKey)} />
+              <EnablePushNotifications />
               {mfaRequired && pathname !== securityHref ? (
                 <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-[#fecdca] bg-[#fef3f2] px-4 py-2 text-[13px] text-[#7a271a] md:px-8">
                   <ShieldAlert className="size-4 shrink-0 text-[#b42318]" aria-hidden />

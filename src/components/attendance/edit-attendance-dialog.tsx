@@ -115,13 +115,13 @@ export function EditAttendanceDialog({
           name="overtimeMinutes"
           type="number"
           min={0}
-          max={720}
+          max={60}
           step={15}
           defaultValue={attendance?.overtime_minutes ?? 0}
         />
         <p className="text-xs text-muted-foreground">
-          Extra minutes past this employee&apos;s logout that count as work. 0 = no overtime. Max 12 hours.
-          Saving recalculates that day&apos;s productive time.
+          Approve OT after logout (max 60 min). Shortfall to 7h 45m fills first; rest is OT and always
+          needs admin approve (including 1 full hour). Saving recalculates that day.
         </p>
       </div>
       <div className="grid gap-2 sm:col-span-2">

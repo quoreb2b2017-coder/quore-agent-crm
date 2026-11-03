@@ -16,11 +16,15 @@ import {
   productiveTargetSeconds,
   productivityPercent,
   shiftAccountingWindowUtc,
+  PRODUCTIVE_SECONDS,
   type BreakExcess,
 } from "@/lib/shift";
+import { dailyActiveSeconds } from "@/lib/live-time";
 import { setupAsOf } from "@/lib/payroll";
 import { isUndecidedLeaveType, unpackLeaveNote } from "@/lib/leave";
 import type { BreakRow } from "@/lib/queries/employee-status";
+import { liveSessionSlices } from "@/lib/queries/admin-dashboard";
+import { loadEffectiveWorkSettings } from "@/lib/work-settings-server";
 
 export type EmployeeHistoryAttendance = {
   id: string;
@@ -54,7 +58,13 @@ export type EmployeeHistoryPayload = {
   idleSeconds: number;
   todayActiveSeconds: number;
   todayProductivityPct: number;
-  chartData: { day: string; activeHours: number }[];
+  chartData: {
+    day: string;
+    activeHours: number;
+    otHours: number;
+    targetHours: number;
+    status: "met" | "short" | "in_progress" | "off" | "upcoming";
+  }[];
   attendance: EmployeeHistoryAttendance[];
   breaks: BreakRow[];
   timeline: { time: string; label: string }[];
@@ -77,7 +87,8 @@ export async function getEmployeeHistory(employeeId: string): Promise<EmployeeHi
   const today = todayIso();
   const since = addDaysIso(today, -29);
   const chartSince = addDaysIso(today, -6);
-  const { start, end } = shiftAccountingWindowUtc(today);
+  const workSettings = await loadEffectiveWorkSettings(employeeId);
+  const { start, end } = shiftAccountingWindowUtc(today, workSettings);
   const rangeStart = istLocalToUtc(since, 0, 0).toISOString();
   const rangeEnd = end.toISOString();
 
@@ -92,6 +103,7 @@ export async function getEmployeeHistory(employeeId: string): Promise<EmployeeHi
     { data: leaveTypes },
     { data: salaryRecords },
     { data: employee },
+    live,
   ] = await Promise.all([
     supabase
       .from("attendance")
@@ -143,17 +155,50 @@ export async function getEmployeeHistory(employeeId: string): Promise<EmployeeHi
       .eq("employee_id", employeeId)
       .order("effective_from", { ascending: false }),
     supabase.from("employees").select("salary").eq("id", employeeId).maybeSingle(),
+    liveSessionSlices(supabase, [employeeId]),
   ]);
 
   const rows = attendance ?? [];
   const todayRow = rows.find((row) => row.attendance_date === today);
   const byDate = new Map(rows.map((row) => [row.attendance_date, row]));
+  const slice = live.get(employeeId);
+  const todayLiveSeconds = dailyActiveSeconds({
+    storedActiveSeconds: todayRow?.total_active_seconds ?? 0,
+    sessionStartedAt: slice?.sessionStartedAt ?? null,
+    sessionClosedBreakSeconds: slice?.sessionClosedBreakSeconds ?? 0,
+    openBreakStartedAt: slice?.openBreakStartedAt ?? null,
+    sessionClosedWashroomSeconds: slice?.sessionClosedWashroomSeconds ?? 0,
+    openWashroomStartedAt: slice?.openWashroomStartedAt ?? null,
+    settings: workSettings,
+    overtimeMinutes: todayRow?.overtime_minutes ?? 0,
+  });
+  const offStatuses = new Set(["ON_LEAVE", "HOLIDAY", "WEEK_OFF"]);
   const chartData = eachDateInclusive(chartSince, today).map((iso) => {
     const row = byDate.get(iso);
-    const credited = row ? creditedProductiveSeconds(row.total_active_seconds, row.status) : 0;
+    const seconds =
+      iso === today ? todayLiveSeconds : (row?.total_active_seconds ?? 0);
+    const credited = creditedProductiveSeconds(seconds, row?.status);
+    const targetSeconds = productiveTargetSeconds(row?.status);
+    const targetHours = Math.round((targetSeconds / 3600) * 100) / 100;
+    const off = row && offStatuses.has(row.status);
+    const status = off
+      ? ("off" as const)
+      : iso === today
+        ? credited >= targetSeconds
+          ? ("met" as const)
+          : ("in_progress" as const)
+        : credited >= targetSeconds
+          ? ("met" as const)
+          : credited > 0 || row
+            ? ("short" as const)
+            : ("upcoming" as const);
+    const otHours = Math.round(((row?.overtime_minutes ?? 0) / 60) * 10) / 10;
     return {
       day: weekdayShortIst(iso),
       activeHours: Math.round((credited / 3600) * 10) / 10,
+      otHours,
+      targetHours: off ? Math.round((PRODUCTIVE_SECONDS / 3600) * 100) / 100 : targetHours,
+      status,
     };
   });
 
@@ -213,27 +258,29 @@ export async function getEmployeeHistory(employeeId: string): Promise<EmployeeHi
     since,
     presentDays: rows.filter((row) => row.status === "PRESENT" || row.status === "LATE" || row.status === "HALF_DAY").length,
     leaveDays: rows.filter((row) => row.status === "ON_LEAVE").length,
-    activeSeconds: rows.reduce(
-      (sum, row) => sum + creditedProductiveSeconds(row.total_active_seconds, row.status),
-      0
-    ),
+    activeSeconds: rows.reduce((sum, row) => {
+      const seconds =
+        row.attendance_date === today ? todayLiveSeconds : row.total_active_seconds;
+      return sum + creditedProductiveSeconds(seconds, row.status);
+    }, 0),
     breakSeconds: rows.reduce((sum, row) => sum + row.total_break_seconds, 0),
     idleSeconds: rows.reduce((sum, row) => sum + row.total_idle_seconds, 0),
-    todayActiveSeconds: creditedProductiveSeconds(
-      todayRow?.total_active_seconds ?? 0,
-      todayRow?.status
-    ),
+    todayActiveSeconds: creditedProductiveSeconds(todayLiveSeconds, todayRow?.status),
     todayProductivityPct: productivityPercent(
-      creditedProductiveSeconds(todayRow?.total_active_seconds ?? 0, todayRow?.status),
+      creditedProductiveSeconds(todayLiveSeconds, todayRow?.status),
       productiveTargetSeconds(todayRow?.status)
     ),
     chartData,
-    attendance: rows.map((row) => ({
-      ...row,
-      overtime_minutes: row.overtime_minutes ?? 0,
-      notes: row.notes ?? null,
-      total_active_seconds: creditedProductiveSeconds(row.total_active_seconds, row.status),
-    })),
+    attendance: rows.map((row) => {
+      const seconds =
+        row.attendance_date === today ? todayLiveSeconds : row.total_active_seconds;
+      return {
+        ...row,
+        overtime_minutes: row.overtime_minutes ?? 0,
+        notes: row.notes ?? null,
+        total_active_seconds: creditedProductiveSeconds(seconds, row.status),
+      };
+    }),
     breaks: (breakRows ?? []).map((row) => ({
       id: row.id,
       employeeId: row.employee_id,

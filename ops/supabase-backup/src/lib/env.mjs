@@ -38,15 +38,18 @@ function firstExisting(...candidates) {
  * Credentials must live outside the app repo when possible.
  * Search order:
  * 1. BACKUP_ENV_FILE
- * 2. ~/Library/Application Support/quore-supabase-backup/credentials.env
- * 3. ~/.config/quore-supabase-backup/credentials.env
- * 4. ops/supabase-backup/.env (local/dev only — gitignored)
+ * 2. macOS Application Support
+ * 3. Windows %LOCALAPPDATA%/quore-supabase-backup/credentials.env
+ * 4. ~/.config/quore-supabase-backup/credentials.env
+ * 5. ops/supabase-backup/.env (local/dev only — gitignored)
  */
 export function loadBackupEnv() {
   const home = os.homedir();
+  const localAppData = process.env.LOCALAPPDATA || path.join(home, "AppData", "Local");
   const envFile = firstExisting(
     process.env.BACKUP_ENV_FILE,
     path.join(home, "Library/Application Support/quore-supabase-backup/credentials.env"),
+    path.join(localAppData, "quore-supabase-backup", "credentials.env"),
     path.join(home, ".config/quore-supabase-backup/credentials.env"),
     path.join(TOOLKIT_ROOT, ".env")
   );

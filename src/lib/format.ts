@@ -248,16 +248,18 @@ export function calendarDateInZone(date: Date, timeZone: string): string {
 }
 
 /** Shift date: before logout on an overnight shift still belongs to the previous day. */
-export function todayIso(date = trustedNowDate()): string {
-  const settings = getWorkSettings();
+export function todayIso(
+  date = trustedNowDate(),
+  settings = getWorkSettings()
+): string {
   const minutes = minutesInTimeZone(date, settings.timeZone);
   const calendar = calendarDateInZone(date, settings.timeZone);
   if (shiftSpansMidnight(settings) && minutes < settings.logoutMinutes) return addDaysIso(calendar, -1);
   return calendar;
 }
 
-export function shiftDateIso(date = new Date()): string {
-  return todayIso(date);
+export function shiftDateIso(date = new Date(), settings = getWorkSettings()): string {
+  return todayIso(date, settings);
 }
 
 export function minutesInTimeZone(date: Date, timeZone: string): number {

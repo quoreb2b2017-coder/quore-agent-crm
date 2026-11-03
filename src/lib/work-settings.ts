@@ -14,6 +14,8 @@ export type WorkSettings = {
 export type WorkSchedule = {
   loginMinutes: number;
   logoutMinutes: number;
+  /** ISO timestamp when this custom shift was last assigned/updated by admin. */
+  updatedAt?: string;
 };
 
 export const DEFAULT_WORK_SETTINGS: WorkSettings = {
@@ -39,7 +41,8 @@ export function parseWorkSchedule(raw: unknown): WorkSchedule | null {
   const logoutMinutes = asFiniteMinutes(row.logoutMinutes);
   if (loginMinutes == null || logoutMinutes == null) return null;
   if (loginMinutes === logoutMinutes) return null;
-  return { loginMinutes, logoutMinutes };
+  const updatedAt = typeof row.updatedAt === "string" && row.updatedAt.trim() ? row.updatedAt : undefined;
+  return { loginMinutes, logoutMinutes, ...(updatedAt ? { updatedAt } : {}) };
 }
 
 /** Company settings with optional employee login/logout override. Late = login + 1 min. */
@@ -56,8 +59,25 @@ export function applyWorkSchedule(
   };
 }
 
-export function workSchedulePayload(schedule: WorkSchedule | null): WorkSchedule | Record<string, never> {
-  return schedule ?? {};
+/**
+ * JSON to store on `employees.work_schedule`.
+ * Stamps `updatedAt` when login/logout change; keeps previous stamp if times unchanged.
+ */
+export function workSchedulePayload(
+  schedule: WorkSchedule | null,
+  previous: WorkSchedule | null = null
+): WorkSchedule | Record<string, never> {
+  if (!schedule) return {};
+  const sameTimes =
+    previous != null &&
+    previous.loginMinutes === schedule.loginMinutes &&
+    previous.logoutMinutes === schedule.logoutMinutes;
+  return {
+    loginMinutes: schedule.loginMinutes,
+    logoutMinutes: schedule.logoutMinutes,
+    updatedAt:
+      sameTimes && previous.updatedAt ? previous.updatedAt : new Date().toISOString(),
+  };
 }
 
 export const TIME_ZONE_OPTIONS: { id: string; label: string }[] = [

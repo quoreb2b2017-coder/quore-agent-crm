@@ -12,7 +12,11 @@ export function WorkSettingsBridge({
   settings: WorkSettings;
   children: React.ReactNode;
 }) {
+  // Keep in sync when admin changes this user's custom login/logout.
   setWorkSettings(settings);
+  useEffect(() => {
+    setWorkSettings(settings);
+  }, [settings.loginMinutes, settings.logoutMinutes, settings.timeZone, settings.lateMinutes]);
   useEffect(() => {
     void syncTrustedClock();
     const id = window.setInterval(() => void syncTrustedClock(), 60_000);

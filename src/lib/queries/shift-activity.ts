@@ -11,6 +11,7 @@ import {
   weekdayShortIst,
 } from "@/lib/format";
 import { formatBreakType, shiftAccountingWindowUtc } from "@/lib/shift";
+import { loadEmployeeWorkSettingsMap, loadWorkSettings } from "@/lib/work-settings-server";
 
 export type ActivityTone = "login" | "logout" | "break" | "washroom" | "meeting";
 
@@ -48,10 +49,19 @@ export async function getShiftActivity(
   const byId = new Map(people.map((person) => [person.id, person]));
   const from = shiftDate <= throughDate ? shiftDate : throughDate;
   const to = shiftDate <= throughDate ? throughDate : shiftDate;
-  const { start } = shiftAccountingWindowUtc(from);
-  const { end } = shiftAccountingWindowUtc(to);
-  const startIso = start.toISOString();
-  const endIso = end.toISOString();
+  const [company, settingsByEmployee] = await Promise.all([
+    loadWorkSettings(),
+    loadEmployeeWorkSettingsMap(ids),
+  ]);
+  const settingsList = [company, ...ids.map((id) => settingsByEmployee.get(id) ?? company)];
+  let startMs = Infinity;
+  let endMs = -Infinity;
+  for (const settings of settingsList) {
+    startMs = Math.min(startMs, shiftAccountingWindowUtc(from, settings).start.getTime());
+    endMs = Math.max(endMs, shiftAccountingWindowUtc(to, settings).end.getTime());
+  }
+  const startIso = new Date(startMs).toISOString();
+  const endIso = new Date(endMs).toISOString();
   const service = createServiceClient();
 
   const [{ data: sessions }, { data: breaks }, { data: washrooms }, { data: meetings }] =

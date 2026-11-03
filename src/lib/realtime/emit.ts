@@ -1,5 +1,6 @@
 import type { RealtimeNotification } from "./types";
 import { serverSocketUrl, socketAuthSecret } from "@/lib/env";
+import { sendWebPushForNotifications } from "@/lib/push/web-push-server";
 
 async function postSocket(path: string, body: unknown) {
   const base = serverSocketUrl();
@@ -23,7 +24,10 @@ async function postSocket(path: string, body: unknown) {
 
 export async function emitNotifications(notifications: RealtimeNotification[]) {
   if (notifications.length === 0) return;
+  // Existing in-app realtime path (unchanged).
   await postSocket("/notify", { notifications });
+  // Parallel offline channel — never blocks or rolls back the DB/socket path.
+  void sendWebPushForNotifications(notifications).catch(() => {});
 }
 
 export async function emitToEmployees(employeeIds: string[], event: string, payload: unknown) {

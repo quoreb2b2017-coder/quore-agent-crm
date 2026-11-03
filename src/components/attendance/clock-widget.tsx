@@ -32,10 +32,11 @@ import {
   shiftTargetSeconds,
   shiftWindowUtc,
   slotBudgetSeconds,
+  softOvertimeMinutes,
   creditedWorkBounds,
   type BreakSlot,
 } from "@/lib/shift";
-import { formatMinutesLabel, getWorkSettings } from "@/lib/work-settings";
+import { formatMinutesLabel, getWorkSettings, setWorkSettings } from "@/lib/work-settings";
 import type { MySessionState } from "@/lib/queries/employee-status";
 import { cn } from "@/lib/utils";
 
@@ -152,6 +153,7 @@ export function ClockWidget({
     washroomStartedAt = null,
     sessionClosedWashroomSeconds = 0,
     overtimeMinutes = 0,
+    workSettings: sessionWorkSettings,
     onLeave,
     weekOff = false,
     halfDay = false,
@@ -169,24 +171,27 @@ export function ClockWidget({
   const breakActive = (isOnBreak || localBreak != null) && breakResume == null;
   const breakStartedAt = openBreakStartedAt ?? localBreak?.startedAt ?? null;
   const breakType = openBreakType ?? localBreak?.slot ?? null;
-  const settings = getWorkSettings();
+  // Prefer this employee's saved shift (custom login/logout), not a stale company default.
+  const settings = sessionWorkSettings ?? getWorkSettings();
+  if (sessionWorkSettings) setWorkSettings(sessionWorkSettings);
+  // Soft 1h window after logout so shortfall can fill; OT still needs admin approve.
+  const windowOtMinutes = softOvertimeMinutes(overtimeMinutes);
   const countedFrom = sessionStartedAt
-    ? new Date(creditedWorkBounds(sessionStartedAt, trustedNowMs(), settings, overtimeMinutes).from).toISOString()
+    ? new Date(creditedWorkBounds(sessionStartedAt, trustedNowMs(), settings, windowOtMinutes).from).toISOString()
     : null;
   const elapsed = useElapsed(countedFrom, isClockedIn);
   const nowMs = trustedNowMs();
   const elapsedCapped = sessionStartedAt
-    ? creditedWorkBounds(sessionStartedAt, nowMs, settings, overtimeMinutes).seconds
+    ? creditedWorkBounds(sessionStartedAt, nowMs, settings, windowOtMinutes).seconds
     : (elapsed ?? 0);
   const shiftEndMs = sessionStartedAt
-    ? shiftWindowUtc(shiftDateIso(new Date(sessionStartedAt)), settings, overtimeMinutes).end.getTime()
+    ? shiftWindowUtc(shiftDateIso(new Date(sessionStartedAt), settings), settings, windowOtMinutes).end.getTime()
     : null;
   const officialLogoutMs = sessionStartedAt
-    ? shiftWindowUtc(shiftDateIso(new Date(sessionStartedAt)), settings, 0).end.getTime()
+    ? shiftWindowUtc(shiftDateIso(new Date(sessionStartedAt), settings), settings, 0).end.getTime()
     : null;
   const pastLogout = shiftEndMs != null && nowMs >= shiftEndMs;
   const inOvertime =
-    overtimeMinutes > 0 &&
     officialLogoutMs != null &&
     nowMs >= officialLogoutMs &&
     !pastLogout;
@@ -198,7 +203,7 @@ export function ClockWidget({
       { started_at: startedAt, ended_at: null },
       new Date(startedAt).getTime() + seconds * 1000,
       settings,
-      overtimeMinutes
+      windowOtMinutes
     );
   };
   const breakElapsed = useElapsed(breakStartedAt, breakActive);
@@ -402,7 +407,7 @@ export function ClockWidget({
                 <span className="text-xs text-muted-foreground">
                   Logged in {mounted ? formatTime(sessionStartedAt) : "—"}
                   {mounted && countedFrom && countedFrom > sessionStartedAt
-                    ? ` · productive time counts from ${formatMinutesLabel(getWorkSettings().loginMinutes)}`
+                    ? ` · productive time counts from ${formatMinutesLabel(settings.loginMinutes, settings.timeZone)}`
                     : ""}
                 </span>
               ) : onLeave ? (
@@ -467,15 +472,15 @@ export function ClockWidget({
                 ) : null}
                 {inOvertime ? (
                   <p className="text-xs font-medium text-muted-foreground">
-                    Overtime approved · counting past {logoutLabel} ({overtimeMinutes} min)
+                    After {logoutLabel}: shortfall fills first, then OT
+                    {overtimeMinutes > 0
+                      ? ` · ${overtimeMinutes} min OT approved`
+                      : " · OT needs admin approve (even full 1h)"}
                   </p>
                 ) : null}
                 {pastLogout ? (
                   <p className="text-xs font-medium text-muted-foreground">
-                    Productive time stopped
-                    {overtimeMinutes > 0
-                      ? ` after ${overtimeMinutes} min overtime past ${logoutLabel}`
-                      : ` at ${logoutLabel}`}
+                    Soft OT window ended (1h past {logoutLabel})
                   </p>
                 ) : null}
               </>

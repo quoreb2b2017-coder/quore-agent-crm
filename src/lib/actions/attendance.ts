@@ -18,10 +18,16 @@ import {
   formatBreakType,
   fromDatetimeLocalIst,
   shiftAccountingWindowUtc,
+  allocateOvertime,
   creditedAwaySeconds,
   creditedWorkBounds,
   isLateClockIn,
+  parseOtPendingMinutes,
+  productiveTargetSeconds,
+  softOvertimeMinutes,
   slotBudgetSeconds,
+  withOtPendingNotes,
+  OT_WINDOW_MINUTES,
   type PolicyBreakType,
 } from "@/lib/shift";
 import { ADMIN_LOGOUT_TYPE, insertAndEmitNotification, notifySuperAdmins } from "@/lib/realtime/notify";
@@ -49,7 +55,7 @@ function revalidateLive() {
 }
 
 const ATTENDANCE_SHIFT_COLS =
-  "id, status, first_check_in, last_check_out, total_active_seconds, total_break_seconds, total_idle_seconds, overtime_minutes";
+  "id, status, first_check_in, last_check_out, total_active_seconds, total_break_seconds, total_idle_seconds, overtime_minutes, notes";
 
 async function attendanceForShift(
   supabase: Awaited<ReturnType<typeof createClient>>,
@@ -83,71 +89,100 @@ async function ensureAttendanceRow(
   return created;
 }
 
-/** Rebuild day's active/break totals from sessions using official shift + approved overtime. */
-async function recomputeShiftTotals(
+/** Rebuild day's productive + OT totals: shortfall fills first, then OT (always pending until admin). */
+export async function recomputeShiftTotals(
   employeeId: string,
   shiftDate: string,
   overtimeMinutes: number
 ) {
   const settings = await loadEffectiveWorkSettings(employeeId);
   const supabase = createServiceClient();
+  const softOt = softOvertimeMinutes(overtimeMinutes);
   const { start, end } = shiftAccountingWindowUtc(shiftDate, settings);
+  // Include soft OT past logout so late stay is visible for shortfall/OT split.
+  const endWithOt = new Date(end.getTime() + softOt * 60_000);
   const [{ data: sessions }, { data: breaks }, { data: washrooms }] = await Promise.all([
     supabase
       .from("employee_sessions")
       .select("id, started_at, ended_at")
       .eq("employee_id", employeeId)
-      .lt("started_at", end.toISOString())
+      .lt("started_at", endWithOt.toISOString())
       .or(`ended_at.is.null,ended_at.gte.${start.toISOString()}`),
     supabase
       .from("breaks")
       .select("session_id, started_at, ended_at, duration_seconds")
       .eq("employee_id", employeeId)
       .gte("started_at", start.toISOString())
-      .lt("started_at", end.toISOString()),
+      .lt("started_at", endWithOt.toISOString()),
     supabase
       .from("washroom_visits")
       .select("session_id, started_at, ended_at, duration_seconds")
       .eq("employee_id", employeeId)
       .gte("started_at", start.toISOString())
-      .lt("started_at", end.toISOString()),
+      .lt("started_at", endWithOt.toISOString()),
   ]);
 
   const nowMs = googleDate().getTime();
-  let activeSeconds = 0;
+  let shiftProductive = 0;
+  let softProductive = 0;
   let breakSeconds = 0;
+  const breakRows = breaks ?? [];
+  const washRows = washrooms ?? [];
+
   for (const session of sessions ?? []) {
-    const endedAt = session.ended_at ? new Date(session.ended_at) : new Date(nowMs);
-    const sessionSeconds = creditedWorkBounds(
-      session.started_at,
-      endedAt,
-      settings,
-      overtimeMinutes
-    ).seconds;
-    const sessionBreaks = (breaks ?? []).filter((row) => row.session_id === session.id);
-    const sessionWash = (washrooms ?? []).filter((row) => row.session_id === session.id);
-    const away = (rows: { started_at: string; ended_at: string | null; duration_seconds: number | null }[]) =>
-      rows.reduce(
-        (sum, row) =>
-          sum + creditedAwaySeconds(session.started_at, row, endedAt.getTime(), settings, overtimeMinutes),
+    if (!session.ended_at) {
+      const openBreaks = breakRows.filter((row) => row.session_id === session.id && row.ended_at != null);
+      breakSeconds += openBreaks.reduce(
+        (sum, row) => sum + creditedAwaySeconds(session.started_at, row, nowMs, settings, softOt),
         0
       );
-    const breakPart = away(sessionBreaks);
-    const washPart = away(sessionWash);
-    breakSeconds += breakPart;
-    activeSeconds += Math.max(0, sessionSeconds - breakPart - washPart);
+      continue;
+    }
+    const endedAtMs = new Date(session.ended_at).getTime();
+    const sessionBreaks = breakRows.filter((row) => row.session_id === session.id);
+    const sessionWash = washRows.filter((row) => row.session_id === session.id);
+    const awayAt = (ot: number) => (rows: typeof sessionBreaks) =>
+      rows.reduce(
+        (sum, row) => sum + creditedAwaySeconds(session.started_at, row, endedAtMs, settings, ot),
+        0
+      );
+    const netAt = (ot: number) => {
+      const seconds = creditedWorkBounds(session.started_at, new Date(endedAtMs), settings, ot).seconds;
+      return Math.max(0, seconds - awayAt(ot)(sessionBreaks) - awayAt(ot)(sessionWash));
+    };
+    breakSeconds += awayAt(softOt)(sessionBreaks.filter((row) => row.ended_at != null));
+    shiftProductive += netAt(0);
+    softProductive += netAt(softOt);
   }
 
   const attendance = await ensureAttendanceRow(supabase as never, employeeId, shiftDate);
   if (BLOCKED_CLOCK_STATUSES.has(attendance.status)) return;
-  await supabase
-    .from("attendance")
-    .update({
-      total_active_seconds: activeSeconds,
-      total_break_seconds: breakSeconds,
-      overtime_minutes: overtimeMinutes,
-    })
-    .eq("id", attendance.id);
+
+  const approved = Math.max(0, Math.min(OT_WINDOW_MINUTES, Math.floor(overtimeMinutes)));
+  const allocation = allocateOvertime({
+    shiftProductiveSeconds: shiftProductive,
+    postLogoutSeconds: Math.max(0, softProductive - shiftProductive),
+    targetSeconds: productiveTargetSeconds(attendance.status),
+    approvedOvertimeMinutes: approved,
+  });
+
+  // Never auto-approve OT — only admin-approved minutes count; rest stays pending.
+  const storedOtMinutes = Math.floor(allocation.overtimeSeconds / 60);
+
+  const notes = withOtPendingNotes(attendance.notes, allocation.pendingOvertimeMinutes);
+  const payload: Record<string, unknown> = {
+    // Productive only (shift + shortfall fill). Approved OT is separate for graphs.
+    total_active_seconds: allocation.productiveSeconds,
+    total_break_seconds: breakSeconds,
+    overtime_minutes: storedOtMinutes,
+    notes,
+  };
+  // Prefer dedicated column when migration 0030 is applied; notes marker is the fallback.
+  const withColumn = { ...payload, overtime_pending_minutes: allocation.pendingOvertimeMinutes };
+  const first = await supabase.from("attendance").update(withColumn).eq("id", attendance.id);
+  if (first.error && /overtime_pending_minutes/i.test(first.error.message)) {
+    await supabase.from("attendance").update(payload).eq("id", attendance.id);
+  }
 }
 
 const BLOCKED_CLOCK_STATUSES = new Set(["ON_LEAVE", "HOLIDAY", "WEEK_OFF"]);
@@ -297,9 +332,9 @@ export async function clockIn(): Promise<Result> {
   if (isManagement(ctx.roleKey)) {
     return { skipped: true };
   }
-  await loadEffectiveWorkSettings(ctx.employeeId);
+  const settings = await loadEffectiveWorkSettings(ctx.employeeId);
   const supabase = await createClient();
-  const shiftDate = shiftDateIso();
+  const shiftDate = shiftDateIso(new Date(), settings);
   if (isWeekendIso(shiftDate)) {
     try {
       await ensureWeekendOff(supabase, ctx.employeeId, shiftDate);
@@ -448,7 +483,7 @@ export async function closeWorkSession(
       0,
       Math.floor((now.getTime() - new Date(openBreak.started_at).getTime()) / 1000)
     );
-    const shiftDate = shiftDateIso(new Date(openBreak.started_at));
+    const shiftDate = shiftDateIso(new Date(openBreak.started_at), settings);
     await supabase
       .from("breaks")
       .update({ ended_at: now.toISOString(), duration_seconds: durationSeconds })
@@ -468,29 +503,9 @@ export async function closeWorkSession(
     }
   }
 
-  const shiftDate = shiftDateIso(new Date(session.started_at));
+  const shiftDate = shiftDateIso(new Date(session.started_at), settings);
   const dayAttendance = await attendanceForShift(supabase as never, employeeId, shiftDate);
   const overtimeMinutes = dayAttendance?.overtime_minutes ?? 0;
-  const sessionSeconds = creditedWorkBounds(session.started_at, now, settings, overtimeMinutes).seconds;
-  const [{ data: sessionBreaks }, { data: sessionWashroom }] = await Promise.all([
-    supabase
-      .from("breaks")
-      .select("started_at, ended_at, duration_seconds")
-      .eq("session_id", session.id),
-    supabase
-      .from("washroom_visits")
-      .select("started_at, ended_at, duration_seconds")
-      .eq("session_id", session.id),
-  ]);
-  const creditedSum = (rows: { started_at: string; ended_at: string | null; duration_seconds: number | null }[]) =>
-    rows.reduce(
-      (sum, row) =>
-        sum + creditedAwaySeconds(session.started_at, row, now.getTime(), settings, overtimeMinutes),
-      0
-    );
-  const breakSeconds = creditedSum(sessionBreaks ?? []);
-  const washroomSeconds = creditedSum(sessionWashroom ?? []);
-  const activeSeconds = Math.max(0, sessionSeconds - breakSeconds - washroomSeconds);
 
   const { error: sessionError } = await supabase
     .from("employee_sessions")
@@ -501,15 +516,16 @@ export async function closeWorkSession(
   try {
     const attendance = await ensureAttendanceRow(supabase as never, employeeId, shiftDate);
     if (!BLOCKED_CLOCK_STATUSES.has(attendance.status)) {
+      const idleExtra = Math.max(0, Math.floor(options?.idleSeconds ?? 0));
       await supabase
         .from("attendance")
         .update({
           last_check_out: now.toISOString(),
-          total_active_seconds: (attendance.total_active_seconds ?? 0) + activeSeconds,
-          total_idle_seconds:
-            (attendance.total_idle_seconds ?? 0) + Math.max(0, Math.floor(options?.idleSeconds ?? 0)),
+          total_idle_seconds: (attendance.total_idle_seconds ?? 0) + idleExtra,
         })
         .eq("id", attendance.id);
+      // Split shift / shortfall-fill / OT (auto 1h or pending < 1h).
+      await recomputeShiftTotals(employeeId, shiftDate, overtimeMinutes);
     }
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Failed to update attendance" };
@@ -549,7 +565,8 @@ export async function startBreak(breakType: PolicyBreakType, clickedAt?: string)
 
   if (!session) return { error: "Clock in before starting a break." };
 
-  const shiftDate = shiftDateIso(new Date(session.started_at));
+  const settings = await loadEffectiveWorkSettings(ctx.employeeId);
+  const shiftDate = shiftDateIso(new Date(session.started_at), settings);
   const [{ data: openBreak }, openMeeting, washroomOpen, used] = await Promise.all([
     supabase
       .from("breaks")
@@ -605,7 +622,8 @@ export async function endBreak(): Promise<Result> {
     0,
     Math.floor((now.getTime() - new Date(openBreak.started_at).getTime()) / 1000)
   );
-  const shiftDate = shiftDateIso(new Date(openBreak.started_at));
+  const settings = await loadEffectiveWorkSettings(ctx.employeeId);
+  const shiftDate = shiftDateIso(new Date(openBreak.started_at), settings);
 
   const { error } = await supabase
     .from("breaks")
@@ -897,7 +915,7 @@ const editSchema = z.object({
   checkIn: z.string().optional(),
   checkOut: z.string().optional(),
   notes: z.string().optional(),
-  overtimeMinutes: z.coerce.number().int().min(0).max(720),
+  overtimeMinutes: z.coerce.number().int().min(0).max(OT_WINDOW_MINUTES),
 });
 
 export async function upsertAttendanceByAdmin(
@@ -972,10 +990,10 @@ export async function upsertAttendanceByAdmin(
 const overtimeOnlySchema = z.object({
   employeeId: z.string().uuid(),
   attendanceDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Pick a date"),
-  overtimeMinutes: z.coerce.number().int().min(0).max(720),
+  overtimeMinutes: z.coerce.number().int().min(0).max(OT_WINDOW_MINUTES),
 });
 
-/** Admin grants overtime minutes after that employee's logout for one date. */
+/** Admin grants/approves overtime minutes after logout for one date (max 1 hour). */
 export async function setEmployeeOvertimeByAdmin(
   _prev: { error?: string; success?: boolean },
   formData: FormData
@@ -1007,26 +1025,44 @@ export async function setEmployeeOvertimeByAdmin(
     if (BLOCKED_CLOCK_STATUSES.has(existing.status)) {
       return { error: "Cannot add overtime on leave, holiday, or week off." };
     }
-    const { error } = await supabase
-      .from("attendance")
-      .update({
-        overtime_minutes: parsed.data.overtimeMinutes,
-        source: "CORRECTED",
-      })
-      .eq("id", existing.id);
+    const baseNotes =
+      parsed.data.overtimeMinutes > 0
+        ? `Overtime approved: ${parsed.data.overtimeMinutes} min after shift`
+        : existing.notes;
+    const notes = withOtPendingNotes(baseNotes, 0);
+    const updatePayload: Record<string, unknown> = {
+      overtime_minutes: parsed.data.overtimeMinutes,
+      source: "CORRECTED",
+      notes,
+      overtime_pending_minutes: 0,
+    };
+    let { error } = await supabase.from("attendance").update(updatePayload).eq("id", existing.id);
+    if (error && /overtime_pending_minutes/i.test(error.message)) {
+      delete updatePayload.overtime_pending_minutes;
+      ({ error } = await supabase.from("attendance").update(updatePayload).eq("id", existing.id));
+    }
     if (error) return { error: error.message };
   } else {
-    const { error } = await supabase.from("attendance").insert({
+    const notes = withOtPendingNotes(
+      parsed.data.overtimeMinutes > 0
+        ? `Overtime approved: ${parsed.data.overtimeMinutes} min after shift`
+        : null,
+      0
+    );
+    const insertPayload: Record<string, unknown> = {
       employee_id: parsed.data.employeeId,
       attendance_date: parsed.data.attendanceDate,
       status: "PRESENT",
       overtime_minutes: parsed.data.overtimeMinutes,
+      overtime_pending_minutes: 0,
       source: "MANUAL",
-      notes:
-        parsed.data.overtimeMinutes > 0
-          ? `Overtime approved: ${parsed.data.overtimeMinutes} min after shift`
-          : null,
-    });
+      notes,
+    };
+    let { error } = await supabase.from("attendance").insert(insertPayload);
+    if (error && /overtime_pending_minutes/i.test(error.message)) {
+      delete insertPayload.overtime_pending_minutes;
+      ({ error } = await supabase.from("attendance").insert(insertPayload));
+    }
     if (error) return { error: error.message };
   }
 
@@ -1041,6 +1077,54 @@ export async function setEmployeeOvertimeByAdmin(
   }
 
   revalidatePath(`/admin/employees/${parsed.data.employeeId}`);
+  revalidatePath("/admin/dashboard");
+  revalidateLive();
+  return { success: true };
+}
+
+/** Approve pending OT (< 1h) for a day — used by admin popup. */
+export async function approvePendingOvertime(
+  employeeId: string,
+  attendanceDate: string
+): Promise<{ error?: string; success?: boolean }> {
+  const ctx = await getCurrentEmployeeContext();
+  if (!ctx || !isManagement(ctx.roleKey)) return { error: "Not authorized" };
+
+  const supabase = createServiceClient();
+  const { data: row } = await supabase
+    .from("attendance")
+    .select("id, overtime_minutes, status, notes")
+    .eq("employee_id", employeeId)
+    .eq("attendance_date", attendanceDate)
+    .maybeSingle();
+  if (!row) return { error: "No attendance for that date." };
+  if (BLOCKED_CLOCK_STATUSES.has(row.status)) {
+    return { error: "Cannot approve overtime on leave, holiday, or week off." };
+  }
+  const pending = parseOtPendingMinutes(row.notes);
+  if (pending <= 0) return { error: "No pending overtime to approve." };
+  const next = Math.min(OT_WINDOW_MINUTES, (row.overtime_minutes ?? 0) + pending);
+  const updatePayload: Record<string, unknown> = {
+    overtime_minutes: next,
+    overtime_pending_minutes: 0,
+    source: "CORRECTED",
+    notes: withOtPendingNotes(`Overtime approved: ${next} min after shift`, 0),
+  };
+  let { error } = await supabase.from("attendance").update(updatePayload).eq("id", row.id);
+  if (error && /overtime_pending_minutes/i.test(error.message)) {
+    delete updatePayload.overtime_pending_minutes;
+    ({ error } = await supabase.from("attendance").update(updatePayload).eq("id", row.id));
+  }
+  if (error) return { error: error.message };
+
+  try {
+    await recomputeShiftTotals(employeeId, attendanceDate, next);
+  } catch {
+    /* approved minutes are saved */
+  }
+
+  revalidatePath(`/admin/employees/${employeeId}`);
+  revalidatePath("/admin/dashboard");
   revalidateLive();
   return { success: true };
 }

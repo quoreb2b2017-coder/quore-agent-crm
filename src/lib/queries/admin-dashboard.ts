@@ -14,6 +14,9 @@ import {
   shiftAccountingWindowUtc,
   type BreakExcess,
 } from "@/lib/shift";
+import { parseOtPendingMinutes } from "@/lib/shift";
+import { getWorkSettings, type WorkSettings } from "@/lib/work-settings";
+import { loadEmployeeWorkSettingsMap, loadWorkSettings } from "@/lib/work-settings-server";
 
 const NO_EXCESS: BreakExcess = emptyExcess();
 
@@ -80,6 +83,10 @@ export type TeamTodayRow = {
     overtime_minutes: number;
   } | null;
   overtimeMinutes: number;
+  /** OT under 1h waiting for admin approve. */
+  overtimePendingMinutes: number;
+  /** Effective shift for live hour math / graphs (custom login/logout when set). */
+  workSettings: WorkSettings;
   activeSeconds: number;
   breakSeconds: number;
   sessionStartedAt: string | null;
@@ -97,6 +104,19 @@ export type TeamTodayRow = {
   /** Set when today's latest session was closed automatically (break time over). */
   autoLoggedOutAt: string | null;
 };
+
+/** Union of every employee's accounting window so mixed shifts (e.g. 2:30 login) are all included. */
+function widenedShiftWindow(dateIso: string, settingsList: WorkSettings[]) {
+  const list = settingsList.length > 0 ? settingsList : [getWorkSettings()];
+  let startMs = Infinity;
+  let endMs = -Infinity;
+  for (const settings of list) {
+    const window = shiftAccountingWindowUtc(dateIso, settings);
+    startMs = Math.min(startMs, window.start.getTime());
+    endMs = Math.max(endMs, window.end.getTime());
+  }
+  return { start: new Date(startMs), end: new Date(endMs) };
+}
 
 export async function liveSessionSlices(
   supabase: Awaited<ReturnType<typeof createClient>>,
@@ -121,11 +141,21 @@ export async function liveSessionSlices(
   >();
   if (employeeIds.length === 0) return slices;
 
+  const [company, settingsByEmployee] = await Promise.all([
+    loadWorkSettings(),
+    loadEmployeeWorkSettingsMap(employeeIds),
+  ]);
+  const today = todayIso();
+  const { start, end } = widenedShiftWindow(today, [
+    company,
+    ...employeeIds.map((id) => settingsByEmployee.get(id) ?? company),
+  ]);
+
   const { data: todaysSessions } = await supabase
     .from("employee_sessions")
     .select("employee_id, status, ended_at")
     .in("employee_id", employeeIds)
-    .gte("started_at", shiftAccountingWindowUtc(todayIso()).start.toISOString())
+    .gte("started_at", start.toISOString())
     .order("started_at", { ascending: false });
   for (const row of todaysSessions ?? []) {
     if (slices.has(row.employee_id)) continue;
@@ -151,7 +181,6 @@ export async function liveSessionSlices(
     .eq("status", "ACTIVE")
     .in("employee_id", employeeIds);
 
-  const { start, end } = shiftAccountingWindowUtc(todayIso());
   const service = createServiceClient();
   const [{ data: shiftBreaks }, { data: meetings }, { data: washrooms }] = await Promise.all([
     supabase
@@ -187,11 +216,15 @@ export async function liveSessionSlices(
   };
 
   for (const session of sessions ?? []) {
+    const settings = settingsByEmployee.get(session.employee_id) ?? company;
     const rows = (shiftBreaks ?? []).filter((row) => row.session_id === session.id);
     const open = rows.find((row) => row.ended_at == null);
     const closed = rows
       .filter((row) => row.ended_at != null)
-      .reduce((sum, row) => sum + creditedAwaySeconds(session.started_at, row), 0);
+      .reduce(
+        (sum, row) => sum + creditedAwaySeconds(session.started_at, row, Date.now(), settings),
+        0
+      );
     const visits = (washrooms ?? []).filter((row) => row.employee_id === session.employee_id);
     const openWashrooms = visits
       .filter((row) => row.ended_at == null)
@@ -202,7 +235,10 @@ export async function liveSessionSlices(
       .reduce((sum, row) => sum + (row.duration_seconds ?? 0), 0);
     const sessionClosedWashroom = visits
       .filter((row) => row.session_id === session.id && row.ended_at != null)
-      .reduce((sum, row) => sum + creditedAwaySeconds(session.started_at, row), 0);
+      .reduce(
+        (sum, row) => sum + creditedAwaySeconds(session.started_at, row, Date.now(), settings),
+        0
+      );
     slices.set(session.employee_id, {
       sessionStartedAt: session.started_at,
       breakExcess: excessFor(session.employee_id),
@@ -249,13 +285,15 @@ export async function getTodayTeamReport(
       staff.map((person) => person.id)
     );
 
-  const byId = new Map((attendance ?? []).map((row) => [row.employee_id, row]));
-  const liveByEmployee = await liveSessionSlices(
-    supabase,
-    staff.map((person) => person.id)
-  );
+  const ids = staff.map((person) => person.id);
+  const [byIdAttendance, liveByEmployee, settingsByEmployee, company] = await Promise.all([
+    Promise.resolve(new Map((attendance ?? []).map((row) => [row.employee_id, row]))),
+    liveSessionSlices(supabase, ids),
+    loadEmployeeWorkSettingsMap(ids),
+    loadWorkSettings(),
+  ]);
   return staff.map((person) => {
-    const row = byId.get(person.id);
+    const row = byIdAttendance.get(person.id);
     const live = liveByEmployee.get(person.id);
     return {
       id: person.id,
@@ -272,6 +310,8 @@ export async function getTodayTeamReport(
           }
         : null,
       overtimeMinutes: row?.overtime_minutes ?? 0,
+      overtimePendingMinutes: parseOtPendingMinutes(row?.notes),
+      workSettings: settingsByEmployee.get(person.id) ?? company,
       activeSeconds: row?.total_active_seconds ?? 0,
       breakSeconds: row?.total_break_seconds ?? 0,
       sessionStartedAt: live?.sessionStartedAt ?? null,
@@ -354,13 +394,16 @@ export async function getAdminDashboardData(): Promise<{
   const onlineEmployees = sessions.length - onBreakEmployees;
 
   const attendance = (attendanceToday ?? []).filter((row) => !adminSet.has(row.employee_id));
-  const liveByEmployee = await liveSessionSlices(
-    supabase,
-    staff.map((person) => person.id)
-  );
+  const staffIds = staff.map((person) => person.id);
+  const [liveByEmployee, settingsByEmployee, company] = await Promise.all([
+    liveSessionSlices(supabase, staffIds),
+    loadEmployeeWorkSettingsMap(staffIds),
+    loadWorkSettings(),
+  ]);
   const totalWorkingSeconds = staff.reduce((sum, person) => {
     const row = (attendanceToday ?? []).find((item) => item.employee_id === person.id);
     const live = liveByEmployee.get(person.id);
+    const settings = settingsByEmployee.get(person.id) ?? company;
     return (
       sum +
       creditedProductiveSeconds(
@@ -371,6 +414,8 @@ export async function getAdminDashboardData(): Promise<{
           openBreakStartedAt: live?.openBreakStartedAt ?? null,
           sessionClosedWashroomSeconds: live?.sessionClosedWashroomSeconds ?? 0,
           openWashroomStartedAt: live?.openWashroomStartedAt ?? null,
+          settings,
+          overtimeMinutes: row?.overtime_minutes ?? 0,
         }),
         row?.status
       )
@@ -411,6 +456,8 @@ export async function getAdminDashboardData(): Promise<{
           }
         : null,
       overtimeMinutes: row?.overtime_minutes ?? 0,
+      overtimePendingMinutes: parseOtPendingMinutes(row?.notes),
+      workSettings: settingsByEmployee.get(person.id) ?? company,
       activeSeconds: row?.total_active_seconds ?? 0,
       breakSeconds: row?.total_break_seconds ?? 0,
       sessionStartedAt: liveByEmployee.get(person.id)?.sessionStartedAt ?? null,

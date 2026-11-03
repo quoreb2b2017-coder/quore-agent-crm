@@ -120,6 +120,24 @@ export async function loadEffectiveWorkSettings(employeeId?: string | null): Pro
   return settings;
 }
 
+/** Batch map of employeeId → effective WorkSettings (for graphs / team reports). */
+export async function loadEmployeeWorkSettingsMap(
+  employeeIds: string[]
+): Promise<Map<string, WorkSettings>> {
+  const company = await loadWorkSettings();
+  const map = new Map<string, WorkSettings>();
+  if (employeeIds.length === 0) return map;
+  const { data } = await createServiceClient()
+    .from("employees")
+    .select("id, work_schedule")
+    .in("id", employeeIds);
+  const byId = new Map((data ?? []).map((row) => [row.id, row.work_schedule]));
+  for (const id of employeeIds) {
+    map.set(id, applyWorkSchedule(company, parseWorkSchedule(byId.get(id))));
+  }
+  return map;
+}
+
 /** Signed-in employee's effective shift (company + their override). */
 export async function loadEffectiveWorkSettingsForCurrentUser(): Promise<WorkSettings> {
   const company = await loadWorkSettings();

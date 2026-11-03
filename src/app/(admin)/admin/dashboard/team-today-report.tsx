@@ -3,6 +3,7 @@
 import { AttendanceStatusBadge } from "@/components/attendance/attendance-status-badge";
 import { AdminLogoutButton } from "@/components/attendance/admin-logout-button";
 import { BreakExcessCell } from "@/components/attendance/break-excess";
+import { ApproveOvertimeDialog } from "@/components/attendance/approve-overtime-dialog";
 import { EditAttendanceDialog } from "@/components/attendance/edit-attendance-dialog";
 import { StatusBadge } from "@/components/dashboard/status-badge";
 import { useLiveNowMs } from "@/components/layout/trusted-clock";
@@ -46,6 +47,7 @@ export function TeamTodayReport({ rows, attendanceDate }: { rows: TeamTodayRow[]
               openWashroomStartedAt: row.openWashroomStartedAt,
               now: now ?? undefined,
               overtimeMinutes: row.overtimeMinutes,
+              settings: row.workSettings,
             }), row.status);
             const washroomLive =
               row.inWashroom && row.openWashroomStartedAt && now != null
@@ -75,6 +77,16 @@ export function TeamTodayReport({ rows, attendanceDate }: { rows: TeamTodayRow[]
                         Auto logout · {now == null ? "—" : formatTimeInZone(row.autoLoggedOutAt, INDIA_TIME_ZONE)} IST
                       </span>
                     ) : null}
+                    {row.overtimeMinutes > 0 ? (
+                      <span className="rounded-md bg-info/10 px-1.5 py-0.5 text-[11px] font-medium text-info">
+                        OT {row.overtimeMinutes}m
+                      </span>
+                    ) : null}
+                    {row.overtimePendingMinutes > 0 ? (
+                      <span className="rounded-md bg-warning/15 px-1.5 py-0.5 text-[11px] font-medium text-warning-foreground">
+                        OT pending {row.overtimePendingMinutes}m
+                      </span>
+                    ) : null}
                   </div>
                 </td>
                 <td className="px-3 py-2.5 text-xs text-muted-foreground">
@@ -95,6 +107,12 @@ export function TeamTodayReport({ rows, attendanceDate }: { rows: TeamTodayRow[]
                 </td>
                 <td className="px-4 py-2.5">
                   <div className="flex justify-end gap-1.5">
+                    <ApproveOvertimeDialog
+                      employeeId={row.id}
+                      employeeName={row.fullName}
+                      attendanceDate={attendanceDate}
+                      pendingMinutes={row.overtimePendingMinutes}
+                    />
                     <EditAttendanceDialog
                       employeeId={row.id}
                       employeeName={row.fullName}

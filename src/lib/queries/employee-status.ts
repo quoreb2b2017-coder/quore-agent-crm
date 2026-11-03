@@ -8,6 +8,8 @@ import {
   type BreakSlot,
 } from "@/lib/shift";
 import type { CommonDashboardData } from "@/lib/queries/employee-dashboard";
+import { getWorkSettings, type WorkSettings } from "@/lib/work-settings";
+import { loadEffectiveWorkSettings } from "@/lib/work-settings-server";
 
 export type MySessionState = {
   isClockedIn: boolean;
@@ -29,6 +31,8 @@ export type MySessionState = {
   sessionClosedWashroomSeconds: number;
   /** Admin-approved minutes past official logout for this shift day. */
   overtimeMinutes: number;
+  /** This employee's effective login/logout (company + custom override). */
+  workSettings: WorkSettings;
   onLeave: boolean;
   weekOff: boolean;
   halfDay: boolean;
@@ -72,18 +76,27 @@ async function shiftWashroomSeconds(employeeId: string, startIso: string, endIso
     .reduce((sum, row) => sum + (row.duration_seconds ?? 0), 0);
   return {
     closedWashroomSeconds,
-    sessionClosedSeconds: (session: { id: string; started_at: string }) =>
-      sessionClosedCredited(rows, session),
+    sessionClosedSeconds: (
+      session: { id: string; started_at: string },
+      settings?: WorkSettings,
+      overtimeMinutes?: number
+    ) => sessionClosedCredited(rows, session, settings, overtimeMinutes),
   };
 }
 
 function sessionClosedCredited(
   rows: { session_id: string | null; started_at: string; ended_at: string | null; duration_seconds: number | null }[],
-  session: { id: string; started_at: string }
+  session: { id: string; started_at: string },
+  settings: WorkSettings = getWorkSettings(),
+  overtimeMinutes = 0
 ) {
   return rows
     .filter((row) => row.session_id === session.id && row.ended_at != null)
-    .reduce((sum, row) => sum + creditedAwaySeconds(session.started_at, row), 0);
+    .reduce(
+      (sum, row) =>
+        sum + creditedAwaySeconds(session.started_at, row, Date.now(), settings, overtimeMinutes),
+      0
+    );
 }
 
 export type EmployeeDashboardBundle = {
@@ -92,6 +105,7 @@ export type EmployeeDashboardBundle = {
 };
 
 export async function getEmployeeDashboardBundle(employeeId: string): Promise<EmployeeDashboardBundle> {
+  const workSettings = await loadEffectiveWorkSettings(employeeId);
   const supabase = await createClient();
   const today = todayIso();
 
@@ -112,7 +126,7 @@ export async function getEmployeeDashboardBundle(employeeId: string): Promise<Em
   ]);
 
   const shiftDate = session ? shiftDateIso(new Date(session.started_at)) : today;
-  const { start, end } = shiftAccountingWindowUtc(shiftDate);
+  const { start, end } = shiftAccountingWindowUtc(shiftDate, workSettings);
   const overtimeMinutes = attendance?.overtime_minutes ?? 0;
 
   const { data: shiftBreaks } = await supabase
@@ -161,6 +175,7 @@ export async function getEmployeeDashboardBundle(employeeId: string): Promise<Em
         closedWashroomSeconds: 0,
         sessionClosedWashroomSeconds: 0,
         overtimeMinutes,
+        workSettings,
         onLeave: attendance?.status === "ON_LEAVE",
         weekOff,
         halfDay: attendance?.status === "HALF_DAY",
@@ -180,7 +195,7 @@ export async function getEmployeeDashboardBundle(employeeId: string): Promise<Em
       isOnBreak: !!openBreak,
       sessionStartedAt: session.started_at,
       accruedActiveSeconds: attendance?.total_active_seconds ?? 0,
-      sessionClosedBreakSeconds: sessionClosedCredited(breaks, session),
+      sessionClosedBreakSeconds: sessionClosedCredited(breaks, session, workSettings, overtimeMinutes),
       closedBreakSeconds,
       openBreakType: openBreak?.break_type ?? null,
       openBreakStartedAt: openBreak?.started_at ?? null,
@@ -188,8 +203,13 @@ export async function getEmployeeDashboardBundle(employeeId: string): Promise<Em
       meetingRequestedAt: away.meetingRequestedAt,
       washroomStartedAt: away.washroomStartedAt,
       closedWashroomSeconds: washroom.closedWashroomSeconds,
-      sessionClosedWashroomSeconds: washroom.sessionClosedSeconds(session),
+      sessionClosedWashroomSeconds: washroom.sessionClosedSeconds(
+        session,
+        workSettings,
+        overtimeMinutes
+      ),
       overtimeMinutes,
+      workSettings,
       onLeave: attendance?.status === "ON_LEAVE",
       weekOff,
       halfDay: attendance?.status === "HALF_DAY",
@@ -199,6 +219,7 @@ export async function getEmployeeDashboardBundle(employeeId: string): Promise<Em
 }
 
 export async function getMySessionState(employeeId: string): Promise<MySessionState> {
+  const workSettings = await loadEffectiveWorkSettings(employeeId);
   const supabase = await createClient();
 
   const { data: session } = await supabase
@@ -209,7 +230,7 @@ export async function getMySessionState(employeeId: string): Promise<MySessionSt
     .maybeSingle();
 
   const shiftDate = session ? shiftDateIso(new Date(session.started_at)) : todayIso();
-  const { start, end } = shiftAccountingWindowUtc(shiftDate);
+  const { start, end } = shiftAccountingWindowUtc(shiftDate, workSettings);
 
   const [{ data: attendance }, { data: shiftBreaks }] = await Promise.all([
     supabase
@@ -249,6 +270,7 @@ export async function getMySessionState(employeeId: string): Promise<MySessionSt
       closedWashroomSeconds: 0,
       sessionClosedWashroomSeconds: 0,
       overtimeMinutes,
+      workSettings,
       onLeave: attendance?.status === "ON_LEAVE",
       weekOff,
       halfDay: attendance?.status === "HALF_DAY",
@@ -267,7 +289,7 @@ export async function getMySessionState(employeeId: string): Promise<MySessionSt
     isOnBreak: !!openBreak,
     sessionStartedAt: session.started_at,
     accruedActiveSeconds: attendance?.total_active_seconds ?? 0,
-    sessionClosedBreakSeconds: sessionClosedCredited(breaks, session),
+    sessionClosedBreakSeconds: sessionClosedCredited(breaks, session, workSettings, overtimeMinutes),
     closedBreakSeconds,
     openBreakType: openBreak?.break_type ?? null,
     openBreakStartedAt: openBreak?.started_at ?? null,
@@ -275,8 +297,13 @@ export async function getMySessionState(employeeId: string): Promise<MySessionSt
     meetingRequestedAt: away.meetingRequestedAt,
     washroomStartedAt: away.washroomStartedAt,
     closedWashroomSeconds: washroom.closedWashroomSeconds,
-    sessionClosedWashroomSeconds: washroom.sessionClosedSeconds(session),
+    sessionClosedWashroomSeconds: washroom.sessionClosedSeconds(
+      session,
+      workSettings,
+      overtimeMinutes
+    ),
     overtimeMinutes,
+    workSettings,
     onLeave: attendance?.status === "ON_LEAVE",
     weekOff,
     halfDay: attendance?.status === "HALF_DAY",

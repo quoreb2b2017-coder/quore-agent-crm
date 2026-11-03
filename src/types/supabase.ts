@@ -873,6 +873,28 @@ export interface Database {
           created_at?: string;
         }
       >;
+      push_subscriptions: Table<
+        {
+          id: string;
+          employee_id: string;
+          endpoint: string;
+          p256dh: string;
+          auth: string;
+          user_agent: string | null;
+          created_at: string;
+          updated_at: string;
+        },
+        {
+          id?: string;
+          employee_id: string;
+          endpoint: string;
+          p256dh: string;
+          auth: string;
+          user_agent?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        }
+      >;
       policy_violations: Table<
         {
           id: string;

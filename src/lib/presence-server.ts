@@ -2,7 +2,7 @@ import { createServiceClient } from "@/lib/supabase/service";
 import { getCurrentEmployeeContext, isManagement } from "@/lib/permissions/server";
 import { closeWorkSession } from "@/lib/actions/attendance";
 import { shiftDateIso } from "@/lib/format";
-import { shiftWindowUtc } from "@/lib/shift";
+import { softOvertimeMinutes, shiftWindowUtc } from "@/lib/shift";
 import { ensureGoogleTime, googleDate } from "@/lib/google-time";
 import { ADMIN_LOGOUT_TYPE } from "@/lib/realtime/notify";
 import { loadEffectiveWorkSettings } from "@/lib/work-settings-server";
@@ -42,7 +42,7 @@ async function overtimeForBreak(employeeId: string, startedAt: string) {
     .eq("employee_id", employeeId)
     .eq("attendance_date", shiftDate)
     .maybeSingle();
-  return data?.overtime_minutes ?? 0;
+  return softOvertimeMinutes(data?.overtime_minutes ?? 0);
 }
 
 /**

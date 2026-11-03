@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState, useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -8,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { PasswordInput } from "@/components/ui/password-input";
 import { STAFF_DEPARTMENTS, type StaffRoleKey } from "@/lib/permissions/roles";
+import { formatDateTime } from "@/lib/format";
 import {
   formatMinutesLabel,
   minutesToTimeValue,
@@ -37,6 +39,7 @@ export function EditEmployeeForm({
   companySettings: WorkSettings;
   lockDepartment?: boolean;
 }) {
+  const router = useRouter();
   const updateWithId = updateEmployee.bind(null, employee.id);
   const [state, formAction, isPending] = useActionState(updateWithId, initialState);
   const [department, setDepartment] = useState(currentDepartment);
@@ -50,8 +53,11 @@ export function EditEmployeeForm({
   );
 
   useEffect(() => {
-    if (state.success) toast.success("Employee updated");
-  }, [state.success]);
+    if (state.success) {
+      toast.success("Employee updated — shift times apply from the new login/logout");
+      router.refresh();
+    }
+  }, [state.success, router]);
 
   const customLoginMinutes = timeValueToMinutes(login);
   const customLogoutMinutes = timeValueToMinutes(logout);
@@ -226,6 +232,11 @@ export function EditEmployeeForm({
         <p className="text-xs text-muted-foreground sm:col-span-2">
           Effective shift: {previewLogin} – {previewLogout}
           {overnight ? " (overnight)" : ""}. Signing in after login is marked Late.
+          {savedSchedule?.updatedAt
+            ? ` Last assigned/updated ${formatDateTime(savedSchedule.updatedAt)}.`
+            : customShift
+              ? " Save to record when this shift was assigned."
+              : ""}
         </p>
       </section>
 

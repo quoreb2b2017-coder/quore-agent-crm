@@ -14,6 +14,7 @@ import {
 } from "@/lib/permissions/roles";
 import { isSuperAdminEmployee } from "@/lib/queries/admin-dashboard";
 import {
+  parseWorkSchedule,
   timeValueToMinutes,
   workSchedulePayload,
   type WorkSchedule,
@@ -289,18 +290,20 @@ export async function updateEmployee(
   }
 
   const data = parsed.data;
-  const workSchedule = workSchedulePayload(scheduleFromUpdate(data)) as Json;
   const supabase = await createClient();
 
   const { data: existing, error: existingError } = await supabase
     .from("employees")
-    .select("auth_user_id")
+    .select("auth_user_id, work_schedule")
     .eq("id", employeeId)
     .single();
 
   if (existingError || !existing) {
     return { error: existingError?.message ?? "Employee not found" };
   }
+
+  const previousSchedule = parseWorkSchedule(existing.work_schedule);
+  const workSchedule = workSchedulePayload(scheduleFromUpdate(data), previousSchedule) as Json;
 
   const { error: updateError } = await supabase
     .from("employees")
@@ -310,6 +313,7 @@ export async function updateEmployee(
       email: data.email,
       phone: data.phone,
       work_schedule: workSchedule,
+      updated_at: new Date().toISOString(),
       ...(data.joiningDate ? { joining_date: data.joiningDate } : {}),
     })
     .eq("id", employeeId);
@@ -377,9 +381,192 @@ export async function updateEmployee(
     if (authError) return { error: authError.message };
   }
 
+  // Shift change must refresh the employee's portal clock (login/logout window).
+  revalidatePath("/", "layout");
+  revalidatePath("/portal", "layout");
+  revalidatePath("/portal/dashboard");
+  revalidatePath("/portal/attendance");
   revalidatePath("/admin/employees");
   revalidatePath(`/admin/employees/${employeeId}`);
   revalidatePath(`/admin/onboarding/${employeeId}`);
+  revalidatePath("/admin/dashboard");
+  revalidatePath("/admin/attendance");
+
+  try {
+    const { loadEffectiveWorkSettings } = await import("@/lib/work-settings-server");
+    const { addDaysIso, todayIso } = await import("@/lib/format");
+    const { recomputeShiftTotals } = await import("@/lib/actions/attendance");
+    await loadEffectiveWorkSettings(employeeId);
+    const { createServiceClient } = await import("@/lib/supabase/service");
+    const service = createServiceClient();
+    const since = addDaysIso(todayIso(), -14);
+    const { data: days } = await service
+      .from("attendance")
+      .select("attendance_date, overtime_minutes, status")
+      .eq("employee_id", employeeId)
+      .gte("attendance_date", since)
+      .lte("attendance_date", todayIso());
+    for (const day of days ?? []) {
+      if (day.status === "ON_LEAVE" || day.status === "HOLIDAY" || day.status === "WEEK_OFF") continue;
+      await recomputeShiftTotals(employeeId, day.attendance_date, day.overtime_minutes ?? 0);
+    }
+  } catch {
+    /* shift is saved; totals catch up on next clock-out */
+  }
+
+  return { success: true };
+}
+
+const optionalHrText = z
+  .string()
+  .trim()
+  .max(500)
+  .transform((value) => value || null);
+
+const personalDetailsSchema = z.object({
+  joiningDate: z.string().regex(ISO_DATE, "Pick the joining date"),
+  workLocation: optionalHrText,
+  dateOfBirth: z
+    .string()
+    .trim()
+    .refine((value) => !value || ISO_DATE.test(value), "Pick a valid date of birth")
+    .transform((value) => value || null),
+  gender: optionalHrText,
+  personalEmail: z
+    .string()
+    .trim()
+    .refine((value) => !value || z.email().safeParse(value).success, "Enter a valid personal email")
+    .transform((value) => value || null),
+  currentAddress: z
+    .string()
+    .trim()
+    .max(2000)
+    .transform((value) => value || null),
+  permanentAddress: z
+    .string()
+    .trim()
+    .max(2000)
+    .transform((value) => value || null),
+  emergencyContactName: optionalHrText,
+  emergencyContactRelation: optionalHrText,
+  emergencyContactPhone: z
+    .string()
+    .trim()
+    .refine((value) => !value || /^[+\d][\d\s-]{6,18}$/.test(value), "Enter a valid emergency phone")
+    .transform((value) => value || null),
+  panNumber: z
+    .string()
+    .trim()
+    .toUpperCase()
+    .refine((value) => !value || /^[A-Z]{5}[0-9]{4}[A-Z]$/.test(value), "PAN should look like ABCDE1234F")
+    .transform((value) => value || null),
+  aadhaarNumber: z
+    .string()
+    .transform((value) => value.replace(/\s+/g, ""))
+    .refine((value) => !value || /^\d{12}$/.test(value), "Aadhaar should be 12 digits")
+    .transform((value) => value || null),
+  previousCompany: optionalHrText,
+  notes: z
+    .string()
+    .trim()
+    .max(2000)
+    .transform((value) => value || null),
+  bankAccountHolder: optionalHrText,
+  bankName: optionalHrText,
+  bankAccountNumber: z
+    .string()
+    .transform((value) => value.replace(/\s+/g, ""))
+    .refine((value) => !value || /^\d{6,20}$/.test(value), "Account number should be 6–20 digits")
+    .transform((value) => value || null),
+  bankIfsc: z
+    .string()
+    .trim()
+    .toUpperCase()
+    .refine((value) => !value || /^[A-Z]{4}0[A-Z0-9]{6}$/.test(value), "IFSC should look like HDFC0001234")
+    .transform((value) => value || null),
+});
+
+/** Admin edits onboarding personal + bank details from the employee profile page. */
+export async function updateEmployeePersonalDetails(
+  employeeId: string,
+  _prev: ActionState,
+  formData: FormData
+): Promise<ActionState> {
+  let ctx;
+  try {
+    ctx = await assertCanManageEmployees();
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Not authorized" };
+  }
+  const blocked = await assertCanManageTarget(ctx, employeeId);
+  if (blocked) return { error: blocked };
+
+  const read = (name: string) => String(formData.get(name) ?? "");
+  const sameAddress = formData.get("sameAddress") === "on";
+  const parsed = personalDetailsSchema.safeParse({
+    joiningDate: read("joiningDate"),
+    workLocation: read("workLocation"),
+    dateOfBirth: read("dateOfBirth"),
+    gender: read("gender"),
+    personalEmail: read("personalEmail"),
+    currentAddress: read("currentAddress"),
+    permanentAddress: sameAddress ? read("currentAddress") : read("permanentAddress"),
+    emergencyContactName: read("emergencyContactName"),
+    emergencyContactRelation: read("emergencyContactRelation"),
+    emergencyContactPhone: read("emergencyContactPhone"),
+    panNumber: read("panNumber"),
+    aadhaarNumber: read("aadhaarNumber"),
+    previousCompany: read("previousCompany"),
+    notes: read("notes"),
+    bankAccountHolder: read("bankAccountHolder"),
+    bankName: read("bankName"),
+    bankAccountNumber: read("bankAccountNumber"),
+    bankIfsc: read("bankIfsc"),
+  });
+  if (!parsed.success) {
+    return { error: parsed.error.issues[0]?.message ?? "Check the personal details" };
+  }
+  const data = parsed.data;
+  const supabase = await createClient();
+
+  const { error: employeeError } = await supabase
+    .from("employees")
+    .update({
+      joining_date: data.joiningDate,
+      work_location: data.workLocation,
+    })
+    .eq("id", employeeId);
+  if (employeeError) return { error: employeeError.message };
+
+  const { error: onboardingError } = await supabase.from("employee_onboarding").upsert(
+    {
+      employee_id: employeeId,
+      date_of_birth: data.dateOfBirth,
+      gender: data.gender,
+      personal_email: data.personalEmail,
+      current_address: data.currentAddress,
+      permanent_address: data.permanentAddress,
+      emergency_contact_name: data.emergencyContactName,
+      emergency_contact_relation: data.emergencyContactRelation,
+      emergency_contact_phone: data.emergencyContactPhone,
+      pan_number: data.panNumber,
+      aadhaar_number: data.aadhaarNumber,
+      previous_company: data.previousCompany,
+      notes: data.notes,
+      bank_account_holder: data.bankAccountHolder,
+      bank_name: data.bankName,
+      bank_account_number: data.bankAccountNumber,
+      bank_ifsc: data.bankIfsc,
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: "employee_id" }
+  );
+  if (onboardingError) return { error: onboardingError.message };
+
+  revalidatePath(`/admin/employees/${employeeId}`);
+  revalidatePath(`/admin/onboarding/${employeeId}`);
+  revalidatePath("/admin/onboarding");
+  revalidatePath("/admin/employees");
   return { success: true };
 }
 

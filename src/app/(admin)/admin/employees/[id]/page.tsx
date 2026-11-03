@@ -12,12 +12,13 @@ import {
   type StaffRoleKey,
   STAFF_ROLE_KEYS,
 } from "@/lib/permissions/roles";
-import { formatDate, formatEmploymentStatus, initials } from "@/lib/format";
+import { formatDate, formatDateTime, formatEmploymentStatus, initials } from "@/lib/format";
 import { Pill } from "@/components/wt/panel";
 import { getEmployeeHistory } from "@/lib/queries/employee-history";
 import { applyWorkSchedule, formatMinutesLabel, parseWorkSchedule } from "@/lib/work-settings";
 import { loadWorkSettings } from "@/lib/work-settings-server";
 import { EditEmployeeForm } from "./edit-employee-form";
+import { EditPersonalDetailsForm } from "./edit-personal-details-form";
 import { EmployeeOvertimeForm } from "./employee-overtime-form";
 import { EmployeeManageButtons } from "./employee-manage-buttons";
 import { EmployeeTabs } from "./employee-tabs";
@@ -51,13 +52,18 @@ export default async function EmployeeDetailPage({
   const supabase = await createClient();
   const [{ data: employee }, { data: onboarding }, companySettings] = await Promise.all([
     supabase.from("employees").select("*").eq("id", id).single(),
-    supabase.from("employee_onboarding").select("date_of_birth").eq("employee_id", id).maybeSingle(),
+    supabase.from("employee_onboarding").select("*").eq("employee_id", id).maybeSingle(),
     loadWorkSettings(),
   ]);
   if (!employee) notFound();
   const schedule = parseWorkSchedule(employee.work_schedule);
   const effectiveShift = applyWorkSchedule(companySettings, schedule);
   const shiftLabel = `${formatMinutesLabel(effectiveShift.loginMinutes, effectiveShift.timeZone)} – ${formatMinutesLabel(effectiveShift.logoutMinutes, effectiveShift.timeZone)}${schedule ? "" : " (company)"}`;
+  const shiftUpdatedLabel = schedule
+    ? schedule.updatedAt
+      ? `Updated ${formatDateTime(schedule.updatedAt)}`
+      : "Custom shift · save again to record assign time"
+    : "Using company default";
 
   const { data: currentRole } = await supabase
     .from("employee_roles")
@@ -183,14 +189,22 @@ export default async function EmployeeDetailPage({
               value: employee.joining_date ? formatDate(employee.joining_date) : "",
             },
             { label: "Shift", value: shiftLabel },
+            { label: "Shift assigned", value: shiftUpdatedLabel },
           ]}
-        >
-          <div>
-            <h2 className="text-sm font-semibold">Edit account</h2>
+        />
+      )}
+      {tab === "profile" ? (
+        <>
+          <section
+            id="edit-profile"
+            className="scroll-mt-6 overflow-hidden rounded-2xl border bg-card px-6 py-6 sm:px-8"
+          >
+            <h2 className="text-base font-semibold">Edit employee</h2>
             <p className="mt-0.5 text-sm text-muted-foreground">
-              Super Admin and HR can change email, password, and this employee&apos;s login / logout times.
+              Change account, personal / bank details, shift times, and overtime. Scroll here with the Edit
+              button above.
             </p>
-            <div className="mt-5">
+            <div className="mt-6">
               <EditEmployeeForm
                 employee={employee}
                 dateOfBirth={onboarding?.date_of_birth ?? null}
@@ -200,21 +214,26 @@ export default async function EmployeeDetailPage({
               />
             </div>
             <div className="mt-8 border-t pt-6">
+              <EditPersonalDetailsForm
+                employeeId={employee.id}
+                joiningDate={employee.joining_date ?? ""}
+                workLocation={employee.work_location}
+                record={onboarding}
+              />
+            </div>
+            <div className="mt-8 border-t pt-6">
               <EmployeeOvertimeForm employeeId={employee.id} employeeName={employee.full_name} />
             </div>
-          </div>
-        </ProfileCard>
-      )}
-      {tab === "profile" ? (
-        <AccessCard
-          employeeId={employee.id}
-          authUserId={employee.auth_user_id}
-          name={employee.full_name}
-          roleLabel={roleLabel || "Staff"}
-          status={employee.employment_status}
-          canReset={viewerIsSuperAdmin && employee.id !== ctx.employeeId}
-        />
-
+          </section>
+          <AccessCard
+            employeeId={employee.id}
+            authUserId={employee.auth_user_id}
+            name={employee.full_name}
+            roleLabel={roleLabel || "Staff"}
+            status={employee.employment_status}
+            canReset={viewerIsSuperAdmin && employee.id !== ctx.employeeId}
+          />
+        </>
       ) : null}
     </div>
   );

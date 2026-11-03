@@ -4,7 +4,7 @@ import { shiftDateIso, todayIso } from "@/lib/format";
 import { formatLeaveComment } from "@/lib/leave";
 import { leaveNotesByDay } from "@/lib/queries/leave";
 import { applyWorkSchedule, formatMinutesLabel, parseWorkSchedule } from "@/lib/work-settings";
-import { loadWorkSettings } from "@/lib/work-settings-server";
+import { loadEmployeeWorkSettingsMap, loadWorkSettings } from "@/lib/work-settings-server";
 import { dailyActiveSeconds } from "@/lib/live-time";
 import {
   breakExcess,
@@ -77,6 +77,7 @@ type AttendanceRow = {
   total_active_seconds: number;
   total_break_seconds: number;
   total_idle_seconds: number;
+  overtime_minutes: number;
   notes: string | null;
 };
 
@@ -94,14 +95,27 @@ async function loadAwayRows(table: "breaks" | "washroom_visits", employeeIds: st
     table === "breaks"
       ? "employee_id, break_type, started_at, ended_at, duration_seconds"
       : "employee_id, started_at, ended_at, duration_seconds";
+  const [company, settingsByEmployee] = await Promise.all([
+    loadWorkSettings(),
+    loadEmployeeWorkSettingsMap(employeeIds),
+  ]);
+  const settingsList = [company, ...employeeIds.map((id) => settingsByEmployee.get(id) ?? company)];
+  let startMs = Infinity;
+  let endMs = -Infinity;
+  for (const settings of settingsList) {
+    startMs = Math.min(startMs, shiftAccountingWindowUtc(start, settings).start.getTime());
+    endMs = Math.max(endMs, shiftAccountingWindowUtc(end, settings).end.getTime());
+  }
+  const windowStart = new Date(startMs).toISOString();
+  const windowEnd = new Date(endMs).toISOString();
   const rows: AwayRow[] = [];
   for (let from = 0; ; from += PAGE_SIZE) {
     const { data } = await client
       .from(table)
       .select(columns)
       .in("employee_id", employeeIds)
-      .gte("started_at", shiftAccountingWindowUtc(start).start.toISOString())
-      .lt("started_at", shiftAccountingWindowUtc(end).end.toISOString())
+      .gte("started_at", windowStart)
+      .lt("started_at", windowEnd)
       .order("started_at")
       .range(from, from + PAGE_SIZE - 1);
     rows.push(...((data ?? []) as unknown as AwayRow[]));
@@ -137,7 +151,7 @@ async function loadAttendance(employeeIds: string[], start: string, end: string)
     const { data } = await supabase
       .from("attendance")
       .select(
-        "employee_id, attendance_date, status, total_active_seconds, total_break_seconds, total_idle_seconds, notes"
+        "employee_id, attendance_date, status, total_active_seconds, total_break_seconds, total_idle_seconds, overtime_minutes, notes"
       )
       .in("employee_id", employeeIds)
       .gte("attendance_date", start)
@@ -230,6 +244,11 @@ export async function getProductivityReport(
     byEmployee.set(row.employee_id, map);
   }
 
+  const [settingsByEmployee, company] = await Promise.all([
+    loadEmployeeWorkSettingsMap(ids),
+    loadWorkSettings(),
+  ]);
+
   return employees.map((employee) => {
     const joined = joiningById.get(employee.id)?.slice(0, 10) ?? "";
     const trackingStart = joined > TRACKING_START_DATE ? joined : TRACKING_START_DATE;
@@ -237,6 +256,7 @@ export async function getProductivityReport(
     const rows = byEmployee.get(employee.id) ?? new Map<string, AttendanceRow>();
     const slice = live?.get(employee.id);
     const excessByDate = excessByEmployee.get(employee.id);
+    const settings = settingsByEmployee.get(employee.id) ?? company;
     const days: ProductivityDay[] = weekdays.map((date) => {
       const row = rows.get(date);
       const workedSeconds =
@@ -248,6 +268,8 @@ export async function getProductivityReport(
               openBreakStartedAt: slice?.openBreakStartedAt ?? null,
               sessionClosedWashroomSeconds: slice?.sessionClosedWashroomSeconds ?? 0,
               openWashroomStartedAt: slice?.openWashroomStartedAt ?? null,
+              settings,
+              overtimeMinutes: row?.overtime_minutes ?? 0,
             })
           : (row?.total_active_seconds ?? 0);
       const off = row && OFF_STATUSES.has(row.status) ? row.status : null;

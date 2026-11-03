@@ -28,10 +28,90 @@ export const LUNCH_BREAK_BUDGET_SECONDS = LUNCH_BREAK_SECONDS;
 export const BREAK_TOTAL_SECONDS = TEA_BREAK_BUDGET_SECONDS + LUNCH_BREAK_BUDGET_SECONDS;
 export const PRODUCTIVE_SECONDS = SHIFT_WORKING_SECONDS - BREAK_TOTAL_SECONDS;
 
+/**
+ * Soft window after official logout: shortfall toward 7h45 fills first, remainder is OT.
+ * OT always needs admin approve (including a full 1 hour) — never auto-adds to the graph.
+ */
+export const OT_WINDOW_MINUTES = 60;
+
 export const SHIFT_WORKING_LABEL = "9 hrs";
 export const PRODUCTIVE_HOURS_LABEL = "7 hrs 45 min";
 export const BREAK_BUDGET_LABEL = "1 hr 15 min";
 export const BREAK_POLICY_LABEL = `Tea ${TEA_BREAKS_PER_SHIFT} × ${TEA_BREAK_MINUTES} min · Lunch ${LUNCH_BREAK_MINUTES} min`;
+
+export type OvertimeAllocation = {
+  /** Shift work + shortfall filled from post-logout time (counts toward 7h45). */
+  productiveSeconds: number;
+  /** Admin-approved OT seconds only (shown separately on graphs). */
+  overtimeSeconds: number;
+  /** OT minutes waiting for admin approve (capped at 1h window). */
+  pendingOvertimeMinutes: number;
+  shortfallFilledSeconds: number;
+  postLogoutSeconds: number;
+};
+
+/**
+ * Split post-logout work: fill 7h45 shortfall first, then OT (always pending until admin approves).
+ */
+export function allocateOvertime(input: {
+  shiftProductiveSeconds: number;
+  postLogoutSeconds: number;
+  targetSeconds?: number;
+  /** Already admin-approved OT minutes for this day. */
+  approvedOvertimeMinutes?: number;
+}): OvertimeAllocation {
+  const target = Math.max(0, input.targetSeconds ?? PRODUCTIVE_SECONDS);
+  const shift = Math.max(0, Math.floor(input.shiftProductiveSeconds));
+  const post = Math.max(0, Math.floor(input.postLogoutSeconds));
+  const approved = Math.max(0, Math.min(OT_WINDOW_MINUTES, Math.floor(input.approvedOvertimeMinutes ?? 0)));
+
+  const shortfall = Math.max(0, target - shift);
+  const shortfallFilledSeconds = Math.min(post, shortfall);
+  const otCandidateSeconds = Math.max(0, post - shortfallFilledSeconds);
+  const otCandidateMinutes = Math.min(OT_WINDOW_MINUTES, Math.floor(otCandidateSeconds / 60));
+  const productiveSeconds = shift + shortfallFilledSeconds;
+
+  if (approved > 0) {
+    const counted = Math.min(approved, otCandidateMinutes);
+    const pending = Math.max(0, otCandidateMinutes - approved);
+    return {
+      productiveSeconds,
+      overtimeSeconds: counted * 60,
+      pendingOvertimeMinutes: pending,
+      shortfallFilledSeconds,
+      postLogoutSeconds: post,
+    };
+  }
+
+  return {
+    productiveSeconds,
+    overtimeSeconds: 0,
+    pendingOvertimeMinutes: otCandidateMinutes,
+    shortfallFilledSeconds,
+    postLogoutSeconds: post,
+  };
+}
+
+/** Window used while counting late stay (approved OT, or soft 1h detection window). */
+export function softOvertimeMinutes(approvedOvertimeMinutes = 0) {
+  return Math.max(OT_WINDOW_MINUTES, Math.max(0, Math.floor(approvedOvertimeMinutes)));
+}
+
+const OT_PENDING_RE = /\[\[ot_pending:(\d{1,2})\]\]/;
+
+/** Pending OT minutes embedded in attendance notes until DB column is available. */
+export function parseOtPendingMinutes(notes: string | null | undefined) {
+  const match = notes?.match(OT_PENDING_RE);
+  if (!match) return 0;
+  return Math.max(0, Math.min(OT_WINDOW_MINUTES, Number(match[1]) || 0));
+}
+
+export function withOtPendingNotes(notes: string | null | undefined, pendingMinutes: number) {
+  const cleaned = (notes ?? "").replace(OT_PENDING_RE, "").replace(/\s+/g, " ").trim();
+  const pending = Math.max(0, Math.min(OT_WINDOW_MINUTES, Math.floor(pendingMinutes)));
+  if (pending <= 0) return cleaned || null;
+  return `${cleaned ? `${cleaned} ` : ""}[[ot_pending:${pending}]]`;
+}
 
 export type BreakSlot = "TEA_1" | "TEA_2" | "LUNCH";
 export type PolicyBreakType = BreakSlot;
@@ -94,7 +174,7 @@ export function creditedWorkBounds(
 ) {
   const start = typeof startedAt === "string" ? new Date(startedAt) : startedAt;
   const endAt = typeof endedAt === "number" ? new Date(endedAt) : endedAt;
-  const shiftDate = shiftDateIso(start);
+  const shiftDate = shiftDateIso(start, settings);
   const { start: official, end } = shiftWindowUtc(shiftDate, settings, overtimeMinutes);
   const from = Math.max(start.getTime(), official.getTime());
   const to = Math.min(endAt.getTime(), end.getTime());
@@ -116,7 +196,7 @@ export function creditedAwaySeconds(
 ) {
   const sessionStart = typeof sessionStartedAt === "string" ? new Date(sessionStartedAt) : sessionStartedAt;
   const { start: official, end } = shiftWindowUtc(
-    shiftDateIso(sessionStart),
+    shiftDateIso(sessionStart, settings),
     settings,
     overtimeMinutes
   );
@@ -174,7 +254,7 @@ export function isLateClockIn(
   settings: WorkSettings = getWorkSettings()
 ) {
   const date = typeof at === "string" ? new Date(at) : at;
-  const shiftDate = shiftDateIso(date);
+  const shiftDate = shiftDateIso(date, settings);
   return date.getTime() > wallToUtc(shiftDate, settings.loginMinutes, settings.timeZone).getTime();
 }
 

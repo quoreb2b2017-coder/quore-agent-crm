@@ -39,6 +39,8 @@ export function TodayHours({
             sessionClosedWashroomSeconds: session.sessionClosedWashroomSeconds,
             openWashroomStartedAt: session.washroomStartedAt,
             now,
+            settings: session.workSettings,
+            overtimeMinutes: session.overtimeMinutes,
           }),
           status
         );

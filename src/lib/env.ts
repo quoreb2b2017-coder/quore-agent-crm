@@ -34,3 +34,26 @@ export function socketAuthSecret(): string {
 export function isSocketConfigured(): boolean {
   return Boolean(clientSocketUrl());
 }
+
+/** Public VAPID key for Web Push (safe to expose to the browser). */
+export function vapidPublicKey(): string | null {
+  const raw =
+    process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY?.trim() ||
+    process.env.VAPID_PUBLIC_KEY?.trim() ||
+    "";
+  if (!raw || raw === "0" || raw === "false" || raw === "disabled" || raw === "off") return null;
+  return raw;
+}
+
+export function vapidPrivateKey(): string | null {
+  const raw = process.env.VAPID_PRIVATE_KEY?.trim();
+  return raw || null;
+}
+
+export function vapidSubject(): string {
+  return process.env.VAPID_SUBJECT?.trim() || "mailto:admin@localhost";
+}
+
+export function isWebPushConfigured(): boolean {
+  return Boolean(vapidPublicKey() && vapidPrivateKey());
+}
