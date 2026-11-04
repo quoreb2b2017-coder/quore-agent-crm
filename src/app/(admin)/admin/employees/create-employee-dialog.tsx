@@ -13,14 +13,29 @@ import { useActionForm } from "@/hooks/use-action-form";
 import { minutesToTimeValue } from "@/lib/work-settings";
 import { NATIVE_SELECT_CLASS } from "@/lib/shift";
 import {
+  DEPARTMENT_KIND_OPTIONS,
   effectiveDepartmentKind,
-  roleAllowedForKind,
-  rolesForDepartmentKind,
   type AssignableRoleKey,
+  type DepartmentKind,
 } from "@/lib/departments";
 import type { DepartmentOption } from "@/lib/queries/departments";
+import type { AssignableDepartmentRole } from "@/lib/queries/assignable-roles";
 import type { EmployeeDirectoryOption } from "@/lib/queries/employee-directory";
 import { createEmployee, updateEmployee } from "./actions";
+
+function rolesForKind(roles: AssignableDepartmentRole[], kind: string | null | undefined) {
+  if (!kind) return [];
+  const matched = roles.filter((role) => role.kind === kind);
+  if (matched.length > 0) return matched;
+  const builtIn =
+    DEPARTMENT_KIND_OPTIONS.find((o) => o.kind === kind)?.roles ?? [];
+  return builtIn.map((role) => ({
+    roleKey: role.roleKey,
+    label: role.label,
+    kind: kind as DepartmentKind,
+    description: null,
+  }));
+}
 
 const EMPTY_FORM = {
   fullName: "",
@@ -40,11 +55,13 @@ export function CreateEmployeeDialog({
   redirectToOnboarding = false,
   employees = [],
   departments: initialDepartments = [],
+  assignableRoles = [],
 }: {
   trigger?: ReactNode;
   redirectToOnboarding?: boolean;
   employees?: EmployeeDirectoryOption[];
   departments?: DepartmentOption[];
+  assignableRoles?: AssignableDepartmentRole[];
 } = {}) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -56,14 +73,15 @@ export function CreateEmployeeDialog({
 
   const selectedDepartment = departments.find((row) => row.id === departmentId) ?? null;
   const selectedKind = selectedDepartment ? effectiveDepartmentKind(selectedDepartment) : null;
-  const roleOptions = rolesForDepartmentKind(selectedKind);
+  const roleOptions = rolesForKind(assignableRoles, selectedKind);
+  const allowedRoleKeys = new Set(roleOptions.map((role) => role.roleKey));
 
   const departmentEmployees =
     !departmentId || !selectedKind
       ? []
       : employees.filter((row) => {
           if (row.departmentId === departmentId) return true;
-          return roleAllowedForKind(selectedKind, row.roleKey);
+          return allowedRoleKeys.has(row.roleKey);
         });
   const selected = departmentEmployees.find((row) => row.id === employeeId) ?? null;
   const isExisting = Boolean(selected);
@@ -103,8 +121,9 @@ export function CreateEmployeeDialog({
     applyEmployee(null);
     const dept = departments.find((row) => row.id === nextId) ?? null;
     const kind = dept ? effectiveDepartmentKind(dept) : null;
-    const roles = rolesForDepartmentKind(kind);
-    setRoleKey(roles.length === 1 ? roles[0].roleKey : "");
+    const roles = rolesForKind(assignableRoles, kind);
+    // Department → role hierarchy: always auto-fill the department’s role.
+    setRoleKey(roles[0]?.roleKey ?? "");
   }
 
   function patchField<K extends keyof FormFields>(key: K, value: FormFields[K]) {
@@ -152,7 +171,7 @@ export function CreateEmployeeDialog({
         else resetForm();
       }}
       title="Add employee"
-      description="Select a department first. New departments are created from Add department (outside this form)."
+      description="Create a person and put them in a department. Role is filled automatically."
       onSubmit={handleSubmit}
       submitLabel={isExisting ? "Save employee" : "Create employee"}
       isPending={isPending}
@@ -179,26 +198,64 @@ export function CreateEmployeeDialog({
           <option value="" disabled>
             Select department
           </option>
-          {departments.map((item) => (
-            <option key={item.id} value={item.id}>
-              {item.name}
-            </option>
-          ))}
+          {departments.map((item) => {
+            const kind = effectiveDepartmentKind(item);
+            const kindRoles = new Set(
+              rolesForKind(assignableRoles, kind).map((role) => role.roleKey)
+            );
+            const count = employees.filter((row) => {
+              if (row.departmentId === item.id) return true;
+              return row.departmentId == null && kindRoles.has(row.roleKey);
+            }).length;
+            return (
+              <option key={item.id} value={item.id}>
+                {item.name} ({count})
+              </option>
+            );
+          })}
         </select>
         {selectedDepartment ? (
-          <p className="text-xs text-muted-foreground">
-            Roles here: {roleOptions.map((role) => role.label).join(" · ") || "—"}
+          <p className="text-sm text-muted-foreground">
+            Role:{" "}
+            <span className="font-medium text-foreground">
+              {roleOptions.find((role) => role.roleKey === roleKey)?.label ??
+                (roleOptions.map((role) => role.label).join(", ") || "—")}
+            </span>
           </p>
         ) : (
           <p className="text-xs text-muted-foreground">
-            Need a new department? Use <span className="font-medium">Add department</span> on this
-            page first.
+            Create departments from Teams.
           </p>
         )}
+        {/* Always submit role with the form; auto-filled from department. */}
+        <input type="hidden" name="department" value={roleKey} />
       </div>
 
+      {roleOptions.length > 1 ? (
+        <div className="grid gap-2 sm:col-span-2">
+          <Label htmlFor="rolePick">Role</Label>
+          <select
+            id="rolePick"
+            value={roleKey}
+            disabled={!selectedDepartment}
+            onChange={(event) => setRoleKey(event.target.value as AssignableRoleKey | "")}
+            className={NATIVE_SELECT_CLASS}
+          >
+            {roleOptions.map((item) => (
+              <option key={item.roleKey} value={item.roleKey}>
+                {item.label}
+              </option>
+            ))}
+          </select>
+        </div>
+      ) : null}
+
       <div className="grid gap-2 sm:col-span-2">
-        <Label htmlFor="existingEmployee">Employee</Label>
+        <Label htmlFor="existingEmployee">
+          {departmentId
+            ? `Employees in ${selectedDepartment?.name ?? "department"} (${departmentEmployees.length})`
+            : "Employees"}
+        </Label>
         <select
           id="existingEmployee"
           value={employeeId}
@@ -216,35 +273,6 @@ export function CreateEmployeeDialog({
           {departmentEmployees.map((row) => (
             <option key={row.id} value={row.id}>
               {row.fullName} ({row.employeeCode})
-            </option>
-          ))}
-        </select>
-        <p className="text-xs text-muted-foreground">
-          {departmentId
-            ? isExisting
-              ? "Existing details loaded — edit and save."
-              : `${departmentEmployees.length} in this department · pick one or create new.`
-            : "Choose a department to load its employees."}
-        </p>
-      </div>
-
-      <div className="grid gap-2 sm:col-span-2">
-        <Label htmlFor="department">Role</Label>
-        <select
-          id="department"
-          name="department"
-          required
-          value={roleKey}
-          disabled={!selectedDepartment}
-          onChange={(event) => setRoleKey(event.target.value as AssignableRoleKey | "")}
-          className={NATIVE_SELECT_CLASS}
-        >
-          <option value="" disabled>
-            {selectedDepartment ? "Select role" : "Select department first"}
-          </option>
-          {roleOptions.map((item) => (
-            <option key={item.roleKey} value={item.roleKey}>
-              {item.label}
             </option>
           ))}
         </select>

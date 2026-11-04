@@ -11,12 +11,10 @@ import {
   isManagement,
   isSuperAdmin,
   SUPER_ADMIN_ROLE,
-  STAFF_ROLE_KEYS,
 } from "@/lib/permissions/roles";
 import {
   isDepartmentKind,
   roleAllowedForKind,
-  type AssignableRoleKey,
   type DepartmentKind,
 } from "@/lib/departments";
 import { isSuperAdminEmployee } from "@/lib/queries/admin-dashboard";
@@ -29,8 +27,19 @@ import {
 import { validateWorkSchedule } from "@/lib/work-settings-server";
 import type { Json } from "@/types/supabase";
 
-const assignableRole = z.enum([...STAFF_ROLE_KEYS, HR_ROLE] as [AssignableRoleKey, ...AssignableRoleKey[]]);
-const departmentKindSchema = z.enum(["SALES", "MANAGEMENT", "HR"]);
+/** Any role key under a department (built-in or custom). */
+const assignableRole = z
+  .string()
+  .trim()
+  .min(2, "Pick a role")
+  .regex(/^[A-Z][A-Z0-9_]*$/, "Invalid role");
+const departmentKindSchema = z.enum([
+  "ADMIN_CONTROL",
+  "SALES",
+  "MARKETING",
+  "DATABASE",
+  "IT",
+]);
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -67,7 +76,13 @@ const createSchema = z
 const updateSchema = z
   .object({
     fullName: z.string().min(1, "Full name is required"),
-    email: z.email("Enter a valid email"),
+    email: z.email("Enter a valid company email"),
+    personalEmail: z
+      .string()
+      .trim()
+      .refine((value) => !value || z.email().safeParse(value).success, "Enter a valid personal email")
+      .transform((value) => value || null)
+      .optional(),
     phone: z.string().min(1, "Phone number is required"),
     employeeCode: z.string().min(1, "Employee ID is required"),
     department: assignableRole.optional(),
@@ -175,6 +190,18 @@ const createDepartmentSchema = z.object({
     .min(2, "Department name is too short")
     .max(80, "Department name is too long"),
   kind: departmentKindSchema,
+  /** When set, also create a custom role under this department kind. */
+  newRoleName: z
+    .string()
+    .trim()
+    .min(2, "Role name is too short")
+    .max(80, "Role name is too long")
+    .optional(),
+  newRoleKey: z
+    .string()
+    .trim()
+    .regex(/^[A-Z][A-Z0-9_]*$/, "Use UPPER_SNAKE_CASE for the role key")
+    .optional(),
 });
 
 const renameDepartmentSchema = z.object({
@@ -184,9 +211,19 @@ const renameDepartmentSchema = z.object({
     .trim()
     .min(2, "Department name is too short")
     .max(80, "Department name is too long"),
+  kind: departmentKindSchema.optional(),
 });
 
-/** Create an org department with a role-group kind. */
+function roleKeyFromLabel(label: string) {
+  const key = label
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+  return key.length >= 2 ? key : "";
+}
+
+/** Create an org department with a role-group kind. Optionally add a new role (Other). */
 export async function createDepartment(
   _prev: DepartmentActionState,
   formData: FormData
@@ -197,16 +234,48 @@ export async function createDepartment(
     return { error: e instanceof Error ? e.message : "Not authorized" };
   }
 
+  const roleNameRaw = String(formData.get("newRoleName") ?? "").trim();
+  const roleKeyRaw = String(formData.get("newRoleKey") ?? "")
+    .trim()
+    .toUpperCase();
   const parsed = createDepartmentSchema.safeParse({
     name: formData.get("name"),
     kind: formData.get("kind"),
+    newRoleName: roleNameRaw || undefined,
+    newRoleKey: roleKeyRaw || (roleNameRaw ? roleKeyFromLabel(roleNameRaw) : undefined),
   });
   if (!parsed.success) {
     return { error: parsed.error.issues[0]?.message ?? "Invalid department" };
   }
 
+  if (roleNameRaw && !parsed.data.newRoleKey) {
+    return { error: "Enter a role name so we can build a role key" };
+  }
+
   const name = parsed.data.name.replace(/\s+/g, " ");
   const supabase = await createClient();
+
+  if (parsed.data.newRoleName && parsed.data.newRoleKey) {
+    const { error: roleError } = await supabase.from("roles").insert({
+      role_key: parsed.data.newRoleKey,
+      display_name: parsed.data.newRoleName.replace(/\s+/g, " "),
+      description: `Custom role for ${name}`,
+      department_kind: parsed.data.kind,
+      is_system: false,
+    });
+    if (roleError) {
+      if (/duplicate|unique/i.test(roleError.message)) {
+        return { error: "That role key already exists — pick another role name" };
+      }
+      if (/column.*department_kind/i.test(roleError.message)) {
+        return {
+          error: "Run supabase/migrations/0033_role_department_kind.sql in Supabase first.",
+        };
+      }
+      return { error: roleError.message };
+    }
+  }
+
   const { data, error } = await supabase
     .from("departments")
     .insert({ name, kind: parsed.data.kind })
@@ -226,6 +295,8 @@ export async function createDepartment(
   }
 
   revalidatePath("/admin/employees");
+  revalidatePath("/admin/teams");
+  revalidatePath("/admin/roles");
   revalidatePath("/admin/onboarding");
   return {
     success: true,
@@ -235,7 +306,7 @@ export async function createDepartment(
   };
 }
 
-/** Rename a department (display name only — kind / roles stay the same). */
+/** Edit a department name and/or role-group type. */
 export async function renameDepartment(
   _prev: DepartmentActionState,
   formData: FormData
@@ -246,19 +317,25 @@ export async function renameDepartment(
     return { error: e instanceof Error ? e.message : "Not authorized" };
   }
 
+  const kindRaw = String(formData.get("kind") ?? "").trim();
   const parsed = renameDepartmentSchema.safeParse({
     departmentId: formData.get("departmentId"),
     name: formData.get("name"),
+    kind: kindRaw || undefined,
   });
   if (!parsed.success) {
-    return { error: parsed.error.issues[0]?.message ?? "Invalid department name" };
+    return { error: parsed.error.issues[0]?.message ?? "Invalid department" };
   }
 
   const name = parsed.data.name.replace(/\s+/g, " ");
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("departments")
-    .update({ name, updated_at: new Date().toISOString() })
+    .update({
+      name,
+      ...(parsed.data.kind ? { kind: parsed.data.kind } : {}),
+      updated_at: new Date().toISOString(),
+    })
     .eq("id", parsed.data.departmentId)
     .select("id, name, kind")
     .single();
@@ -271,12 +348,13 @@ export async function renameDepartment(
   }
 
   revalidatePath("/admin/employees");
+  revalidatePath("/admin/teams");
   revalidatePath("/admin/onboarding");
   return {
     success: true,
     departmentId: data.id,
     name: data.name,
-    kind: data.kind && isDepartmentKind(data.kind) ? data.kind : undefined,
+    kind: data.kind && isDepartmentKind(data.kind) ? data.kind : parsed.data.kind,
   };
 }
 
@@ -331,6 +409,7 @@ export async function deleteDepartment(
   if (error) return { error: error.message };
 
   revalidatePath("/admin/employees");
+  revalidatePath("/admin/teams");
   revalidatePath("/admin/onboarding");
   return { success: true, departmentId: existing.id, name: existing.name };
 }
@@ -370,10 +449,8 @@ export async function assignEmployeeToDepartment(
   const blocked = await assertCanManageTarget(ctx, employeeId);
   if (blocked) return { error: blocked };
 
-  const kind = await departmentKindForId(departmentId);
-  if (!kind || !roleAllowedForKind(kind, roleKey)) {
-    return { error: "That role does not belong to the selected department" };
-  }
+  const mismatch = await assertRoleMatchesDepartment(departmentId, roleKey);
+  if (mismatch) return { error: mismatch };
 
   let roleId: string;
   try {
@@ -423,25 +500,47 @@ export async function assignEmployeeToDepartment(
   }
 
   revalidatePath("/admin/employees");
+  revalidatePath("/admin/teams");
   revalidatePath(`/admin/employees/${employeeId}`);
   revalidatePath("/admin/onboarding");
   return { success: true, employeeId };
 }
 
-async function roleIdForKey(roleKey: AssignableRoleKey) {
+async function roleIdForKey(roleKey: string) {
   const supabase = await createClient();
   const { data: role, error } = await supabase
     .from("roles")
-    .select("id")
+    .select("id, department_kind")
     .eq("role_key", roleKey)
     .maybeSingle();
 
   if (error || !role) {
     throw new Error(
-      "That role is missing. Run scripts/sync-staff-roles.sql in Supabase."
+      "That role is missing. Create it under Manage roles, or run scripts/sync-staff-roles.sql."
     );
   }
   return role.id;
+}
+
+async function roleKindForKey(roleKey: string): Promise<DepartmentKind | null> {
+  const supabase = await createClient();
+  const { data: role } = await supabase
+    .from("roles")
+    .select("role_key, department_kind")
+    .eq("role_key", roleKey)
+    .maybeSingle();
+  if (!role) return null;
+  const { kindForAssignableRole, normalizeDepartmentKind } = await import(
+    "@/lib/departments"
+  );
+  const normalized = normalizeDepartmentKind(role.department_kind);
+  if (normalized) {
+    if (role.department_kind === "MANAGEMENT" && role.role_key === "EMAIL_MARKETING") {
+      return "MARKETING";
+    }
+    return normalized;
+  }
+  return kindForAssignableRole(role.role_key);
 }
 
 async function departmentKindForId(departmentId: string): Promise<DepartmentKind | null> {
@@ -452,14 +551,23 @@ async function departmentKindForId(departmentId: string): Promise<DepartmentKind
     .eq("id", departmentId)
     .maybeSingle();
   if (!data) return null;
-  if (data.kind && isDepartmentKind(data.kind)) return data.kind;
-  const name = data.name.trim().toLowerCase();
-  if (name.includes("sale") || name.includes("agent")) return "SALES";
-  if (name.includes("hr")) return "HR";
-  if (name.includes("manage") || name.includes("database") || name.includes("email")) {
-    return "MANAGEMENT";
+  const { normalizeDepartmentKind } = await import("@/lib/departments");
+  return normalizeDepartmentKind(data.kind, data.name);
+}
+
+async function assertRoleMatchesDepartment(departmentId: string, roleKey: string) {
+  const kind = await departmentKindForId(departmentId);
+  if (!kind) return "Pick a department";
+  const roleKind = await roleKindForKey(roleKey);
+  if (roleKind) {
+    return roleKind === kind
+      ? null
+      : "That role does not belong to the selected department";
   }
-  return null;
+  // Fallback when department_kind column is not migrated yet.
+  return roleAllowedForKind(kind, roleKey)
+    ? null
+    : "That role does not belong to the selected department";
 }
 
 export async function createEmployee(
@@ -506,13 +614,8 @@ export async function createEmployee(
   if (departmentError || !departmentRow) {
     return { error: departmentError?.message ?? "Pick a department" };
   }
-  const kind =
-    departmentRow.kind && isDepartmentKind(departmentRow.kind)
-      ? departmentRow.kind
-      : await departmentKindForId(data.departmentId);
-  if (!kind || !roleAllowedForKind(kind, data.department)) {
-    return { error: "That role does not belong to the selected department" };
-  }
+  const mismatch = await assertRoleMatchesDepartment(data.departmentId, data.department);
+  if (mismatch) return { error: mismatch };
 
   let roleId: string;
   try {
@@ -594,6 +697,7 @@ export async function updateEmployee(
   const parsed = updateSchema.safeParse({
     fullName: formData.get("fullName"),
     email: formData.get("email"),
+    personalEmail: String(formData.get("personalEmail") ?? "").trim(),
     phone: formData.get("phone"),
     employeeCode: String(formData.get("employeeCode") ?? "").trim(),
     department: departmentValue || undefined,
@@ -657,11 +761,18 @@ export async function updateEmployee(
     return { error: updateError.message };
   }
 
-  if (data.dateOfBirth) {
-    const { error: birthdayError } = await supabase
-      .from("employee_onboarding")
-      .upsert({ employee_id: employeeId, date_of_birth: data.dateOfBirth }, { onConflict: "employee_id" });
-    if (birthdayError) return { error: `Profile saved, but birthday failed: ${birthdayError.message}` };
+  if (data.dateOfBirth !== undefined || data.personalEmail !== undefined) {
+    const { error: onboardingError } = await supabase.from("employee_onboarding").upsert(
+      {
+        employee_id: employeeId,
+        ...(data.dateOfBirth ? { date_of_birth: data.dateOfBirth } : {}),
+        ...(data.personalEmail !== undefined ? { personal_email: data.personalEmail } : {}),
+      },
+      { onConflict: "employee_id" }
+    );
+    if (onboardingError) {
+      return { error: `Profile saved, but personal email/birthday failed: ${onboardingError.message}` };
+    }
   }
 
   if (data.department) {
@@ -687,10 +798,8 @@ export async function updateEmployee(
         return { error: "Only Super Admin can assign the HR role" };
       }
       if (data.departmentId) {
-        const kind = await departmentKindForId(data.departmentId);
-        if (!kind || !roleAllowedForKind(kind, data.department)) {
-          return { error: "That role does not belong to the selected department" };
-        }
+        const mismatch = await assertRoleMatchesDepartment(data.departmentId, data.department);
+        if (mismatch) return { error: mismatch };
       }
       let roleId: string;
       try {
@@ -736,23 +845,37 @@ export async function updateEmployee(
   revalidatePath("/admin/dashboard");
   revalidatePath("/admin/attendance");
 
+  // Never recompute past days with the new schedule — that zeroed out previous
+  // shift work and showed huge "minus / short" deficits. Only refresh today,
+  // and recomputeShiftTotals uses the day's frozen shift snapshot when present.
   try {
-    const { loadEffectiveWorkSettings } = await import("@/lib/work-settings-server");
-    const { addDaysIso, todayIso } = await import("@/lib/format");
-    const { recomputeShiftTotals } = await import("@/lib/actions/attendance");
-    await loadEffectiveWorkSettings(employeeId);
-    const { createServiceClient } = await import("@/lib/supabase/service");
-    const service = createServiceClient();
-    const since = addDaysIso(todayIso(), -14);
-    const { data: days } = await service
-      .from("attendance")
-      .select("attendance_date, overtime_minutes, status")
-      .eq("employee_id", employeeId)
-      .gte("attendance_date", since)
-      .lte("attendance_date", todayIso());
-    for (const day of days ?? []) {
-      if (day.status === "ON_LEAVE" || day.status === "HOLIDAY" || day.status === "WEEK_OFF") continue;
-      await recomputeShiftTotals(employeeId, day.attendance_date, day.overtime_minutes ?? 0);
+    if (!skipWorkSchedule) {
+      const prev = previousSchedule;
+      const next = parseWorkSchedule(workSchedule);
+      const timesChanged =
+        (prev?.loginMinutes ?? null) !== (next?.loginMinutes ?? null) ||
+        (prev?.logoutMinutes ?? null) !== (next?.logoutMinutes ?? null);
+      if (timesChanged) {
+        const { todayIso } = await import("@/lib/format");
+        const { recomputeShiftTotals } = await import("@/lib/actions/attendance");
+        const { createServiceClient } = await import("@/lib/supabase/service");
+        const service = createServiceClient();
+        const today = todayIso();
+        const { data: day } = await service
+          .from("attendance")
+          .select("attendance_date, overtime_minutes, status")
+          .eq("employee_id", employeeId)
+          .eq("attendance_date", today)
+          .maybeSingle();
+        if (
+          day &&
+          day.status !== "ON_LEAVE" &&
+          day.status !== "HOLIDAY" &&
+          day.status !== "WEEK_OFF"
+        ) {
+          await recomputeShiftTotals(employeeId, day.attendance_date, day.overtime_minutes ?? 0);
+        }
+      }
     }
   } catch {
     /* shift is saved; totals catch up on next clock-out */

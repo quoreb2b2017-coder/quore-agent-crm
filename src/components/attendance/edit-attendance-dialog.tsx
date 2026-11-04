@@ -115,13 +115,13 @@ export function EditAttendanceDialog({
           name="overtimeMinutes"
           type="number"
           min={0}
-          max={60}
+          max={12 * 60}
           step={15}
           defaultValue={attendance?.overtime_minutes ?? 0}
         />
         <p className="text-xs text-muted-foreground">
-          Approve OT after logout (max 60 min). Shortfall to 7h 45m fills first; rest is OT and always
-          needs admin approve (including 1 full hour). Saving recalculates that day.
+          Approve OT after logout — jitna chaho (max 12 hours). Shortfall to 7h 45m fills first; rest
+          is OT and needs admin approve. Saving recalculates that day.
         </p>
       </div>
       <div className="grid gap-2 sm:col-span-2">

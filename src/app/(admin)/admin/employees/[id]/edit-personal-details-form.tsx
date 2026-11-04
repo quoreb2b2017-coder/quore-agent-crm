@@ -36,6 +36,7 @@ export function EditPersonalDetailsForm({
   const [sameAddress, setSameAddress] = useState(
     Boolean(record?.current_address) && record?.current_address === record?.permanent_address
   );
+  const [openPersonal, setOpenPersonal] = useState(false);
 
   useEffect(() => {
     if (state.success) {
@@ -45,14 +46,27 @@ export function EditPersonalDetailsForm({
   }, [state.success, router]);
 
   return (
-    <form action={formAction} className="grid gap-8">
-      <section className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <div className="sm:col-span-2">
-          <h3 className="text-sm font-semibold">Personal details</h3>
-          <p className="mt-0.5 text-xs text-muted-foreground">
-            Admin can update any HR personal field below — DOB, address, IDs, emergency contact, and more.
-          </p>
+    <form action={formAction} className="grid gap-4">
+      <div className="grid gap-2">
+        <h3 className="text-sm font-semibold">Personal details</h3>
+        <p className="text-xs text-muted-foreground">
+          Admin can update any HR personal field — DOB, address, IDs, emergency contact, and more.
+        </p>
+        <div className="flex items-center gap-2 pt-1">
+          <Checkbox
+            id="openPersonalDetails"
+            checked={openPersonal}
+            onCheckedChange={(checked) => setOpenPersonal(checked === true)}
+          />
+          <Label htmlFor="openPersonalDetails" className="text-sm font-normal">
+            Edit personal details
+          </Label>
         </div>
+      </div>
+
+      {!openPersonal ? null : (
+      <div className="grid gap-8 border-t pt-6">
+      <section className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div className="grid gap-2">
           <Label htmlFor="dateOfBirth">Date of birth</Label>
           <Input id="dateOfBirth" name="dateOfBirth" type="date" defaultValue={value("date_of_birth")} />
@@ -88,13 +102,17 @@ export function EditPersonalDetailsForm({
           />
         </div>
         <div className="grid gap-2 sm:col-span-2">
-          <Label htmlFor="personalEmail">Personal email</Label>
+          <Label htmlFor="personalEmailDetails">Personal email</Label>
           <Input
-            id="personalEmail"
+            id="personalEmailDetails"
             name="personalEmail"
             type="email"
             defaultValue={value("personal_email")}
+            placeholder="name@gmail.com"
           />
+          <p className="text-xs text-muted-foreground">
+            Separate from company email (login). Both show on the profile contact card.
+          </p>
         </div>
         <div className="grid gap-2">
           <Label htmlFor="panNumber">PAN number</Label>
@@ -268,6 +286,8 @@ export function EditPersonalDetailsForm({
           Save personal details
         </Button>
       </div>
+      </div>
+      )}
     </form>
   );
 }

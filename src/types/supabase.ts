@@ -58,7 +58,7 @@ export interface Database {
         {
           id: string;
           name: string;
-          /** SALES | MANAGEMENT | HR — stable role group; name is editable. */
+          /** ADMIN_CONTROL | SALES | MARKETING | DATABASE | IT — stable team; name is editable. */
           kind: string | null;
           description: string | null;
           head_employee_id: string | null;
@@ -99,6 +99,8 @@ export interface Database {
           role_key: string;
           display_name: string;
           description: string | null;
+          /** ADMIN_CONTROL | SALES | MARKETING | DATABASE | IT — department this role belongs under. */
+          department_kind: string | null;
           is_system: boolean;
           created_at: string;
           updated_at: string;
@@ -108,6 +110,7 @@ export interface Database {
           role_key: string;
           display_name: string;
           description?: string | null;
+          department_kind?: string | null;
           is_system?: boolean;
           created_at?: string;
           updated_at?: string;
@@ -242,6 +245,9 @@ export interface Database {
           overtime_minutes: number;
           /** Present after migration 0030; pending OT under 1h awaiting admin. */
           overtime_pending_minutes: number;
+          /** Frozen at first clock-in (migration 0035). Past days keep this shift. */
+          shift_login_minutes: number | null;
+          shift_logout_minutes: number | null;
           status:
             | "PRESENT"
             | "LATE"
@@ -266,6 +272,8 @@ export interface Database {
           total_idle_seconds?: number;
           overtime_minutes?: number;
           overtime_pending_minutes?: number;
+          shift_login_minutes?: number | null;
+          shift_logout_minutes?: number | null;
           status?:
             | "PRESENT"
             | "LATE"
@@ -1315,6 +1323,21 @@ export interface Database {
       verify_audit_chain: {
         Args: { p_from_seq?: number };
         Returns: { seq: number; expected_hash: string; stored_hash: string; reason: string }[];
+      };
+      seal_legacy_audit_logs: {
+        Args: Record<string, never>;
+        Returns: number;
+      };
+      append_audit_log: {
+        Args: {
+          p_table: string;
+          p_record_id: string | null;
+          p_action: string;
+          p_old?: Json | null;
+          p_new?: Json | null;
+          p_actor?: string | null;
+        };
+        Returns: string;
       };
     };
     Enums: Record<string, never>;

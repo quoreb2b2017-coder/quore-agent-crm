@@ -38,8 +38,9 @@ export function formatHoursFromSeconds(totalSeconds: number): string {
 }
 
 export function formatDuration(totalSeconds: number): string {
-  const h = Math.floor(totalSeconds / 3600);
-  const m = Math.floor((totalSeconds % 3600) / 60);
+  const safe = Math.max(0, Math.floor(totalSeconds));
+  const h = Math.floor(safe / 3600);
+  const m = Math.floor((safe % 3600) / 60);
   if (h === 0) return `${m}m`;
   return `${h}h ${m}m`;
 }

@@ -60,6 +60,38 @@ export function applyWorkSchedule(
 }
 
 /**
+ * Prefer the shift frozen on the attendance row (day they worked).
+ * Falls back to current employee/company settings when snapshot is missing.
+ */
+export function applyAttendanceShiftSnapshot(
+  base: WorkSettings,
+  snapshot: {
+    shift_login_minutes?: number | null;
+    shift_logout_minutes?: number | null;
+  } | null | undefined
+): WorkSettings {
+  const login = snapshot?.shift_login_minutes;
+  const logout = snapshot?.shift_logout_minutes;
+  if (
+    typeof login !== "number" ||
+    typeof logout !== "number" ||
+    !Number.isFinite(login) ||
+    !Number.isFinite(logout) ||
+    login === logout ||
+    login < 0 ||
+    login >= 24 * 60 ||
+    logout < 0 ||
+    logout >= 24 * 60
+  ) {
+    return base;
+  }
+  return applyWorkSchedule(base, {
+    loginMinutes: Math.floor(login),
+    logoutMinutes: Math.floor(logout),
+  });
+}
+
+/**
  * JSON to store on `employees.work_schedule`.
  * Stamps `updatedAt` when login/logout change; keeps previous stamp if times unchanged.
  */
@@ -138,6 +170,48 @@ export function formatMinutesLabel(minutes: number, timeZone = getWorkSettings()
     hour12: true,
     timeZone,
   });
+}
+
+/** Parse labels like "2:30 PM", "14:30", "7:30pm" → minutes from midnight. */
+export function parseMinutesLabel(label: string): number | null {
+  const raw = label.trim();
+  const twelve = /^(\d{1,2}):(\d{2})\s*(AM|PM)$/i.exec(raw);
+  if (twelve) {
+    let hour = Number(twelve[1]);
+    const minute = Number(twelve[2]);
+    const meridiem = twelve[3].toUpperCase();
+    if (hour < 1 || hour > 12 || minute > 59) return null;
+    if (meridiem === "AM") {
+      if (hour === 12) hour = 0;
+    } else if (hour !== 12) {
+      hour += 12;
+    }
+    return hour * 60 + minute;
+  }
+  return timeValueToMinutes(raw);
+}
+
+/**
+ * Recover the shift that day was worked on when snapshot columns are empty.
+ * Only trusts "Late after 2:30 PM" notes — never guesses from check-in
+ * (overnight shifts get wrong login if we floor 4:33 AM → 4:30 AM).
+ */
+export function inferScheduleForAttendanceDay(
+  base: WorkSettings,
+  day: {
+    notes?: string | null;
+    first_check_in?: string | null;
+  }
+): WorkSchedule | null {
+  const length = shiftLengthMinutes(base);
+  const lateMatch = day.notes?.match(/Late after\s+([^[\n]+)/i);
+  if (!lateMatch) return null;
+  const login = parseMinutesLabel(lateMatch[1].trim());
+  if (login == null) return null;
+  return {
+    loginMinutes: login,
+    logoutMinutes: (login + length) % (24 * 60),
+  };
 }
 
 export function timeZoneShort(timeZone: string) {

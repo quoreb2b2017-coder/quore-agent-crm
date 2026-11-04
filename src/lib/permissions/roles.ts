@@ -1,11 +1,18 @@
 export const SUPER_ADMIN_ROLE = "SUPER_ADMIN";
 export const HR_ROLE = "HR";
 
+/** Legacy seed roles kept in DB but hidden from admin role UI. */
+export const HIDDEN_ROLE_KEYS = ["MANAGER"] as const;
+
+export function isHiddenRole(roleKey: string) {
+  return (HIDDEN_ROLE_KEYS as readonly string[]).includes(roleKey);
+}
+
 /** Sees every employee and runs HR work. Not tracked on the shift clock. */
 export const MANAGEMENT_ROLE_KEYS = [SUPER_ADMIN_ROLE, HR_ROLE] as const;
 
-/** The three employee types that share the same app. */
-export const STAFF_ROLE_KEYS = ["AGENT", "DATABASE", "EMAIL_MARKETING"] as const;
+/** Staff roles that share the employee app (clock / portal). */
+export const STAFF_ROLE_KEYS = ["AGENT", "DATABASE", "EMAIL_MARKETING", "IT"] as const;
 
 export type StaffRoleKey = (typeof STAFF_ROLE_KEYS)[number];
 
@@ -58,8 +65,9 @@ export function isStaffRole(roleKey: string) {
 
 export const STAFF_DEPARTMENTS: { roleKey: StaffRoleKey; label: string }[] = [
   { roleKey: "AGENT", label: "Agent" },
-  { roleKey: "DATABASE", label: "Database Admin" },
+  { roleKey: "DATABASE", label: "Database" },
   { roleKey: "EMAIL_MARKETING", label: "Email Marketing" },
+  { roleKey: "IT", label: "IT" },
 ];
 
 export function staffDepartmentLabel(roleKey: string) {

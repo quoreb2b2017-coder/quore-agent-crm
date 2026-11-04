@@ -29,12 +29,14 @@ type Employee = Database["public"]["Tables"]["employees"]["Row"];
 export function EditEmployeeForm({
   employee,
   dateOfBirth,
+  personalEmail,
   currentDepartment,
   companySettings,
   lockDepartment = false,
 }: {
   employee: Employee;
   dateOfBirth: string | null;
+  personalEmail: string | null;
   currentDepartment: StaffRoleKey | "";
   companySettings: WorkSettings;
   lockDepartment?: boolean;
@@ -84,12 +86,21 @@ export function EditEmployeeForm({
         <div className="sm:col-span-2">
           <h3 className="text-sm font-semibold">Account access</h3>
           <p className="mt-0.5 text-xs text-muted-foreground">
-            Super Admin can view email and set a new login password. Existing passwords are encrypted and cannot be shown.
+            Company email is used to sign in. You can also keep a personal email on the profile below.
+            Existing passwords are encrypted and cannot be shown.
           </p>
         </div>
         <div className="grid gap-2 sm:col-span-2">
-          <Label htmlFor="email">Email</Label>
-          <Input id="email" name="email" type="email" defaultValue={employee.email} required />
+          <Label htmlFor="email">Company email</Label>
+          <Input
+            id="email"
+            name="email"
+            type="email"
+            defaultValue={employee.email}
+            required
+            autoComplete="email"
+            placeholder="name@company.com"
+          />
         </div>
         <div className="grid gap-2">
           <Label htmlFor="password">Password</Label>
@@ -116,7 +127,9 @@ export function EditEmployeeForm({
       <section className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div className="sm:col-span-2">
           <h3 className="text-sm font-semibold">Profile</h3>
-          <p className="mt-0.5 text-xs text-muted-foreground">Name, ID, contact details, joining date and birthday for this employee.</p>
+          <p className="mt-0.5 text-xs text-muted-foreground">
+            Name, ID, company and personal email, phone, joining date and birthday.
+          </p>
         </div>
         <div className="grid gap-2">
           <Label htmlFor="fullName">Full name</Label>
@@ -129,6 +142,17 @@ export function EditEmployeeForm({
             name="employeeCode"
             defaultValue={employee.employee_code}
             required
+          />
+        </div>
+        <div className="grid gap-2">
+          <Label htmlFor="personalEmail">Personal email</Label>
+          <Input
+            id="personalEmail"
+            name="personalEmail"
+            type="email"
+            defaultValue={personalEmail ?? ""}
+            autoComplete="email"
+            placeholder="name@gmail.com"
           />
         </div>
         <div className="grid gap-2">

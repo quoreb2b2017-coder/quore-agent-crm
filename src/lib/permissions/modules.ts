@@ -94,6 +94,7 @@ export const ADMIN_MODULES: ModuleDefinition[] = [
   { key: "chat", label: "Chat", href: "/admin/chat", icon: "message", group: "workspace" },
   { key: "notifications", label: "Notifications", href: "/admin/notifications", icon: "bell", group: "workspace" },
   { key: "employees", label: "Employees", href: "/admin/employees", icon: "users", group: "people", rolesOnly: MANAGEMENT },
+  { key: "teams", label: "Teams", href: "/admin/teams", icon: "building", group: "people", rolesOnly: MANAGEMENT },
   { key: "onboarding", label: "Onboarding", href: "/admin/onboarding", icon: "clipboard", group: "people", rolesOnly: MANAGEMENT },
   { key: "attendance", label: "Attendance", href: "/admin/attendance", icon: "clock", group: "people" },
   { key: "activity", label: "Activity", href: "/admin/activity", icon: "radio", group: "people", rolesOnly: MANAGEMENT },

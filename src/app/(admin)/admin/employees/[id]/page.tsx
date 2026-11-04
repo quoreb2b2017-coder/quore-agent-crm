@@ -167,10 +167,18 @@ export default async function EmployeeDetailPage({
           }
           contact={[
             {
-              label: "Email",
+              label: "Company email",
               value: employee.email,
               copy: true,
               href: `mailto:${employee.email}`,
+            },
+            {
+              label: "Personal email",
+              value: onboarding?.personal_email ?? "",
+              copy: Boolean(onboarding?.personal_email),
+              href: onboarding?.personal_email
+                ? `mailto:${onboarding.personal_email}`
+                : undefined,
             },
             {
               label: "Phone",
@@ -208,6 +216,7 @@ export default async function EmployeeDetailPage({
               <EditEmployeeForm
                 employee={employee}
                 dateOfBirth={onboarding?.date_of_birth ?? null}
+                personalEmail={onboarding?.personal_email ?? null}
                 currentDepartment={department}
                 companySettings={companySettings}
                 lockDepartment={targetIsManagement}

@@ -3,7 +3,12 @@ import { createServiceClient } from "@/lib/supabase/service";
 import { shiftDateIso, todayIso } from "@/lib/format";
 import { formatLeaveComment } from "@/lib/leave";
 import { leaveNotesByDay } from "@/lib/queries/leave";
-import { applyWorkSchedule, formatMinutesLabel, parseWorkSchedule } from "@/lib/work-settings";
+import {
+  applyAttendanceShiftSnapshot,
+  applyWorkSchedule,
+  formatMinutesLabel,
+  parseWorkSchedule,
+} from "@/lib/work-settings";
 import { loadEmployeeWorkSettingsMap, loadWorkSettings } from "@/lib/work-settings-server";
 import { dailyActiveSeconds } from "@/lib/live-time";
 import {
@@ -181,22 +186,53 @@ function leaveCommentFor(
   return note.reason || null;
 }
 
-/** Marks Present rows whose clock-in is after that employee's login time as Late. */
+/**
+ * Marks Present → Late only for *today*, using that day's frozen shift when present.
+ * Never rewrite older days against a newly changed work_schedule.
+ */
 async function syncLateClockIns(employeeIds: string[], start: string, end: string) {
   if (employeeIds.length === 0) return;
+  const today = todayIso();
+  if (today < start || today > end) return;
+
   const service = createServiceClient();
   const company = await loadWorkSettings();
-  const [{ data }, { data: schedules }] = await Promise.all([
-    service
+  const schedulesPromise = service
+    .from("employees")
+    .select("id, work_schedule")
+    .in("id", employeeIds);
+
+  let data: {
+    id: string;
+    employee_id: string;
+    first_check_in: string | null;
+    shift_login_minutes?: number | null;
+    shift_logout_minutes?: number | null;
+  }[] | null = null;
+
+  const withSnapshot = await service
+    .from("attendance")
+    .select("id, employee_id, first_check_in, shift_login_minutes, shift_logout_minutes")
+    .in("employee_id", employeeIds)
+    .eq("attendance_date", today)
+    .eq("status", "PRESENT")
+    .not("first_check_in", "is", null);
+  if (!withSnapshot.error) {
+    data = withSnapshot.data;
+  } else if (/shift_login_minutes|shift_logout_minutes/i.test(withSnapshot.error.message)) {
+    const basic = await service
       .from("attendance")
       .select("id, employee_id, first_check_in")
       .in("employee_id", employeeIds)
-      .gte("attendance_date", start)
-      .lte("attendance_date", end)
+      .eq("attendance_date", today)
       .eq("status", "PRESENT")
-      .not("first_check_in", "is", null),
-    service.from("employees").select("id, work_schedule").in("id", employeeIds),
-  ]);
+      .not("first_check_in", "is", null);
+    data = basic.data;
+  } else {
+    return;
+  }
+
+  const { data: schedules } = await schedulesPromise;
   const settingsByEmployee = new Map(
     (schedules ?? []).map((row) => [
       row.id,
@@ -206,7 +242,8 @@ async function syncLateClockIns(employeeIds: string[], start: string, end: strin
   const lateByNote = new Map<string, string[]>();
   for (const row of data ?? []) {
     if (!row.first_check_in) continue;
-    const settings = settingsByEmployee.get(row.employee_id) ?? company;
+    const current = settingsByEmployee.get(row.employee_id) ?? company;
+    const settings = applyAttendanceShiftSnapshot(current, row);
     if (!isLateClockIn(row.first_check_in, settings)) continue;
     const note = `Late after ${formatMinutesLabel(settings.loginMinutes, settings.timeZone)}`;
     const ids = lateByNote.get(note) ?? [];

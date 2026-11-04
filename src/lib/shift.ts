@@ -30,9 +30,10 @@ export const PRODUCTIVE_SECONDS = SHIFT_WORKING_SECONDS - BREAK_TOTAL_SECONDS;
 
 /**
  * Soft window after official logout: shortfall toward 7h45 fills first, remainder is OT.
- * OT always needs admin approve (including a full 1 hour) — never auto-adds to the graph.
+ * OT always needs admin approve — never auto-adds to the graph.
+ * Cap matches `attendance.overtime_minutes` check (12 hours); admin can grant any amount up to this.
  */
-export const OT_WINDOW_MINUTES = 60;
+export const OT_WINDOW_MINUTES = 12 * 60;
 
 export const SHIFT_WORKING_LABEL = "9 hrs";
 export const PRODUCTIVE_HOURS_LABEL = "7 hrs 45 min";
@@ -44,7 +45,7 @@ export type OvertimeAllocation = {
   productiveSeconds: number;
   /** Admin-approved OT seconds only (shown separately on graphs). */
   overtimeSeconds: number;
-  /** OT minutes waiting for admin approve (capped at 1h window). */
+  /** OT minutes waiting for admin approve (capped at OT_WINDOW_MINUTES). */
   pendingOvertimeMinutes: number;
   shortfallFilledSeconds: number;
   postLogoutSeconds: number;
@@ -92,12 +93,12 @@ export function allocateOvertime(input: {
   };
 }
 
-/** Window used while counting late stay (approved OT, or soft 1h detection window). */
+/** Window used while counting late stay (approved OT, or soft detection up to OT_WINDOW_MINUTES). */
 export function softOvertimeMinutes(approvedOvertimeMinutes = 0) {
   return Math.max(OT_WINDOW_MINUTES, Math.max(0, Math.floor(approvedOvertimeMinutes)));
 }
 
-const OT_PENDING_RE = /\[\[ot_pending:(\d{1,2})\]\]/;
+const OT_PENDING_RE = /\[\[ot_pending:(\d{1,4})\]\]/;
 
 /** Pending OT minutes embedded in attendance notes until DB column is available. */
 export function parseOtPendingMinutes(notes: string | null | undefined) {

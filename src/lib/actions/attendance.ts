@@ -10,7 +10,7 @@ import {
   isSuperAdmin,
 } from "@/lib/permissions/server";
 import { isSuperAdminEmployee } from "@/lib/queries/admin-dashboard";
-import { isWeekendIso, shiftDateIso } from "@/lib/format";
+import { isWeekendIso, shiftDateIso, todayIso } from "@/lib/format";
 import { ensureWeekendOff } from "@/lib/attendance-weekend";
 import {
   BREAK_SLOTS,
@@ -32,7 +32,13 @@ import {
 } from "@/lib/shift";
 import { ADMIN_LOGOUT_TYPE, insertAndEmitNotification, notifySuperAdmins } from "@/lib/realtime/notify";
 import { ensureGoogleTime, googleDate } from "@/lib/google-time";
-import { formatMinutesLabel } from "@/lib/work-settings";
+import {
+  applyAttendanceShiftSnapshot,
+  applyWorkSchedule,
+  formatMinutesLabel,
+  inferScheduleForAttendanceDay,
+  type WorkSettings,
+} from "@/lib/work-settings";
 import { loadEffectiveWorkSettings } from "@/lib/work-settings-server";
 import type { Database } from "@/types/supabase";
 
@@ -51,6 +57,20 @@ const ATTENDANCE_STATUSES = [
   "WEEK_OFF",
 ] as const;
 
+type AttendanceShiftRow = {
+  id: string;
+  status: string;
+  first_check_in: string | null;
+  last_check_out: string | null;
+  total_active_seconds: number;
+  total_break_seconds: number;
+  total_idle_seconds: number;
+  overtime_minutes: number;
+  notes: string | null;
+  shift_login_minutes?: number | null;
+  shift_logout_minutes?: number | null;
+};
+
 function revalidateLive() {
   revalidatePath("/portal/dashboard");
   revalidatePath("/portal/attendance");
@@ -59,38 +79,81 @@ function revalidateLive() {
 }
 
 const ATTENDANCE_SHIFT_COLS =
+  "id, status, first_check_in, last_check_out, total_active_seconds, total_break_seconds, total_idle_seconds, overtime_minutes, notes, shift_login_minutes, shift_logout_minutes";
+const ATTENDANCE_SHIFT_COLS_BASIC =
   "id, status, first_check_in, last_check_out, total_active_seconds, total_break_seconds, total_idle_seconds, overtime_minutes, notes";
+
+function shiftSnapshotFields(settings: WorkSettings) {
+  return {
+    shift_login_minutes: settings.loginMinutes,
+    shift_logout_minutes: settings.logoutMinutes,
+  };
+}
 
 async function attendanceForShift(
   supabase: Awaited<ReturnType<typeof createClient>>,
   employeeId: string,
   shiftDate: string
-) {
-  const { data } = await supabase
+): Promise<AttendanceShiftRow | null> {
+  const full = await supabase
     .from("attendance")
     .select(ATTENDANCE_SHIFT_COLS)
     .eq("employee_id", employeeId)
     .eq("attendance_date", shiftDate)
     .maybeSingle();
-  return data;
+  if (!full.error) return full.data as AttendanceShiftRow | null;
+  if (!/shift_login_minutes|shift_logout_minutes/i.test(full.error.message)) {
+    return null;
+  }
+  const basic = await supabase
+    .from("attendance")
+    .select(ATTENDANCE_SHIFT_COLS_BASIC)
+    .eq("employee_id", employeeId)
+    .eq("attendance_date", shiftDate)
+    .maybeSingle();
+  return (basic.data as AttendanceShiftRow | null) ?? null;
 }
 
 async function ensureAttendanceRow(
   supabase: Awaited<ReturnType<typeof createClient>>,
   employeeId: string,
-  shiftDate: string
+  shiftDate: string,
+  settings?: WorkSettings
 ) {
   const existing = await attendanceForShift(supabase, employeeId, shiftDate);
   if (existing) return existing;
 
+  const effective = settings ?? (await loadEffectiveWorkSettings(employeeId));
+  const withSnapshot = {
+    employee_id: employeeId,
+    attendance_date: shiftDate,
+    status: "PRESENT" as const,
+    ...shiftSnapshotFields(effective),
+  };
   const { data: created, error } = await supabase
     .from("attendance")
-    .insert({ employee_id: employeeId, attendance_date: shiftDate, status: "PRESENT" })
+    .insert(withSnapshot)
     .select(ATTENDANCE_SHIFT_COLS)
     .single();
 
+  if (error && /shift_login_minutes|shift_logout_minutes/i.test(error.message)) {
+    const retry = await supabase
+      .from("attendance")
+      .insert({
+        employee_id: employeeId,
+        attendance_date: shiftDate,
+        status: "PRESENT",
+      })
+      .select(ATTENDANCE_SHIFT_COLS_BASIC)
+      .single();
+    if (retry.error || !retry.data) {
+      throw new Error(retry.error?.message ?? error.message);
+    }
+    return retry.data as AttendanceShiftRow;
+  }
+
   if (error || !created) throw new Error(error?.message ?? "Failed to create attendance row");
-  return created;
+  return created as AttendanceShiftRow;
 }
 
 /** Rebuild day's productive + OT totals: shortfall fills first, then OT (always pending until admin). */
@@ -99,8 +162,29 @@ export async function recomputeShiftTotals(
   shiftDate: string,
   overtimeMinutes: number
 ) {
-  const settings = await loadEffectiveWorkSettings(employeeId);
+  const currentSettings = await loadEffectiveWorkSettings(employeeId);
   const supabase = createServiceClient();
+  const attendance = await ensureAttendanceRow(supabase as never, employeeId, shiftDate, currentSettings);
+  const hasSnapshot =
+    attendance.shift_login_minutes != null && attendance.shift_logout_minutes != null;
+
+  let settings: WorkSettings;
+  if (hasSnapshot) {
+    // Past days keep the shift frozen at clock-in — never re-clip with a later schedule.
+    settings = applyAttendanceShiftSnapshot(currentSettings, attendance);
+  } else {
+    // Recover the shift they actually worked (e.g. notes "Late after 2:30 PM")
+    // so a later company/employee schedule change does not wipe those hours.
+    const inferred = inferScheduleForAttendanceDay(currentSettings, attendance);
+    if (inferred) {
+      settings = applyWorkSchedule(currentSettings, inferred);
+    } else if (shiftDate < todayIso()) {
+      // No clue what shift applied — leave stored totals alone.
+      return;
+    } else {
+      settings = currentSettings;
+    }
+  }
   const softOt = softOvertimeMinutes(overtimeMinutes);
   const { start, end } = shiftAccountingWindowUtc(shiftDate, settings);
   // Include soft OT past logout so late stay is visible for shortfall/OT split.
@@ -160,7 +244,6 @@ export async function recomputeShiftTotals(
     softProductive += netAt(softOt);
   }
 
-  const attendance = await ensureAttendanceRow(supabase as never, employeeId, shiftDate);
   if (BLOCKED_CLOCK_STATUSES.has(attendance.status)) return;
 
   const approved = Math.max(0, Math.min(OT_WINDOW_MINUTES, Math.floor(overtimeMinutes)));
@@ -175,12 +258,16 @@ export async function recomputeShiftTotals(
   const storedOtMinutes = Math.floor(allocation.overtimeSeconds / 60);
 
   const notes = withOtPendingNotes(attendance.notes, allocation.pendingOvertimeMinutes);
+  const snapshotMissing =
+    attendance.shift_login_minutes == null || attendance.shift_logout_minutes == null;
   const payload: AttendanceUpdate = {
     // Productive only (shift + shortfall fill). Approved OT is separate for graphs.
     total_active_seconds: allocation.productiveSeconds,
     total_break_seconds: breakSeconds,
     overtime_minutes: storedOtMinutes,
     notes,
+    // Freeze shift once; never overwrite after a later schedule change.
+    ...(snapshotMissing ? shiftSnapshotFields(settings) : {}),
   };
   // Prefer dedicated column when migration 0030 is applied; notes marker is the fallback.
   const withColumn: AttendanceUpdate = {
@@ -188,8 +275,14 @@ export async function recomputeShiftTotals(
     overtime_pending_minutes: allocation.pendingOvertimeMinutes,
   };
   const first = await supabase.from("attendance").update(withColumn).eq("id", attendance.id);
-  if (first.error && /overtime_pending_minutes/i.test(first.error.message)) {
-    await supabase.from("attendance").update(payload).eq("id", attendance.id);
+  if (first.error && /overtime_pending_minutes|shift_login_minutes|shift_logout_minutes/i.test(first.error.message)) {
+    const { overtime_pending_minutes: _ot, shift_login_minutes: _l, shift_logout_minutes: _o, ...safe } =
+      withColumn as AttendanceUpdate & {
+        overtime_pending_minutes?: number;
+        shift_login_minutes?: number;
+        shift_logout_minutes?: number;
+      };
+    await supabase.from("attendance").update(safe).eq("id", attendance.id);
   }
 }
 
@@ -202,16 +295,23 @@ async function markPresent(
 ) {
   const row = await attendanceForShift(supabase, employeeId, shiftDate);
   if (row && BLOCKED_CLOCK_STATUSES.has(row.status)) return row;
-  const settings = await loadEffectiveWorkSettings(employeeId);
+  const currentSettings = await loadEffectiveWorkSettings(employeeId);
+  // Existing day keeps the shift it started with (so a mid-day schedule change
+  // does not flip PRESENT → LATE against a brand-new login time).
+  const settings = applyAttendanceShiftSnapshot(currentSettings, row);
   const now = googleDate();
   const checkInAt = row?.first_check_in ?? now.toISOString();
   const late = isLateClockIn(checkInAt, settings);
   // Half day, leave, holiday, and week off stay as the admin set them.
   const locked = row && row.status !== "ABSENT" && row.status !== "PRESENT" && row.status !== "LATE";
-  const status = locked ? row.status : late ? "LATE" : "PRESENT";
+  const status: AttendanceInsert["status"] = locked
+    ? (row.status as AttendanceInsert["status"])
+    : late
+      ? "LATE"
+      : "PRESENT";
 
   if (!row) {
-    const payload = {
+    const payload: AttendanceInsert = {
       employee_id: employeeId,
       attendance_date: shiftDate,
       status,
@@ -220,25 +320,27 @@ async function markPresent(
         status === "LATE"
           ? `Late after ${formatMinutesLabel(settings.loginMinutes, settings.timeZone)}`
           : null,
+      ...shiftSnapshotFields(settings),
     };
-    const { data: created, error } = await supabase
-      .from("attendance")
-      .insert(payload)
-      .select(ATTENDANCE_SHIFT_COLS)
-      .single();
+    const insertWithFallback = async (body: AttendanceInsert) => {
+      const first = await supabase.from("attendance").insert(body).select(ATTENDANCE_SHIFT_COLS).single();
+      if (!first.error) return first;
+      if (!/shift_login_minutes|shift_logout_minutes/i.test(first.error.message)) return first;
+      const { shift_login_minutes: _a, shift_logout_minutes: _b, ...basic } = body;
+      return supabase.from("attendance").insert(basic).select(ATTENDANCE_SHIFT_COLS_BASIC).single();
+    };
+    const { data: created, error } = await insertWithFallback(payload);
     if (error && status === "LATE") {
-      const retry = await supabase
-        .from("attendance")
-        .insert({ ...payload, status: "PRESENT" })
-        .select(ATTENDANCE_SHIFT_COLS)
-        .single();
+      const retry = await insertWithFallback({ ...payload, status: "PRESENT" });
       if (retry.error || !retry.data) throw new Error(retry.error?.message ?? error.message);
-      return retry.data;
+      return retry.data as AttendanceShiftRow;
     }
     if (error || !created) throw new Error(error?.message ?? "Failed to mark attendance");
-    return created;
+    return created as AttendanceShiftRow;
   }
 
+  const needsSnapshot =
+    row.shift_login_minutes == null || row.shift_logout_minutes == null;
   await supabase
     .from("attendance")
     .update({
@@ -247,6 +349,8 @@ async function markPresent(
       ...(status === "LATE" && row.status !== "LATE"
         ? { notes: `Late after ${formatMinutesLabel(settings.loginMinutes, settings.timeZone)}` }
         : {}),
+      // Only stamp once — keep the shift they actually started the day on.
+      ...(needsSnapshot ? shiftSnapshotFields(settings) : {}),
     })
     .eq("id", row.id);
 
@@ -532,7 +636,7 @@ export async function closeWorkSession(
           total_idle_seconds: (attendance.total_idle_seconds ?? 0) + idleExtra,
         })
         .eq("id", attendance.id);
-      // Split shift / shortfall-fill / OT (auto 1h or pending < 1h).
+      // Split shift / shortfall-fill / OT (pending until admin approves).
       await recomputeShiftTotals(employeeId, shiftDate, overtimeMinutes);
     }
   } catch (e) {
@@ -1001,7 +1105,7 @@ const overtimeOnlySchema = z.object({
   overtimeMinutes: z.coerce.number().int().min(0).max(OT_WINDOW_MINUTES),
 });
 
-/** Admin grants/approves overtime minutes after logout for one date (max 1 hour). */
+/** Admin grants/approves overtime minutes after logout for one date (max OT_WINDOW_MINUTES). */
 export async function setEmployeeOvertimeByAdmin(
   _prev: { error?: string; success?: boolean },
   formData: FormData
@@ -1101,7 +1205,7 @@ export async function setEmployeeOvertimeByAdmin(
   return { success: true };
 }
 
-/** Approve pending OT (< 1h) for a day — used by admin popup. */
+/** Approve pending OT for a day — used by admin popup. */
 export async function approvePendingOvertime(
   employeeId: string,
   attendanceDate: string

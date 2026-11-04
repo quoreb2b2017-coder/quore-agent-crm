@@ -83,7 +83,7 @@ export type TeamTodayRow = {
     overtime_minutes: number;
   } | null;
   overtimeMinutes: number;
-  /** OT under 1h waiting for admin approve. */
+  /** OT waiting for admin approve. */
   overtimePendingMinutes: number;
   /** Effective shift for live hour math / graphs (custom login/logout when set). */
   workSettings: WorkSettings;

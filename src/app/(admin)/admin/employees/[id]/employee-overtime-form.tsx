@@ -33,8 +33,8 @@ export function EmployeeOvertimeForm({
         <h3 className="text-sm font-semibold">Overtime (by date)</h3>
         <p className="mt-0.5 text-xs text-muted-foreground">
           After {employeeName}&apos;s logout: time first fills {PRODUCTIVE_HOURS_LABEL} shortfall, then
-          OT (max {OT_WINDOW_MINUTES} min). OT never auto-adds — admin must approve (Team Today popup),
-          including a full 1 hour. 0 clears OT for that day.
+          OT. OT never auto-adds — admin must approve (Team Today popup or here). 0 clears OT for that
+          day. Max {OT_WINDOW_MINUTES} minutes ({OT_WINDOW_MINUTES / 60}h).
         </p>
       </div>
       <div className="grid gap-2">
@@ -57,9 +57,11 @@ export function EmployeeOvertimeForm({
           max={OT_WINDOW_MINUTES}
           step={5}
           required
-          defaultValue={OT_WINDOW_MINUTES}
+          defaultValue={60}
         />
-        <p className="text-xs text-muted-foreground">Max {OT_WINDOW_MINUTES} minutes (1 hour).</p>
+        <p className="text-xs text-muted-foreground">
+          Enter any amount up to {OT_WINDOW_MINUTES} minutes ({OT_WINDOW_MINUTES / 60} hours).
+        </p>
       </div>
       {error ? <p className="text-sm text-destructive sm:col-span-2">{error}</p> : null}
       <div className="sm:col-span-2">

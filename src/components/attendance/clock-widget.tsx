@@ -174,7 +174,7 @@ export function ClockWidget({
   // Prefer this employee's saved shift (custom login/logout), not a stale company default.
   const settings = sessionWorkSettings ?? getWorkSettings();
   if (sessionWorkSettings) setWorkSettings(sessionWorkSettings);
-  // Soft 1h window after logout so shortfall can fill; OT still needs admin approve.
+  // Soft window after logout so shortfall can fill; OT still needs admin approve.
   const windowOtMinutes = softOvertimeMinutes(overtimeMinutes);
   const countedFrom = sessionStartedAt
     ? new Date(creditedWorkBounds(sessionStartedAt, trustedNowMs(), settings, windowOtMinutes).from).toISOString()
@@ -475,12 +475,12 @@ export function ClockWidget({
                     After {logoutLabel}: shortfall fills first, then OT
                     {overtimeMinutes > 0
                       ? ` · ${overtimeMinutes} min OT approved`
-                      : " · OT needs admin approve (even full 1h)"}
+                      : " · OT needs admin approve"}
                   </p>
                 ) : null}
                 {pastLogout ? (
                   <p className="text-xs font-medium text-muted-foreground">
-                    Soft OT window ended (1h past {logoutLabel})
+                    Soft OT window ended (past {logoutLabel})
                   </p>
                 ) : null}
               </>

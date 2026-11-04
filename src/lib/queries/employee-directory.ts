@@ -3,8 +3,8 @@ import { createServiceClient } from "@/lib/supabase/service";
 import { excludeIds, superAdminEmployeeIds } from "@/lib/queries/admin-dashboard";
 import {
   HR_ROLE,
+  isHiddenRole,
   isHr,
-  isStaffRole,
   SUPER_ADMIN_ROLE,
 } from "@/lib/permissions/roles";
 import type { AssignableRoleKey } from "@/lib/departments";
@@ -57,14 +57,10 @@ export async function loadEmployeeDirectory(): Promise<EmployeeDirectoryOption[]
     (onboarding ?? []).map((row) => [row.employee_id, row.date_of_birth ?? ""])
   );
 
-  const assignableRoles = new Set<string>(["AGENT", "DATABASE", "EMAIL_MARKETING", HR_ROLE]);
-
   const rows: EmployeeDirectoryOption[] = [];
   for (const employee of employees ?? []) {
     const roleKey = String(roleByEmployee.get(employee.id) ?? "").trim();
-    if (!roleKey || roleKey === SUPER_ADMIN_ROLE) continue;
-    // Explicit include — do not use isManagement() here (that would drop HR).
-    if (!assignableRoles.has(roleKey) && !isStaffRole(roleKey) && !isHr(roleKey)) continue;
+    if (!roleKey || roleKey === SUPER_ADMIN_ROLE || isHiddenRole(roleKey)) continue;
     rows.push({
       id: employee.id,
       fullName: employee.full_name,
@@ -78,5 +74,23 @@ export async function loadEmployeeDirectory(): Promise<EmployeeDirectoryOption[]
       schedule: parseWorkSchedule(employee.work_schedule),
     });
   }
-  return rows;
+
+  // Sales → Marketing → Database → IT → Admin.
+  const roleRank = (roleKey: string) =>
+    roleKey === "AGENT"
+      ? 0
+      : roleKey === "EMAIL_MARKETING"
+        ? 1
+        : roleKey === "DATABASE"
+          ? 2
+          : roleKey === "IT"
+            ? 3
+            : roleKey === HR_ROLE
+              ? 4
+              : 5;
+
+  return rows.sort(
+    (a, b) =>
+      roleRank(a.roleKey) - roleRank(b.roleKey) || a.fullName.localeCompare(b.fullName)
+  );
 }

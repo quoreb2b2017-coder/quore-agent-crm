@@ -14,7 +14,6 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { approvePendingOvertime } from "@/lib/actions/attendance";
-import { OT_WINDOW_MINUTES } from "@/lib/shift";
 
 export function ApproveOvertimeDialog({
   employeeId,
@@ -44,8 +43,7 @@ export function ApproveOvertimeDialog({
           <DialogTitle>Approve overtime?</DialogTitle>
           <DialogDescription>
             {employeeName} worked {pendingMinutes} min past shift after filling the 7h 45m target.
-            OT always needs your approval (even a full {OT_WINDOW_MINUTES} min) before it counts on the
-            graph.
+            OT always needs your approval before it counts on the graph.
           </DialogDescription>
         </DialogHeader>
         <p className="text-sm tabular-nums">
