@@ -1,5 +1,6 @@
 import "server-only";
 import { createServiceClient } from "@/lib/supabase/service";
+import type { Json } from "@/types/supabase";
 
 /**
  * Live tables that must appear in audit_logs.
@@ -38,6 +39,31 @@ export type SyncCoverageResult = {
 
 type Service = ReturnType<typeof createServiceClient>;
 
+/** Untyped accessor for dynamic table names (not known at compile time). */
+function dynamicFrom(service: Service, table: string) {
+  return (service as unknown as { from: (name: string) => DynamicTable }).from(table);
+}
+
+type DynamicTable = {
+  select: (cols: string) => {
+    range: (
+      from: number,
+      to: number
+    ) => Promise<{ data: Record<string, Json | undefined>[] | null; error: { message: string } | null }>;
+  };
+  update: (values: Record<string, Json | undefined>) => {
+    eq: (
+      column: string,
+      value: string | number
+    ) => Promise<{ error: { message: string } | null }>;
+  };
+};
+
+function asJsonObject(row: unknown): { [key: string]: Json | undefined } {
+  if (!row || typeof row !== "object" || Array.isArray(row)) return {};
+  return row as { [key: string]: Json | undefined };
+}
+
 async function auditedRecordIds(service: Service, table: string): Promise<Set<string>> {
   const ids = new Set<string>();
   let from = 0;
@@ -73,7 +99,7 @@ async function appendSnapshot(
   service: Service,
   table: string,
   recordId: string | null,
-  row: Record<string, unknown>
+  row: { [key: string]: Json | undefined }
 ): Promise<{ ok: boolean; needsSql?: boolean; error?: string }> {
   const { error } = await service.rpc("append_audit_log", {
     p_table: table,
@@ -106,12 +132,17 @@ export async function syncAuditCoverageFromLiveData(): Promise<SyncCoverageResul
       if (tableLevel && (await tableHasAnyAudit(service, table))) continue;
 
       let audited = tableLevel ? new Set<string>() : await auditedRecordIds(service, table);
-      const pending: { id: string; rawId: string | number; row: Record<string, unknown> }[] = [];
+      const pending: {
+        id: string;
+        rawId: string | number;
+        row: { [key: string]: Json | undefined };
+      }[] = [];
       let from = 0;
       const page = 100;
+      const tableClient = dynamicFrom(service, table);
 
       for (;;) {
-        const { data, error } = await service.from(table).select("*").range(from, from + page - 1);
+        const { data, error } = await tableClient.select("*").range(from, from + page - 1);
         if (error) {
           if (/does not exist|42P01|42703/i.test(error.message)) {
             errors.push(`${table}: skipped (${error.message})`);
@@ -122,10 +153,12 @@ export async function syncAuditCoverageFromLiveData(): Promise<SyncCoverageResul
         if (!data?.length) break;
 
         for (const row of data) {
-          const rawId = (row as Record<string, unknown>)[idColumn];
+          const objectRow = asJsonObject(row);
+          const rawId = objectRow[idColumn];
           const id = rawId == null ? "" : String(rawId);
           if (!id || audited.has(id)) continue;
-          pending.push({ id, rawId: rawId as string | number, row: row as Record<string, unknown> });
+          if (typeof rawId !== "string" && typeof rawId !== "number") continue;
+          pending.push({ id, rawId, row: objectRow });
         }
 
         if (data.length < page) break;
@@ -137,8 +170,7 @@ export async function syncAuditCoverageFromLiveData(): Promise<SyncCoverageResul
       // Pass 1: fire triggers via no-op update.
       for (const item of pending) {
         const value = item.row[touch];
-        const { error: updError } = await service
-          .from(table)
+        const { error: updError } = await tableClient
           .update({ [touch]: value })
           .eq(idColumn, item.rawId);
         if (updError) errors.push(`${table}/${item.id}: ${updError.message}`);
