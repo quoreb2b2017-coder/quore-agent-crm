@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { Label } from "@/components/ui/label";
 import { NATIVE_SELECT_CLASS } from "@/lib/shift";
+import { cn } from "@/lib/utils";
 
 export function LeaveFilters({
   employees,
@@ -25,7 +26,7 @@ export function LeaveFilters({
           const value = event.target.value;
           router.push(value ? `/admin/leave?employee=${value}` : "/admin/leave");
         }}
-        className={NATIVE_SELECT_CLASS}
+        className={cn(NATIVE_SELECT_CLASS, "rounded-sm bg-card")}
       >
         <option value="">All employees</option>
         {employees.map((employee) => (

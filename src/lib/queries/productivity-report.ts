@@ -191,9 +191,9 @@ function leaveCommentFor(
  * Never rewrite older days against a newly changed work_schedule.
  */
 async function syncLateClockIns(employeeIds: string[], start: string, end: string) {
-  if (employeeIds.length === 0) return;
+  if (employeeIds.length === 0) return false;
   const today = todayIso();
-  if (today < start || today > end) return;
+  if (today < start || today > end) return false;
 
   const service = createServiceClient();
   const company = await loadWorkSettings();
@@ -229,7 +229,7 @@ async function syncLateClockIns(employeeIds: string[], start: string, end: strin
       .not("first_check_in", "is", null);
     data = basic.data;
   } else {
-    return;
+    return false;
   }
 
   const { data: schedules } = await schedulesPromise;
@@ -253,6 +253,7 @@ async function syncLateClockIns(employeeIds: string[], start: string, end: strin
   for (const [notes, ids] of lateByNote) {
     await service.from("attendance").update({ status: "LATE", notes }).in("id", ids);
   }
+  return lateByNote.size > 0;
 }
 
 export async function getProductivityReport(
@@ -263,15 +264,19 @@ export async function getProductivityReport(
   if (employees.length === 0) return [];
   const today = todayIso();
   const ids = employees.map((employee) => employee.id);
-  await syncLateClockIns(ids, start, end);
   const supabase = await createClient();
-  const [attendance, live, { data: joining }, excessByEmployee, leaveNotes] = await Promise.all([
+  const [lateChanged, firstAttendance, live, { data: joining }, excessByEmployee, leaveNotes, settingsByEmployee, company] = await Promise.all([
+    syncLateClockIns(ids, start, end),
     loadAttendance(ids, start, end),
     today >= start && today <= end ? liveSessionSlices(supabase, ids) : Promise.resolve(null),
     supabase.from("employees").select("id, joining_date").in("id", ids),
     loadBreakExcess(ids, start, end),
     leaveNotesByDay(ids, start, end),
+    loadEmployeeWorkSettingsMap(ids),
+    loadWorkSettings(),
   ]);
+  // Read again only on the rare load that just marked someone Late.
+  const attendance = lateChanged ? await loadAttendance(ids, start, end) : firstAttendance;
   const joiningById = new Map((joining ?? []).map((row) => [row.id, row.joining_date]));
 
   const byEmployee = new Map<string, Map<string, AttendanceRow>>();
@@ -280,11 +285,6 @@ export async function getProductivityReport(
     map.set(row.attendance_date, row);
     byEmployee.set(row.employee_id, map);
   }
-
-  const [settingsByEmployee, company] = await Promise.all([
-    loadEmployeeWorkSettingsMap(ids),
-    loadWorkSettings(),
-  ]);
 
   return employees.map((employee) => {
     const joined = joiningById.get(employee.id)?.slice(0, 10) ?? "";

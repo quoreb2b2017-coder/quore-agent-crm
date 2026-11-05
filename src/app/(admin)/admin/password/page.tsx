@@ -6,7 +6,7 @@ export default async function AdminPasswordPage() {
   await requireViewer();
 
   return (
-    <section className="overflow-hidden rounded-2xl border bg-card">
+    <section className="border bg-card">
       <SettingsNav
         profileHref="/admin/settings"
         passwordHref="/admin/password"

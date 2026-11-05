@@ -7,8 +7,11 @@ import { toast } from "sonner";
 import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { setLeaveRemaining, setLeaveRemainingForAll } from "@/lib/actions/leave";
 import type { LeaveBalanceRow } from "@/lib/queries/leave";
+import { sheetCellClassName, sheetHeadClassName, sheetRowClassName } from "@/lib/sheet-styles";
+import { cn } from "@/lib/utils";
 
 export function LeaveBalances({
   year,
@@ -64,11 +67,11 @@ export function LeaveBalances({
   }
 
   return (
-    <div className="flex flex-col">
-      <div className="flex flex-col gap-3 border-b px-5 py-4 sm:flex-row sm:items-end sm:justify-between">
+    <section className="border bg-card">
+      <div className="flex flex-col gap-3 border-b bg-muted px-3 py-2 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h3 className="text-[15px] font-semibold">Leave left · {year}</h3>
-          <p className="text-sm text-muted-foreground">
+          <h2 className="text-sm font-semibold">Leave left · {year}</h2>
+          <p className="text-xs text-muted-foreground">
             Click a name for every leave they took. Used counts approved leave and days marked on leave.
           </p>
         </div>
@@ -82,27 +85,35 @@ export function LeaveBalances({
             value={allValue}
             onChange={(event) => setAllValue(event.target.value)}
             placeholder="Days left"
-            className="w-28"
+            className="w-28 rounded-sm bg-card"
             aria-label="Remaining days for everyone"
           />
-          <Button type="button" variant="outline" disabled={isPending || rows.length === 0} onClick={saveAll}>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            className="rounded-sm bg-card"
+            disabled={isPending || rows.length === 0}
+            onClick={saveAll}
+          >
             {pendingId === "all" ? <Loader2 className="size-4 animate-spin" /> : null}
             Set everyone
           </Button>
         </div>
         )}
       </div>
-      <div className="overflow-x-auto">
-        <table className="w-full text-left text-sm">
-          <thead className="text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
-            <tr>
-              <th className="px-5 py-2 font-medium">Employee</th>
-              <th className="px-3 py-2 font-medium">Used</th>
-              <th className="px-3 py-2 font-medium">Left</th>
-              <th className="px-5 py-2 text-right font-medium">Update left</th>
-            </tr>
-          </thead>
-          <tbody>
+      <div className="[&>[data-slot=table-container]]:max-h-[70svh]">
+        <Table className="border-separate border-spacing-0">
+          <TableHeader className="sticky top-0 z-10">
+            <TableRow className="hover:bg-transparent">
+              <TableHead className={cn(sheetHeadClassName, "z-[2] sm:sticky sm:left-0")}>Name</TableHead>
+              <TableHead className={sheetHeadClassName}>Employee ID</TableHead>
+              <TableHead className={cn(sheetHeadClassName, "text-right")}>Used</TableHead>
+              <TableHead className={cn(sheetHeadClassName, "text-right")}>Left</TableHead>
+              <TableHead className={cn(sheetHeadClassName, "border-r-0 text-right")}>Update left</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
             {rows.map((row) => (
               <BalanceRow
                 key={`${row.employeeId}-${row.remaining}`}
@@ -112,10 +123,10 @@ export function LeaveBalances({
                 onSave={saveOne}
               />
             ))}
-          </tbody>
-        </table>
+          </TableBody>
+        </Table>
       </div>
-    </div>
+    </section>
   );
 }
 
@@ -132,22 +143,28 @@ function BalanceRow({
 }) {
   const [value, setValue] = useState(String(row.remaining));
   return (
-    <tr className="border-t">
-      <td className="px-5 py-2.5">
-        <div className="flex flex-col">
-          <Link
-            href={`/admin/leave?employee=${row.employeeId}`}
-            className="font-medium underline-offset-2 hover:text-primary hover:underline"
-          >
-            {row.fullName}
-          </Link>
-          <span className="font-mono text-[11px] text-muted-foreground">{row.employeeCode}</span>
-        </div>
-      </td>
-      <td className="px-3 py-2.5 tabular-nums">{row.used}</td>
-      <td className="px-3 py-2.5 font-semibold tabular-nums">{row.remaining}</td>
-      <td className="px-5 py-2.5">
-        <div className="flex justify-end gap-2">
+    <TableRow className={sheetRowClassName}>
+      <TableCell className={cn(sheetCellClassName, "z-[1] bg-inherit sm:sticky sm:left-0")}>
+        <Link
+          href={`/admin/leave?employee=${row.employeeId}`}
+          className="font-semibold text-primary underline-offset-2 hover:underline"
+        >
+          {row.fullName}
+        </Link>
+      </TableCell>
+      <TableCell className={cn(sheetCellClassName, "font-mono text-xs font-semibold")}>{row.employeeCode}</TableCell>
+      <TableCell className={cn(sheetCellClassName, "text-right")}>{row.used}</TableCell>
+      <TableCell
+        className={cn(
+          sheetCellClassName,
+          "text-right font-bold",
+          row.remaining > 0 ? "text-success" : "bg-destructive/10 text-destructive"
+        )}
+      >
+        {row.remaining}
+      </TableCell>
+      <TableCell className={cn(sheetCellClassName, "border-r-0 px-1.5")}>
+        <div className="flex justify-end gap-1.5">
           <Input
             type="number"
             min={0}
@@ -155,13 +172,14 @@ function BalanceRow({
             step="0.5"
             value={value}
             onChange={(event) => setValue(event.target.value)}
-            className="w-24"
+            className="w-20 rounded-sm bg-card"
             aria-label={`Remaining days for ${row.fullName}`}
           />
           <Button
             type="button"
             size="sm"
             variant="outline"
+            className="rounded-sm"
             disabled={disabled}
             onClick={() => onSave(row.employeeId, value)}
           >
@@ -169,7 +187,7 @@ function BalanceRow({
             Save
           </Button>
         </div>
-      </td>
-    </tr>
+      </TableCell>
+    </TableRow>
   );
 }

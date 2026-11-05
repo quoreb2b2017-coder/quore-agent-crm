@@ -10,6 +10,7 @@ import { yearOptions } from "@/lib/attendance-period";
 
 const VIEWS: { id: AttendanceView; label: string }[] = [
   { id: "daily", label: "Daily" },
+  { id: "weekly", label: "Weekly" },
   { id: "monthly", label: "Monthly" },
   { id: "yearly", label: "Yearly" },
 ];
@@ -49,7 +50,7 @@ export function AttendanceFilters({
       const params = new URLSearchParams();
       params.set("view", view);
       if (employeeId) params.set("employee", employeeId);
-      if (view === "daily") params.set("date", date);
+      if (view === "daily" || view === "weekly") params.set("date", date);
       if (view === "monthly") params.set("month", month);
       if (view === "yearly") params.set("year", year);
       if (next) params.set("q", next);
@@ -70,7 +71,7 @@ export function AttendanceFilters({
     params.set("view", nextView);
     const nextEmployee = next.employeeId === undefined ? employeeId : next.employeeId;
     if (nextEmployee) params.set("employee", nextEmployee);
-    if (nextView === "daily") params.set("date", next.date ?? date);
+    if (nextView === "daily" || nextView === "weekly") params.set("date", next.date ?? date);
     if (nextView === "monthly") params.set("month", next.month ?? month);
     if (nextView === "yearly") params.set("year", next.year ?? year);
     if (search.trim()) params.set("q", search.trim());
@@ -88,21 +89,22 @@ export function AttendanceFilters({
     : employees;
 
   return (
-    <div className="flex flex-col gap-4 rounded-2xl border bg-card p-4">
+    <div className="flex flex-col gap-2 border bg-muted px-3 py-2">
       <div className="flex flex-wrap items-end gap-3">
         <div className="grid gap-1.5">
           <Label className="text-xs">View</Label>
-          <div className="inline-flex rounded-lg border p-0.5">
+          <div className="inline-flex divide-x rounded-sm border bg-card">
             {VIEWS.map((item) => (
               <button
                 key={item.id}
                 type="button"
+                aria-pressed={view === item.id}
                 onClick={() => go({ view: item.id })}
                 className={cn(
-                  "h-7 rounded-md px-3 text-sm font-medium transition",
+                  "h-8 px-3 text-xs font-semibold transition-colors",
                   view === item.id
                     ? "bg-primary text-primary-foreground"
-                    : "text-muted-foreground hover:text-foreground"
+                    : "text-muted-foreground hover:bg-accent hover:text-foreground"
                 )}
               >
                 {item.label}
@@ -144,9 +146,9 @@ export function AttendanceFilters({
           </div>
         ) : null}
 
-        {view === "daily" ? (
+        {view === "daily" || view === "weekly" ? (
           <div className="grid gap-1.5">
-            <Label htmlFor="attendance-date">Date</Label>
+            <Label htmlFor="attendance-date">{view === "daily" ? "Date" : "Any day in the week"}</Label>
             <input
               id="attendance-date"
               type="date"

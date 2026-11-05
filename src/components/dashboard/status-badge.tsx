@@ -7,7 +7,7 @@ const statusStyles: Record<EmployeeLiveStatus, string> = {
   ONLINE: "bg-success/15 text-success border-success/35",
   MEETING: "bg-info/15 text-info border-info/35",
   WASHROOM: "bg-info/15 text-info border-info/35",
-  BREAK: "bg-warning/20 text-warning-foreground border-warning/40",
+  BREAK: "bg-warning/20 text-warning border-warning/40",
   IDLE: "bg-info/15 text-info border-info/35",
   OFFLINE: "bg-muted text-muted-foreground border-transparent",
 };

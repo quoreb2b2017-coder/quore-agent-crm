@@ -1,11 +1,11 @@
 "use client";
 
 import { Bath, Coffee, LogIn, LogOut, Users } from "lucide-react";
-import { useLiveNowMs } from "@/components/layout/trusted-clock";
-import { formatTime, formatTimeInZone } from "@/lib/format";
+import { TableCell } from "@/components/ui/table";
+import { formatExcess, formatTime, formatTimeInZone } from "@/lib/format";
 import { activityDetail } from "@/lib/activity-detail";
+import { sheetCellClassName } from "@/lib/sheet-styles";
 import type { ActivityTone, ShiftActivityEvent } from "@/lib/queries/shift-activity";
-import { getWorkSettings } from "@/lib/work-settings";
 import { cn } from "@/lib/utils";
 
 const toneIcon = {
@@ -25,58 +25,61 @@ const dotClass: Record<ActivityTone, string> = {
 };
 
 /** Only the fields the feed renders; keeps the page payload small. */
-export type ActivityFeedEvent = Pick<ShiftActivityEvent, "id" | "at" | "label" | "detail" | "tone">;
+export type ActivityFeedEvent = Pick<
+  ShiftActivityEvent,
+  "id" | "at" | "label" | "detail" | "tone" | "excessSeconds" | "liveLimitSeconds"
+>;
 
-export function ActivityFeed({ events }: { events: ActivityFeedEvent[] }) {
-  const zone = getWorkSettings().timeZone;
-  const live = events.some((event) => event.detail === "In progress");
-  const now = useLiveNowMs(live);
+/** Seconds over the allowance: fixed once a break has ended, ticking while it runs. */
+export function eventExcessSeconds(event: ActivityFeedEvent, now: number | null) {
+  if (event.excessSeconds) return event.excessSeconds;
+  if (event.liveLimitSeconds == null || event.detail !== "In progress" || now == null) return 0;
+  const elapsed = Math.floor((now - new Date(event.at).getTime()) / 1000);
+  return Math.max(0, elapsed - event.liveLimitSeconds);
+}
 
+/** One event as sheet cells: Time, Event and Detail. */
+export function ActivityEventCells({
+  event,
+  now,
+  zone,
+}: {
+  event: ActivityFeedEvent;
+  now: number | null;
+  zone: string;
+}) {
+  const Icon = toneIcon[event.tone];
+  const running = event.detail === "In progress";
+  const excess = eventExcessSeconds(event, now);
   return (
-    <ol>
-      {events.map((event, index) => {
-        const Icon = toneIcon[event.tone];
-        const detail = activityDetail(event, now);
-        const live = event.detail === "In progress";
-        const last = index === events.length - 1;
-        return (
-          <li key={event.id} className="relative flex gap-3 pb-3 last:pb-0">
-            {last ? null : (
-              <span className="absolute top-3.5 bottom-0 left-[4.5px] w-px bg-border" aria-hidden />
-            )}
-            <span
-              className={cn(
-                "relative z-10 mt-1.5 size-2.5 shrink-0 rounded-full ring-4 ring-card",
-                dotClass[event.tone]
-              )}
-              aria-hidden
-            />
-            <div className="flex min-w-0 flex-1 items-center justify-between gap-3">
-              <p className="flex min-w-0 items-center gap-1.5 text-sm">
-                <Icon className="size-3.5 shrink-0 text-muted-foreground" />
-                <span className="truncate">{event.label}</span>
-                {detail ? (
-                  <span
-                    className={cn(
-                      "shrink-0 text-xs font-medium",
-                      live ? "text-warning-foreground" : "text-muted-foreground"
-                    )}
-                  >
-                    {detail}
-                  </span>
-                ) : null}
-              </p>
-              <time
-                className="shrink-0 text-xs text-muted-foreground tabular-nums"
-                dateTime={event.at}
-                title={formatTime(event.at)}
-              >
-                {formatTimeInZone(event.at, zone)}
-              </time>
-            </div>
-          </li>
-        );
-      })}
-    </ol>
+    <>
+      <TableCell className={cn(sheetCellClassName, "text-muted-foreground")}>
+        <time dateTime={event.at} title={formatTime(event.at)}>
+          {formatTimeInZone(event.at, zone)}
+        </time>
+      </TableCell>
+      <TableCell className={cn(sheetCellClassName, "font-medium")}>
+        <span className="inline-flex items-center gap-2">
+          <span className={cn("size-2 shrink-0 rounded-full", dotClass[event.tone])} aria-hidden />
+          <Icon className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
+          {event.label}
+        </span>
+      </TableCell>
+      <TableCell
+        className={cn(
+          sheetCellClassName,
+          "border-r-0",
+          excess > 0
+            ? "bg-destructive/10 font-semibold text-destructive"
+            : running
+              ? "bg-warning/10 font-semibold text-warning"
+              : "text-muted-foreground"
+        )}
+      >
+        {activityDetail(event, now) || "—"}
+        {excess > 0 ? ` · +${formatExcess(excess)} over` : ""}
+      </TableCell>
+    </>
   );
 }
+

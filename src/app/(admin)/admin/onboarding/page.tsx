@@ -1,6 +1,6 @@
-import { CalendarClock, ClipboardCheck, FileSignature, Hourglass, UserPlus } from "lucide-react";
+import { UserPlus } from "lucide-react";
 import { PageHeader } from "@/components/dashboard/page-header";
-import { StatCard } from "@/components/dashboard/stat-card";
+import { SheetKpi } from "@/components/dashboard/sheet-kpi";
 import { Button } from "@/components/ui/button";
 import { requireManagement } from "@/lib/permissions/server";
 import { listOnboarding } from "@/lib/queries/onboarding";
@@ -37,7 +37,7 @@ export default async function OnboardingPage() {
   const upcoming = rows.filter((row) => row.joiningDate > today).length;
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-4">
       <PageHeader
         title="Onboarding"
         description={`${ONBOARDING_STEPS.length} simple steps for every new joiner — offer letter to first week.`}
@@ -57,32 +57,32 @@ export default async function OnboardingPage() {
         }
       />
 
-      <section className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <StatCard
-          label="In onboarding"
-          value={pendingRows.length}
-          icon={Hourglass}
-          tone="warning"
-          hint="Not started or in progress"
-        />
-        <StatCard
-          label="Offer pending"
-          value={awaitingOffer}
-          icon={FileSignature}
-          tone="info"
-          hint="Offer not accepted yet"
-        />
-        <StatCard label="Joining soon" value={upcoming} icon={CalendarClock} hint="Joining date ahead" />
-        <StatCard
-          label="Completed"
-          value={completed}
-          icon={ClipboardCheck}
-          tone="success"
-          progress={rows.length > 0 ? (completed / rows.length) * 100 : 0}
-        />
-      </section>
+      <div className="flex flex-col [&>*+*]:-mt-px">
+        <dl className="grid grid-cols-2 border bg-card xl:grid-cols-4">
+          <SheetKpi
+            label="In onboarding"
+            value={pendingRows.length}
+            valueClassName="text-warning"
+            hint="Not started or in progress"
+          />
+          <SheetKpi
+            label="Offer pending"
+            value={awaitingOffer}
+            valueClassName="text-info"
+            hint="Offer not accepted yet"
+          />
+          <SheetKpi label="Joining soon" value={upcoming} hint="Joining date ahead" />
+          <SheetKpi
+            label="Completed"
+            value={completed}
+            valueClassName="text-success"
+            hint={`of ${rows.length} joiners`}
+            progress={rows.length > 0 ? (completed / rows.length) * 100 : 0}
+          />
+        </dl>
 
-      <OnboardingTable rows={rows} today={today} />
+        <OnboardingTable rows={rows} today={today} />
+      </div>
     </div>
   );
 }

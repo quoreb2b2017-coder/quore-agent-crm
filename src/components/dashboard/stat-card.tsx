@@ -4,7 +4,7 @@ import { cn } from "@/lib/utils";
 const toneClasses = {
   default: "bg-muted text-muted-foreground",
   success: "bg-success/10 text-success",
-  warning: "bg-warning/15 text-warning-foreground",
+  warning: "bg-warning/15 text-warning",
   destructive: "bg-destructive/10 text-destructive",
   info: "bg-info/10 text-info",
 } as const;

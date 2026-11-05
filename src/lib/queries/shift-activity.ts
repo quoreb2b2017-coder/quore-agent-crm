@@ -9,8 +9,15 @@ import {
   shiftDateIso,
   todayIso,
   weekdayShortIst,
+  weekStartIso,
 } from "@/lib/format";
-import { formatBreakType, shiftAccountingWindowUtc } from "@/lib/shift";
+import {
+  breakDurationSeconds,
+  breakSlot,
+  formatBreakType,
+  shiftAccountingWindowUtc,
+  slotBudgetSeconds,
+} from "@/lib/shift";
 import { loadEmployeeWorkSettingsMap, loadWorkSettings } from "@/lib/work-settings-server";
 
 export type ActivityTone = "login" | "logout" | "break" | "washroom" | "meeting";
@@ -25,6 +32,10 @@ export type ShiftActivityEvent = {
   detail: string | null;
   tone: ActivityTone;
   shiftDate: string;
+  /** Time this finished break ran over its Tea or Lunch allowance. */
+  excessSeconds?: number;
+  /** Seconds this running break may last before it goes over its allowance. */
+  liveLimitSeconds?: number;
 };
 
 type Person = { id: string; fullName: string; employeeCode: string };
@@ -100,7 +111,8 @@ export async function getShiftActivity(
     label: string,
     detail: string | null,
     tone: ActivityTone,
-    shiftDate?: string
+    shiftDate?: string,
+    limits?: Pick<ShiftActivityEvent, "excessSeconds" | "liveLimitSeconds">
   ) => {
     if (!at) return;
     const person = byId.get(personId);
@@ -115,6 +127,7 @@ export async function getShiftActivity(
       detail,
       tone,
       shiftDate: shiftDate ?? shiftDateIso(new Date(at)),
+      ...limits,
     });
   };
 
@@ -135,23 +148,38 @@ export async function getShiftActivity(
     }
   }
 
-  for (const row of breaks ?? []) {
+  // The same running total per shift and slot as breakExcess, so the log and the totals agree.
+  const usedBySlot = new Map<string, number>();
+  const breaksInOrder = [...(breaks ?? [])].sort((a, b) => a.started_at.localeCompare(b.started_at));
+  for (const row of breaksInOrder) {
     const name = formatBreakType(row.break_type);
+    const day = shiftDateIso(new Date(row.started_at));
+    const slot = breakSlot(row.break_type);
+    const budget = slotBudgetSeconds(slot);
+    const key = `${row.employee_id}|${day}|${slot}`;
+    const usedBefore = usedBySlot.get(key) ?? 0;
     push(
       row.employee_id,
       `${row.id}-start`,
       row.started_at,
       `${name} started`,
       row.ended_at ? null : "In progress",
-      "break"
+      "break",
+      day,
+      row.ended_at ? undefined : { liveLimitSeconds: Math.max(0, budget - usedBefore) }
     );
+    if (!row.ended_at) continue;
+    const used = usedBefore + breakDurationSeconds(row);
+    usedBySlot.set(key, used);
     push(
       row.employee_id,
       `${row.id}-end`,
       row.ended_at,
       `${name} ended`,
-      row.ended_at ? durationLabel(row.started_at, row.ended_at, row.duration_seconds) : null,
-      "break"
+      durationLabel(row.started_at, row.ended_at, row.duration_seconds),
+      "break",
+      day,
+      { excessSeconds: Math.max(0, used - budget) - Math.max(0, usedBefore - budget) }
     );
   }
 
@@ -215,11 +243,11 @@ export type ActivityDayLog = {
   events: ShiftActivityEvent[];
 };
 
-/** One person's own shift log, newest day first. */
-export async function buildActivityDays(person: Person, dayCount = 12): Promise<ActivityDayLog[]> {
+/** One person's own shift log, newest day first, ending on `end` (today by default). */
+export async function buildActivityDays(person: Person, dayCount = 12, end = todayIso()): Promise<ActivityDayLog[]> {
   const today = todayIso();
-  const oldest = addDaysIso(today, -(dayCount - 1));
-  const events = await getShiftActivity([person], oldest, today);
+  const oldest = addDaysIso(end, -(dayCount - 1));
+  const events = await getShiftActivity([person], oldest, end);
   const byDate = new Map<string, ShiftActivityEvent[]>();
   for (const event of events) {
     const list = byDate.get(event.shiftDate) ?? [];
@@ -228,7 +256,7 @@ export async function buildActivityDays(person: Person, dayCount = 12): Promise<
   }
 
   return Array.from({ length: dayCount }, (_, index) => {
-    const date = addDaysIso(today, -index);
+    const date = addDaysIso(end, -index);
     return {
       date,
       weekday: date === today ? "Today" : weekdayShortIst(date),
@@ -245,15 +273,36 @@ export type ActivityRange = {
   start: string;
   end: string;
   label: string;
-  mode: "days" | "month";
+  mode: "days" | "week" | "month";
   days: number;
   month: string;
+  /** Any day in the week, for the week mode. */
+  date: string;
 };
 
-/** Super Admin activity window: a day count, or one calendar month. */
-export function resolveActivityRange(mode: string | undefined, daysRaw: string | undefined, monthRaw: string | undefined): ActivityRange {
+/** Super Admin activity window: a day count, one week (Monday–Sunday), or one calendar month. */
+export function resolveActivityRange(
+  mode: string | undefined,
+  daysRaw: string | undefined,
+  monthRaw: string | undefined,
+  dateRaw?: string | null
+): ActivityRange {
   const today = todayIso();
   const month = monthRaw && /^\d{4}-\d{2}$/.test(monthRaw) ? monthRaw : today.slice(0, 7);
+  const date = dateRaw && /^\d{4}-\d{2}-\d{2}$/.test(dateRaw) && dateRaw <= today ? dateRaw : today;
+  if (mode === "week") {
+    const start = weekStartIso(date);
+    const weekEnd = addDaysIso(start, 6);
+    return {
+      start,
+      end: weekEnd < today ? weekEnd : today,
+      label: `Week of ${formatIsoDate(start)}`,
+      mode: "week",
+      days: 7,
+      month,
+      date,
+    };
+  }
   if (mode === "month") {
     const bounds = monthStartEnd(month);
     const end = bounds.end < today ? bounds.end : today;
@@ -265,6 +314,7 @@ export function resolveActivityRange(mode: string | undefined, daysRaw: string |
       mode: "month",
       days: 30,
       month,
+      date,
     };
   }
   const parsed = Number(daysRaw);
@@ -276,5 +326,6 @@ export function resolveActivityRange(mode: string | undefined, daysRaw: string |
     mode: "days",
     days,
     month,
+    date,
   };
 }

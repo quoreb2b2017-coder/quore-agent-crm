@@ -41,9 +41,10 @@ export async function AccessCard({
   const blocked = status === "SUSPENDED" || status === "TERMINATED";
 
   return (
-    <div className="grid gap-5 lg:grid-cols-2">
+    <div className="grid gap-4 lg:grid-cols-2">
       <Panel
         id="access"
+        className="rounded-none"
         title="Access & security"
         actions={canReset && mfaOn ? <ResetMfaButton employeeId={employeeId} name={name} /> : undefined}
       >
@@ -66,15 +67,15 @@ export async function AccessCard({
           </div>
         </dl>
       </Panel>
-      <Panel id="changes" title="Recent changes to this record" actions={<a href={`/admin/audit-logs`} className="text-[13px] font-medium text-primary hover:underline">Audit log</a>}>
+      <Panel id="changes" className="rounded-none" title="Recent changes to this record" actions={<a href={`/admin/audit-logs`} className="text-[13px] font-medium text-primary hover:underline">Audit log</a>}>
         {(changes.data ?? []).length === 0 ? (
           <p className="px-5 py-6 text-sm text-muted-foreground">No changes recorded yet.</p>
         ) : (
           <ul className="divide-y">
             {(changes.data ?? []).map((c) => (
-              <li key={c.id} className="flex items-baseline justify-between gap-3 px-5 py-2.5 text-sm">
+              <li key={c.id} className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5 px-5 py-2.5 text-sm">
                 <span>{describeAudit(c.action, c.table_name)}</span>
-                <span className="shrink-0 text-xs text-muted-foreground">
+                <span className="text-xs text-muted-foreground">
                   {c.actor_employee_id ? actorName.get(c.actor_employee_id) ?? "Another user" : "System"} · {formatDateTime(c.created_at)}
                 </span>
               </li>

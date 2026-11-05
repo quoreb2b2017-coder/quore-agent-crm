@@ -146,7 +146,7 @@ export function ProductivityChart({
       </ResponsiveContainer>
       <p className="text-[11px] text-muted-foreground">
         Dashed line = daily target ({PRODUCTIVE_HOURS_LABEL}). Blue stack = approved OT. Hover for short /
-        left / met.
+        left / on target.
       </p>
     </div>
   );

@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils";
 const pillStyles = {
   success: "bg-success/10 text-success ring-success/25",
   danger: "bg-destructive/10 text-destructive ring-destructive/20",
-  warning: "bg-warning/15 text-warning-foreground ring-warning/30",
+  warning: "bg-warning/15 text-warning ring-warning/30",
   muted: "bg-muted text-muted-foreground ring-border",
 } as const;
 
@@ -23,7 +23,7 @@ export function Pill({
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold whitespace-nowrap ring-1 ring-inset",
+        "inline-flex items-center gap-1.5 rounded-sm px-2 py-0.5 text-xs font-semibold whitespace-nowrap ring-1 ring-inset",
         pillStyles[tone]
       )}
     >

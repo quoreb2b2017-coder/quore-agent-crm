@@ -1,9 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { Users, UserCheck, UserX } from "lucide-react";
 import { createDataClient as createClient } from "@/lib/supabase/data";
 import { PageHeader } from "@/components/dashboard/page-header";
-import { StatCard } from "@/components/dashboard/stat-card";
 import { Button } from "@/components/ui/button";
 import { EmployeesTable } from "./employees-table";
 import { CreateEmployeeDialog } from "./create-employee-dialog";
@@ -20,7 +18,6 @@ import {
   SUPER_ADMIN_ROLE,
 } from "@/lib/permissions/roles";
 import { kindForAssignableRole, type DepartmentKind } from "@/lib/departments";
-import { isEmploymentActive } from "@/lib/format";
 import {
   applyWorkSchedule,
   formatMinutesLabel,
@@ -105,7 +102,8 @@ export default async function EmployeesPage() {
         email: e.email,
         phone: e.phone,
         employmentStatus: e.employment_status,
-        shiftLabel: schedule ? shiftLabel : `${shiftLabel} · company`,
+        shiftLabel,
+        hasCustomShift: Boolean(schedule),
         departmentName:
           orgDepartment ||
           (roleKey === SUPER_ADMIN_ROLE
@@ -126,12 +124,8 @@ export default async function EmployeesPage() {
     )
     .map(({ _rank: _ignored, ...row }) => row);
 
-  const total = rows.length;
-  const active = rows.filter((row) => isEmploymentActive(row.employmentStatus)).length;
-  const inactive = total - active;
-
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-4">
       <PageHeader
         title="Employees"
         description="People list. Put them into Sales / Marketing / Database / IT / Admin from Teams."
@@ -149,26 +143,6 @@ export default async function EmployeesPage() {
           </div>
         }
       />
-
-      <section className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-        <StatCard label="Total employees" value={total} icon={Users} />
-        <StatCard
-          label="Active employees"
-          value={active}
-          icon={UserCheck}
-          tone="success"
-          hint={total > 0 ? `${Math.round((active / total) * 100)}% of team` : undefined}
-          progress={total > 0 ? (active / total) * 100 : 0}
-        />
-        <StatCard
-          label="Inactive employees"
-          value={inactive}
-          icon={UserX}
-          tone="destructive"
-          hint="Blocked or terminated"
-          progress={total > 0 ? (inactive / total) * 100 : 0}
-        />
-      </section>
 
       <EmployeesTable
         rows={rows}

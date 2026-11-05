@@ -22,22 +22,11 @@ import {
 import { dailyActiveSeconds } from "@/lib/live-time";
 import { setupAsOf } from "@/lib/payroll";
 import { isUndecidedLeaveType, unpackLeaveNote } from "@/lib/leave";
-import type { BreakRow } from "@/lib/queries/employee-status";
 import { liveSessionSlices } from "@/lib/queries/admin-dashboard";
+import { loadAttendanceSheet, type AttendanceSheetRow } from "@/lib/queries/attendance-sheet";
 import { loadEffectiveWorkSettings } from "@/lib/work-settings-server";
 
-export type EmployeeHistoryAttendance = {
-  id: string;
-  attendance_date: string;
-  status: string;
-  first_check_in: string | null;
-  last_check_out: string | null;
-  total_active_seconds: number;
-  total_break_seconds: number;
-  total_idle_seconds: number;
-  overtime_minutes: number;
-  notes: string | null;
-};
+export type EmployeeHistoryAttendance = AttendanceSheetRow;
 
 export type EmployeeHistoryLeave = {
   id: string;
@@ -66,7 +55,9 @@ export type EmployeeHistoryPayload = {
     status: "met" | "short" | "in_progress" | "off" | "upcoming";
   }[];
   attendance: EmployeeHistoryAttendance[];
-  breaks: BreakRow[];
+  /** Attendance sheet: whole months, further back than the 30-day summary. */
+  sheetAttendance: EmployeeHistoryAttendance[];
+  sheetExcessByDate: Record<string, BreakExcess>;
   timeline: { time: string; label: string }[];
   todayWashroomVisits: number;
   /** Shift date → time over Tea / Lunch. Washroom is logged separately. */
@@ -95,6 +86,7 @@ export async function getEmployeeHistory(employeeId: string): Promise<EmployeeHi
   const service = createServiceClient();
   const [
     { data: attendance },
+    sheet,
     { data: breakRows },
     { data: sessions },
     { data: washroomRows },
@@ -114,6 +106,7 @@ export async function getEmployeeHistory(employeeId: string): Promise<EmployeeHi
       .gte("attendance_date", since)
       .lte("attendance_date", today)
       .order("attendance_date", { ascending: false }),
+    loadAttendanceSheet(employeeId, today, rangeEnd),
     supabase
       .from("breaks")
       .select("id, employee_id, break_type, started_at, ended_at, duration_seconds")
@@ -251,6 +244,16 @@ export async function getEmployeeHistory(employeeId: string): Promise<EmployeeHi
     excessByDate[date] = breakExcess(breakSecondsBySlot(breaksByDate.get(date) ?? []));
   }
 
+  function toHistoryAttendance(row: NonNullable<typeof attendance>[number] | AttendanceSheetRow): EmployeeHistoryAttendance {
+    const seconds = row.attendance_date === today ? todayLiveSeconds : row.total_active_seconds;
+    return {
+      ...row,
+      overtime_minutes: row.overtime_minutes ?? 0,
+      notes: row.notes ?? null,
+      total_active_seconds: creditedProductiveSeconds(seconds, row.status),
+    };
+  }
+
   const payroll = setupAsOf(salaryRecords ?? [], employeeId, today, employee?.salary ?? null);
 
   return {
@@ -271,25 +274,9 @@ export async function getEmployeeHistory(employeeId: string): Promise<EmployeeHi
       productiveTargetSeconds(todayRow?.status)
     ),
     chartData,
-    attendance: rows.map((row) => {
-      const seconds =
-        row.attendance_date === today ? todayLiveSeconds : row.total_active_seconds;
-      return {
-        ...row,
-        overtime_minutes: row.overtime_minutes ?? 0,
-        notes: row.notes ?? null,
-        total_active_seconds: creditedProductiveSeconds(seconds, row.status),
-      };
-    }),
-    breaks: (breakRows ?? []).map((row) => ({
-      id: row.id,
-      employeeId: row.employee_id,
-      employeeName: null,
-      breakType: row.break_type,
-      startedAt: row.started_at,
-      endedAt: row.ended_at,
-      durationSeconds: row.duration_seconds,
-    })),
+    attendance: rows.map(toHistoryAttendance),
+    sheetAttendance: sheet.rows.map(toHistoryAttendance),
+    sheetExcessByDate: sheet.excessByDate,
     timeline,
     todayWashroomVisits: todayWashroom.length,
     excessByDate,

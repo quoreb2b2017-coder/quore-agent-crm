@@ -24,7 +24,7 @@ import {
   workSchedulePayload,
   type WorkSchedule,
 } from "@/lib/work-settings";
-import { validateWorkSchedule } from "@/lib/work-settings-server";
+import { forgetEmployeeSchedule, validateWorkSchedule } from "@/lib/work-settings-server";
 import type { Json } from "@/types/supabase";
 
 /** Any role key under a department (built-in or custom). */
@@ -73,6 +73,26 @@ const createSchema = z
     path: ["confirmPassword"],
   });
 
+type ShiftFields = { customShift: boolean; login?: string; logout?: string };
+
+function checkShiftTimes(data: ShiftFields, ctx: z.RefinementCtx) {
+  if (!data.customShift) return;
+  const loginMinutes = timeValueToMinutes(data.login ?? "");
+  const logoutMinutes = timeValueToMinutes(data.logout ?? "");
+  if (loginMinutes == null) {
+    ctx.addIssue({ code: "custom", message: "Pick a login time", path: ["login"] });
+    return;
+  }
+  if (logoutMinutes == null) {
+    ctx.addIssue({ code: "custom", message: "Pick a logout time", path: ["logout"] });
+    return;
+  }
+  const scheduleError = validateWorkSchedule({ loginMinutes, logoutMinutes });
+  if (scheduleError) {
+    ctx.addIssue({ code: "custom", message: scheduleError, path: ["login"] });
+  }
+}
+
 const updateSchema = z
   .object({
     fullName: z.string().min(1, "Full name is required"),
@@ -103,25 +123,17 @@ const updateSchema = z
     (data) => !data.password || data.password === data.confirmPassword,
     { message: "Passwords do not match", path: ["confirmPassword"] }
   )
-  .superRefine((data, ctx) => {
-    if (!data.customShift) return;
-    const loginMinutes = timeValueToMinutes(data.login ?? "");
-    const logoutMinutes = timeValueToMinutes(data.logout ?? "");
-    if (loginMinutes == null) {
-      ctx.addIssue({ code: "custom", message: "Pick a login time", path: ["login"] });
-      return;
-    }
-    if (logoutMinutes == null) {
-      ctx.addIssue({ code: "custom", message: "Pick a logout time", path: ["logout"] });
-      return;
-    }
-    const scheduleError = validateWorkSchedule({ loginMinutes, logoutMinutes });
-    if (scheduleError) {
-      ctx.addIssue({ code: "custom", message: scheduleError, path: ["login"] });
-    }
-  });
+  .superRefine(checkShiftTimes);
 
-function scheduleFromUpdate(data: z.infer<typeof updateSchema>): WorkSchedule | null {
+const shiftSchema = z
+  .object({
+    customShift: z.boolean(),
+    login: z.string().optional(),
+    logout: z.string().optional(),
+  })
+  .superRefine(checkShiftTimes);
+
+function scheduleFromUpdate(data: ShiftFields): WorkSchedule | null {
   if (!data.customShift) return null;
   const loginMinutes = timeValueToMinutes(data.login ?? "");
   const logoutMinutes = timeValueToMinutes(data.logout ?? "");
@@ -448,6 +460,17 @@ export async function assignEmployeeToDepartment(
 
   const blocked = await assertCanManageTarget(ctx, employeeId);
   if (blocked) return { error: blocked };
+
+  // Moving someone sets the role of the new team, which would take Super Admin access away.
+  const { data: superAdminRole } = await createServiceClient()
+    .from("employee_roles")
+    .select("id, roles!inner(role_key)")
+    .eq("employee_id", employeeId)
+    .eq("roles.role_key", SUPER_ADMIN_ROLE)
+    .limit(1);
+  if (superAdminRole?.length) {
+    return { error: "A Super Admin cannot be moved between teams." };
+  }
 
   const mismatch = await assertRoleMatchesDepartment(departmentId, roleKey);
   if (mismatch) return { error: mismatch };
@@ -834,7 +857,15 @@ export async function updateEmployee(
     if (authError) return { error: authError.message };
   }
 
-  // Shift change must refresh the employee's portal clock (login/logout window).
+  revalidateShiftPages(employeeId);
+  if (!skipWorkSchedule) await refreshTodayAfterShiftChange(employeeId, previousSchedule, workSchedule);
+
+  return { success: true, employeeId };
+}
+
+/** A shift change must refresh the employee's portal clock (login/logout window). */
+function revalidateShiftPages(employeeId: string) {
+  forgetEmployeeSchedule(employeeId);
   revalidatePath("/", "layout");
   revalidatePath("/portal", "layout");
   revalidatePath("/portal/dashboard");
@@ -844,43 +875,92 @@ export async function updateEmployee(
   revalidatePath(`/admin/onboarding/${employeeId}`);
   revalidatePath("/admin/dashboard");
   revalidatePath("/admin/attendance");
+}
 
-  // Never recompute past days with the new schedule — that zeroed out previous
-  // shift work and showed huge "minus / short" deficits. Only refresh today,
-  // and recomputeShiftTotals uses the day's frozen shift snapshot when present.
+/**
+ * Never recompute past days with the new schedule — that zeroed out previous
+ * shift work and showed huge "minus / short" deficits. Only refresh today,
+ * and recomputeShiftTotals uses the day's frozen shift snapshot when present.
+ */
+async function refreshTodayAfterShiftChange(
+  employeeId: string,
+  previous: WorkSchedule | null,
+  workSchedule: Json
+) {
   try {
-    if (!skipWorkSchedule) {
-      const prev = previousSchedule;
-      const next = parseWorkSchedule(workSchedule);
-      const timesChanged =
-        (prev?.loginMinutes ?? null) !== (next?.loginMinutes ?? null) ||
-        (prev?.logoutMinutes ?? null) !== (next?.logoutMinutes ?? null);
-      if (timesChanged) {
-        const { todayIso } = await import("@/lib/format");
-        const { recomputeShiftTotals } = await import("@/lib/actions/attendance");
-        const { createServiceClient } = await import("@/lib/supabase/service");
-        const service = createServiceClient();
-        const today = todayIso();
-        const { data: day } = await service
-          .from("attendance")
-          .select("attendance_date, overtime_minutes, status")
-          .eq("employee_id", employeeId)
-          .eq("attendance_date", today)
-          .maybeSingle();
-        if (
-          day &&
-          day.status !== "ON_LEAVE" &&
-          day.status !== "HOLIDAY" &&
-          day.status !== "WEEK_OFF"
-        ) {
-          await recomputeShiftTotals(employeeId, day.attendance_date, day.overtime_minutes ?? 0);
-        }
+    const next = parseWorkSchedule(workSchedule);
+    const timesChanged =
+      (previous?.loginMinutes ?? null) !== (next?.loginMinutes ?? null) ||
+      (previous?.logoutMinutes ?? null) !== (next?.logoutMinutes ?? null);
+    if (timesChanged) {
+      const { todayIso } = await import("@/lib/format");
+      const { recomputeShiftTotals } = await import("@/lib/actions/attendance");
+      const service = createServiceClient();
+      const today = todayIso();
+      const { data: day } = await service
+        .from("attendance")
+        .select("attendance_date, overtime_minutes, status")
+        .eq("employee_id", employeeId)
+        .eq("attendance_date", today)
+        .maybeSingle();
+      if (
+        day &&
+        day.status !== "ON_LEAVE" &&
+        day.status !== "HOLIDAY" &&
+        day.status !== "WEEK_OFF"
+      ) {
+        await recomputeShiftTotals(employeeId, day.attendance_date, day.overtime_minutes ?? 0);
       }
     }
   } catch {
     /* shift is saved; totals catch up on next clock-out */
   }
+}
 
+/** Saves only this employee's login/logout, from the Shift & overtime tab. */
+export async function updateEmployeeShift(
+  employeeId: string,
+  _prev: ActionState,
+  formData: FormData
+): Promise<ActionState> {
+  let ctx;
+  try {
+    ctx = await assertCanManageEmployees();
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Not authorized" };
+  }
+  const blocked = await assertCanManageTarget(ctx, employeeId);
+  if (blocked) return { error: blocked };
+
+  const parsed = shiftSchema.safeParse({
+    customShift: formData.get("customShift") === "true",
+    login: String(formData.get("login") ?? "") || undefined,
+    logout: String(formData.get("logout") ?? "") || undefined,
+  });
+  if (!parsed.success) {
+    return { error: parsed.error.issues[0]?.message ?? "Check the shift times" };
+  }
+
+  const supabase = await createClient();
+  const { data: existing, error: existingError } = await supabase
+    .from("employees")
+    .select("work_schedule")
+    .eq("id", employeeId)
+    .single();
+  if (existingError || !existing) {
+    return { error: existingError?.message ?? "Employee not found" };
+  }
+
+  const previousSchedule = parseWorkSchedule(existing.work_schedule);
+  const workSchedule = workSchedulePayload(scheduleFromUpdate(parsed.data), previousSchedule) as Json;
+  const { error: updateError } = await supabase
+    .from("employees")
+    .update({ work_schedule: workSchedule, updated_at: new Date().toISOString() })
+    .eq("id", employeeId);
+  if (updateError) return { error: updateError.message };
+
+  revalidateShiftPages(employeeId);
+  await refreshTodayAfterShiftChange(employeeId, previousSchedule, workSchedule);
   return { success: true, employeeId };
 }
 

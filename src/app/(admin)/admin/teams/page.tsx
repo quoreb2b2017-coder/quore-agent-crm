@@ -18,15 +18,16 @@ export default async function TeamsPage() {
 
   const [departments, employees, assignableRoles] = await Promise.all([
     loadDepartments(),
-    loadEmployeeDirectory(),
+    // Same rule as the Employees page: Super Admin sees everyone, HR sees staff only.
+    loadEmployeeDirectory({ includeManagement: isSuperAdmin(ctx.roleKey) }),
     loadAssignableDepartmentRoles(),
   ]);
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-4">
       <PageHeader
         title="Teams"
-        description="One place for departments. Open a team on the left, add or move people on the right. Role is set automatically."
+        description="Pick a team on the left, then add or move people on the right. Role is set automatically."
       />
       <TeamsBoard
         departments={departments}

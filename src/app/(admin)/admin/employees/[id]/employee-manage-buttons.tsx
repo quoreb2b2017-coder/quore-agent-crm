@@ -2,7 +2,7 @@
 
 import { useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Ban, Unlock, Trash2, Loader2, Pencil } from "lucide-react";
+import { Ban, Unlock, Trash2, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { deleteEmployee, setEmployeeBlocked } from "../actions";
@@ -22,15 +22,6 @@ export function EmployeeManageButtons({
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
-
-  function goToEdit() {
-    const target = document.getElementById("edit-profile");
-    if (target) {
-      target.scrollIntoView({ behavior: "smooth", block: "start" });
-      return;
-    }
-    router.push(`/admin/employees/${employeeId}?tab=profile#edit-profile`);
-  }
 
   function runBlock(blocked: boolean) {
     if (
@@ -66,10 +57,6 @@ export function EmployeeManageButtons({
 
   return (
     <div className="flex flex-wrap gap-2">
-      <Button type="button" size="sm" onClick={goToEdit}>
-        <Pencil className="size-4" />
-        Edit
-      </Button>
       <Button
         type="button"
         size="sm"

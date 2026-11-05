@@ -23,16 +23,11 @@ const NO_EXCESS: BreakExcess = emptyExcess();
 /** Super Admin and HR: not on the shift clock, so left out of team lists and payslips. */
 const loadSuperAdminEmployeeIds = cache(async (): Promise<string[]> => {
   const supabase = await createClient();
-  const { data: roles } = await supabase
-    .from("roles")
-    .select("id")
-    .in("role_key", [...MANAGEMENT_ROLE_KEYS]);
-  const roleIds = (roles ?? []).map((role) => role.id);
-  if (roleIds.length === 0) return [];
+  // One round-trip: this runs on nearly every admin page.
   const { data: rows } = await supabase
     .from("employee_roles")
-    .select("employee_id")
-    .in("role_id", roleIds);
+    .select("employee_id, roles!inner(role_key)")
+    .in("roles.role_key", [...MANAGEMENT_ROLE_KEYS]);
   return Array.from(new Set((rows ?? []).map((row) => row.employee_id)));
 });
 
@@ -57,16 +52,17 @@ export async function isSuperAdminEmployee(
 
 export const listWatchableEmployees = cache(async function listWatchableEmployees() {
   const supabase = await createClient();
-  const adminIds = await superAdminEmployeeIds(supabase);
-  let query = supabase
-    .from("employees")
-    .select("id, full_name, employee_code")
-    .neq("employment_status", "TERMINATED")
-    .order("full_name");
-  const skip = excludeIds(adminIds);
-  if (skip) query = query.not("id", "in", skip);
-  const { data } = await query;
-  return data ?? [];
+  // Together, not one after the other: this runs first on nearly every admin page.
+  const [adminIds, { data }] = await Promise.all([
+    superAdminEmployeeIds(supabase),
+    supabase
+      .from("employees")
+      .select("id, full_name, employee_code")
+      .neq("employment_status", "TERMINATED")
+      .order("full_name"),
+  ]);
+  const admins = new Set(adminIds);
+  return (data ?? []).filter((employee) => !admins.has(employee.id));
 });
 
 export type TeamTodayRow = {
@@ -151,38 +147,25 @@ export async function liveSessionSlices(
     ...employeeIds.map((id) => settingsByEmployee.get(id) ?? company),
   ]);
 
-  const { data: todaysSessions } = await supabase
-    .from("employee_sessions")
-    .select("employee_id, status, ended_at")
-    .in("employee_id", employeeIds)
-    .gte("started_at", start.toISOString())
-    .order("started_at", { ascending: false });
-  for (const row of todaysSessions ?? []) {
-    if (slices.has(row.employee_id)) continue;
-    slices.set(row.employee_id, {
-      sessionStartedAt: null,
-      breakExcess: NO_EXCESS,
-      sessionClosedBreakSeconds: 0,
-      openBreakStartedAt: null,
-      inMeeting: false,
-      meetingPending: false,
-      inWashroom: false,
-      washroomVisitCount: 0,
-      washroomSeconds: 0,
-      sessionClosedWashroomSeconds: 0,
-      openWashroomStartedAt: null,
-      autoLoggedOutAt: row.status === "TIMED_OUT" ? row.ended_at : null,
-    });
-  }
-
-  const { data: sessions } = await supabase
-    .from("employee_sessions")
-    .select("id, employee_id, started_at")
-    .eq("status", "ACTIVE")
-    .in("employee_id", employeeIds);
-
   const service = createServiceClient();
-  const [{ data: shiftBreaks }, { data: meetings }, { data: washrooms }] = await Promise.all([
+  const [
+    { data: todaysSessions },
+    { data: sessions },
+    { data: shiftBreaks },
+    { data: meetings },
+    { data: washrooms },
+  ] = await Promise.all([
+    supabase
+      .from("employee_sessions")
+      .select("employee_id, status, ended_at")
+      .in("employee_id", employeeIds)
+      .gte("started_at", start.toISOString())
+      .order("started_at", { ascending: false }),
+    supabase
+      .from("employee_sessions")
+      .select("id, employee_id, started_at")
+      .eq("status", "ACTIVE")
+      .in("employee_id", employeeIds),
     supabase
       .from("breaks")
       .select("employee_id, session_id, break_type, started_at, ended_at, duration_seconds")
@@ -201,6 +184,25 @@ export async function liveSessionSlices(
       .gte("started_at", start.toISOString())
       .lt("started_at", end.toISOString()),
   ]);
+
+  for (const row of todaysSessions ?? []) {
+    if (slices.has(row.employee_id)) continue;
+    slices.set(row.employee_id, {
+      sessionStartedAt: null,
+      breakExcess: NO_EXCESS,
+      sessionClosedBreakSeconds: 0,
+      openBreakStartedAt: null,
+      inMeeting: false,
+      meetingPending: false,
+      inWashroom: false,
+      washroomVisitCount: 0,
+      washroomSeconds: 0,
+      sessionClosedWashroomSeconds: 0,
+      openWashroomStartedAt: null,
+      autoLoggedOutAt: row.status === "TIMED_OUT" ? row.ended_at : null,
+    });
+  }
+
   const inMeeting = new Set(
     (meetings ?? []).filter((row) => row.started_at).map((row) => row.employee_id)
   );
@@ -351,32 +353,19 @@ export async function getAdminDashboardData(): Promise<{
 }> {
   const supabase = await createClient();
   const today = todayIso();
-  const adminIds = await superAdminEmployeeIds();
-  const skip = excludeIds(adminIds);
-  const adminSet = new Set(adminIds);
-
-  let employeesQuery = supabase
-    .from("employees")
-    .select("id, full_name, employee_code")
-    .neq("employment_status", "TERMINATED")
-    .order("full_name");
-  if (skip) employeesQuery = employeesQuery.not("id", "in", skip);
-
-  let activeCountQuery = supabase
-    .from("employees")
-    .select("id", { count: "exact", head: true })
-    .eq("employment_status", "ACTIVE");
-  if (skip) activeCountQuery = activeCountQuery.not("id", "in", skip);
-
   const [
+    adminIds,
     { data: employees },
-    { count: totalEmployees },
     { data: activeSessions },
     { data: openBreaks },
     { data: attendanceToday },
   ] = await Promise.all([
-    employeesQuery,
-    activeCountQuery,
+    superAdminEmployeeIds(),
+    supabase
+      .from("employees")
+      .select("id, full_name, employee_code, employment_status")
+      .neq("employment_status", "TERMINATED")
+      .order("full_name"),
     supabase.from("employee_sessions").select("id, employee_id").eq("status", "ACTIVE"),
     supabase.from("breaks").select("session_id").is("ended_at", null),
     supabase
@@ -387,7 +376,10 @@ export async function getAdminDashboardData(): Promise<{
       .eq("attendance_date", today),
   ]);
 
-  const staff = employees ?? [];
+  const adminSet = new Set(adminIds);
+  const staffRows = (employees ?? []).filter((person) => !adminSet.has(person.id));
+  const totalEmployees = staffRows.filter((person) => person.employment_status === "ACTIVE").length;
+  const staff = staffRows.map(({ id, full_name, employee_code }) => ({ id, full_name, employee_code }));
   const openBreakSessionIds = new Set((openBreaks ?? []).map((b) => b.session_id));
   const sessions = (activeSessions ?? []).filter((s) => !adminSet.has(s.employee_id));
   const onBreakEmployees = sessions.filter((s) => openBreakSessionIds.has(s.id)).length;
@@ -423,7 +415,7 @@ export async function getAdminDashboardData(): Promise<{
   }, 0);
   const totalBreakSeconds = attendance.reduce((sum, a) => sum + a.total_break_seconds, 0);
   const totalIdleSeconds = attendance.reduce((sum, a) => sum + a.total_idle_seconds, 0);
-  const total = totalEmployees ?? 0;
+  const total = totalEmployees;
 
   const stats: AdminDashboardStats = {
     totalEmployees: total,
@@ -486,7 +478,7 @@ export type PendingMeetingRequest = {
   requestedAt: string;
 };
 
-async function listPendingMeetings(
+export async function listPendingMeetings(
   staff: { id: string; full_name: string; employee_code: string }[]
 ): Promise<PendingMeetingRequest[]> {
   const { data } = await createServiceClient()

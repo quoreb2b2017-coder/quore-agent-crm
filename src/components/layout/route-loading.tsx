@@ -60,11 +60,53 @@ function isAppNavigation(anchor: HTMLAnchorElement, event: MouseEvent) {
   return true;
 }
 
-/** Thin top progress bar — does not block the page with a spinner overlay. */
+/** A request only counts as an "action" if the person did something just before it. */
+const USER_ACTION_WINDOW_MS = 1500;
+
+/**
+ * Number of page loads and server actions the person is waiting for. Next's router calls
+ * window.fetch, so this covers Link, router.push, filters and buttons without touching
+ * each one. Prefetches and background calls (heartbeat, bell) are left out.
+ */
+function useUserRequestsInFlight() {
+  const [inFlight, setInFlight] = useState(0);
+
+  useEffect(() => {
+    let lastUserAction = 0;
+    const noteUserAction = () => {
+      lastUserAction = Date.now();
+    };
+    const userEvents = ["pointerdown", "keydown", "change", "popstate"];
+    for (const name of userEvents) window.addEventListener(name, noteUserAction, true);
+
+    const originalFetch = window.fetch;
+    window.fetch = (input, init) => {
+      const headers = new Headers(init?.headers ?? (input instanceof Request ? input.headers : undefined));
+      const isPageLoad = headers.has("rsc") && !headers.has("next-router-prefetch");
+      const isServerAction = headers.has("next-action");
+      if ((!isPageLoad && !isServerAction) || Date.now() - lastUserAction > USER_ACTION_WINDOW_MS) {
+        return originalFetch(input, init);
+      }
+      setInFlight((count) => count + 1);
+      return originalFetch(input, init).finally(() => setInFlight((count) => count - 1));
+    };
+
+    return () => {
+      window.fetch = originalFetch;
+      for (const name of userEvents) window.removeEventListener(name, noteUserAction, true);
+    };
+  }, []);
+
+  return inFlight;
+}
+
+/** Floating circle while anything the person asked for is loading. Never blocks the page. */
 function NavigationLoaderInner() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const [pending, setPending] = useState(false);
+  const inFlight = useUserRequestsInFlight();
+  const busy = pending || inFlight > 0;
 
   useEffect(() => {
     setPending(false);
@@ -101,20 +143,16 @@ function NavigationLoaderInner() {
   return (
     <div
       className={cn(
-        "pointer-events-none absolute inset-x-0 top-0 z-40 h-0.5 overflow-hidden",
-        pending ? "opacity-100" : "opacity-0"
+        "pointer-events-none fixed top-20 left-1/2 z-[60] flex size-12 -translate-x-1/2 items-center justify-center rounded-full border bg-card shadow-lg transition-opacity",
+        // The short delay stops the circle flashing on loads that finish straight away.
+        busy ? "opacity-100 delay-100" : "opacity-0"
       )}
-      aria-hidden={!pending}
-      aria-busy={pending}
-      role={pending ? "status" : undefined}
-      aria-label={pending ? "Loading" : undefined}
+      aria-hidden={!busy}
+      aria-busy={busy}
+      role={busy ? "status" : undefined}
+      aria-label={busy ? "Loading" : undefined}
     >
-      <div
-        className={cn(
-          "h-full w-1/3 rounded-full bg-primary",
-          pending && "animate-[route-progress_1s_ease-in-out_infinite]"
-        )}
-      />
+      {busy ? <RouteSpinner className="size-7" /> : null}
     </div>
   );
 }

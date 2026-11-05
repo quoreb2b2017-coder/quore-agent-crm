@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ChevronRight } from "lucide-react";
+import { ArrowLeft, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { MeterRow } from "@/components/dashboard/mix-bar";
 import { KpiStrip, Panel, Pill, SegmentBar } from "@/components/wt/panel";
@@ -13,7 +13,7 @@ import { requireViewer } from "@/lib/permissions/server";
 import { trustedNowDate } from "@/lib/clock-anchor";
 import { formatMonthLabel, greetingForNow, INDIA_TIME_ZONE, SHIFT_WINDOW_IST_LABEL, todayIso } from "@/lib/format";
 import { AdminLogoutButton } from "@/components/attendance/admin-logout-button";
-import { getAdminDashboardData } from "@/lib/queries/admin-dashboard";
+import { getAdminDashboardData, listPendingMeetings, listWatchableEmployees } from "@/lib/queries/admin-dashboard";
 import { sweepIdleSessions } from "@/lib/presence-server";
 import { getEmployeeDashboardBundle } from "@/lib/queries/employee-status";
 import { isUuid, monthStartEnd } from "@/lib/attendance-period";
@@ -90,15 +90,16 @@ export async function AdminDashboardBody({
   const requested = Array.isArray(searchParams.employee) ? searchParams.employee[0] : searchParams.employee;
   const requestedId = requested && isUuid(requested) ? requested : null;
 
-  await sweepIdleSessions();
-  const dashboard = await getAdminDashboardData();
-  const { stats, employees, teamReport, pendingMeetings } = dashboard;
-
-  const selected = employees.find((employee) => employee.id === requestedId) ?? null;
+  // Background housekeeping, throttled inside: the page must not wait for it.
+  void sweepIdleSessions().catch(() => undefined);
+  // Opening one person needs only the name list, not the whole team report.
+  const watchable = requestedId ? await listWatchableEmployees() : [];
+  const selected = watchable.find((employee) => employee.id === requestedId) ?? null;
   const monthKey = todayIso().slice(0, 7);
   const monthBounds = monthStartEnd(monthKey);
   if (selected) {
-    const [{ sessionState, commonData }, calendarRow, activityDays] = await Promise.all([
+    const employees = watchable;
+    const [{ sessionState, commonData }, calendarRow, activityDays, pendingMeetings] = await Promise.all([
       getEmployeeDashboardBundle(selected.id),
       getProductivityReport(
         [{ id: selected.id, full_name: selected.full_name, employee_code: selected.employee_code }],
@@ -113,6 +114,7 @@ export async function AdminDashboardBody({
         },
         30
       ),
+      listPendingMeetings(watchable),
     ]);
     const first = selected.full_name.split(" ")[0] ?? selected.full_name;
 
@@ -130,7 +132,13 @@ export async function AdminDashboardBody({
           sessionTitle={`${selected.full_name}'s session`}
           sessionHint="Same view the employee sees · view only"
           toolbar={
-            <div className="flex items-center gap-2 sm:w-auto">
+            <div className="flex flex-wrap items-center gap-2 sm:w-auto">
+              <Button asChild size="sm" variant="outline" className="rounded-sm">
+                <Link href="/admin/dashboard">
+                  <ArrowLeft className="size-3.5" />
+                  All employees
+                </Link>
+              </Button>
               {sessionState.isClockedIn ? (
                 <AdminLogoutButton employeeId={selected.id} employeeName={selected.full_name} />
               ) : null}
@@ -170,20 +178,21 @@ export async function AdminDashboardBody({
     );
   }
 
+  const superAdmin = isSuperAdmin(ctx.roleKey);
+  const [{ stats, employees, teamReport, pendingMeetings }, approvals, compliance] = await Promise.all([
+    getAdminDashboardData(),
+    loadApprovals(ctx),
+    superAdmin ? loadComplianceSummary() : Promise.resolve(null),
+  ]);
   const firstName = ctx.fullName.split(" ")[0] ?? "Admin";
   const attendancePct =
     stats.totalEmployees > 0 ? Math.round((stats.todaysAttendance / stats.totalEmployees) * 100) : 0;
   const hourScale = Math.max(8, stats.totalWorkingHours, stats.totalBreakHours, stats.totalIdleHours, 0.1);
-  const superAdmin = isSuperAdmin(ctx.roleKey);
-  const [approvals, compliance] = await Promise.all([
-    loadApprovals(ctx),
-    superAdmin ? loadComplianceSummary() : Promise.resolve(null),
-  ]);
   const upcoming = upcomingDates(todayIso());
   const decisions = approvals.counts.ALL;
 
   return (
-    <div className="flex flex-col gap-5">
+    <div className="flex flex-col gap-4">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div className="min-w-0">
           <p className="wt-eyebrow mb-1">{todayLabel} · shift {SHIFT_WINDOW_IST_LABEL}</p>
@@ -206,6 +215,7 @@ export async function AdminDashboardBody({
       </div>
 
       <KpiStrip
+        className="rounded-none"
         items={[
           { label: "Team", value: stats.totalEmployees, sub: `${stats.onlineEmployees} online now`, subTone: stats.onlineEmployees ? "success" : "neutral" },
           {
@@ -230,25 +240,27 @@ export async function AdminDashboardBody({
         ]}
       />
 
-      <div className="grid gap-5 xl:grid-cols-[minmax(0,1.55fr)_minmax(0,1fr)]">
-        <Panel
-          id="roster"
-          title="Live shift roster"
-          description="Everyone on today's shift. Pick a person to open their dashboard."
-          actions={
-            <div className="w-56">
-              <EmployeeWatchSelect employees={employees} employeeId={null} />
-            </div>
-          }
-          bodyClassName="flex flex-col"
-        >
-          <MeetingRequests requests={pendingMeetings} />
-          <TeamTodayReport rows={teamReport} attendanceDate={todayIso()} />
-        </Panel>
+      <Panel
+        id="roster"
+        className="rounded-none"
+        title="Live shift roster"
+        description="Everyone on today's shift. Click a name to open that person's dashboard."
+        actions={
+          <div className="w-56">
+            <EmployeeWatchSelect employees={employees} employeeId={null} />
+          </div>
+        }
+        bodyClassName="flex flex-col"
+      >
+        <MeetingRequests requests={pendingMeetings} />
+        <TeamTodayReport rows={teamReport} attendanceDate={todayIso()} />
+      </Panel>
 
-        <div className="flex min-w-0 flex-col gap-5">
+      <div className="grid gap-4 xl:grid-cols-2">
+        <div className="flex min-w-0 flex-col gap-4">
           <Panel
             id="approvals"
+            className="rounded-none"
             title={<>Your approvals <span className="font-normal text-muted-foreground">· {decisions}</span></>}
             actions={<Link href="/admin/approvals" className="text-[13px] font-medium text-primary hover:underline">Open inbox</Link>}
           >
@@ -274,8 +286,27 @@ export async function AdminDashboardBody({
             )}
           </Panel>
 
+          <Panel id="upcoming" className="rounded-none" title="Coming up">
+            <ul className="divide-y">
+              {upcoming.map((u) => (
+                <li key={`${u.date}-${u.title}`} className="flex items-center gap-3.5 px-5 py-2.5">
+                  <span className="w-11 shrink-0 rounded-sm border py-1 text-center leading-tight">
+                    <span className="block text-[10.5px] font-semibold text-primary uppercase">{u.month}</span>
+                    <span className="text-base font-semibold">{u.day}</span>
+                  </span>
+                  <span className="min-w-0">
+                    <span className="block text-sm font-medium">{u.title}</span>
+                    <span className="block text-[12.5px] text-muted-foreground">{u.meta}</span>
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </Panel>
+        </div>
+
+        <div className="flex min-w-0 flex-col gap-4">
           {compliance ? (
-            <section aria-labelledby="posture-title" className="flex flex-col gap-4 rounded-xl bg-ink p-5 text-ink-foreground">
+            <section aria-labelledby="posture-title" className="flex flex-col gap-4 bg-ink p-5 text-ink-foreground">
               <div className="flex items-center justify-between gap-3">
                 <h2 id="posture-title" className="text-[15px] font-semibold text-white">Security &amp; Compliance posture</h2>
                 <span className="font-mono text-[11.5px] text-ink-muted">ISO 27001 · SOC 2</span>
@@ -309,27 +340,10 @@ export async function AdminDashboardBody({
             </section>
           ) : null}
 
-          <Panel id="hours" title="Today's hours" description="Team working, break and idle time" bodyClassName="flex flex-col gap-2 p-4">
+          <Panel id="hours" className="rounded-none" title="Today's hours" description="Team working, break and idle time" bodyClassName="flex flex-col gap-2 p-4">
             <MeterRow compact tone="success" label="Working" value={stats.totalWorkingHours} max={hourScale} barClass="bg-success" />
             <MeterRow compact tone="warning" label="Break" value={stats.totalBreakHours} max={hourScale} barClass="bg-warning" />
             <MeterRow compact tone="info" label="Idle" value={stats.totalIdleHours} max={hourScale} barClass="bg-info" />
-          </Panel>
-
-          <Panel id="upcoming" title="Coming up">
-            <ul className="divide-y">
-              {upcoming.map((u) => (
-                <li key={`${u.date}-${u.title}`} className="flex items-center gap-3.5 px-5 py-2.5">
-                  <span className="w-11 shrink-0 rounded-lg border py-1 text-center leading-tight">
-                    <span className="block text-[10.5px] font-semibold text-primary uppercase">{u.month}</span>
-                    <span className="text-base font-semibold">{u.day}</span>
-                  </span>
-                  <span className="min-w-0">
-                    <span className="block text-sm font-medium">{u.title}</span>
-                    <span className="block text-[12.5px] text-muted-foreground">{u.meta}</span>
-                  </span>
-                </li>
-              ))}
-            </ul>
           </Panel>
         </div>
       </div>

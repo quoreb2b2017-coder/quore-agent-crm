@@ -1,6 +1,7 @@
 import "server-only";
 import { createServiceClient } from "@/lib/supabase/service";
 import { getAuthUser } from "@/lib/supabase/server";
+import type { Json } from "@/types/supabase";
 import {
   DEFAULT_WORK_SETTINGS,
   applyWorkSchedule,
@@ -95,16 +96,36 @@ export function validateWorkSchedule(schedule: WorkSchedule): string | null {
   return null;
 }
 
+/** Shifts rarely change and nearly every report needs them before its other queries can start. */
+const scheduleCache = new Map<string, { raw: Json; at: number }>();
+
+/** Call after saving a shift, so the new times apply at once. */
+export function forgetEmployeeSchedule(employeeId: string) {
+  scheduleCache.delete(employeeId);
+}
+
+async function loadRawSchedules(employeeIds: string[]) {
+  const now = Date.now();
+  const missing = employeeIds.filter((id) => {
+    const cached = scheduleCache.get(id);
+    return !cached || now - cached.at >= CACHE_MS;
+  });
+  if (missing.length > 0) {
+    const { data, error } = await createServiceClient()
+      .from("employees")
+      .select("id, work_schedule")
+      .in("id", missing);
+    if (error) throw new Error(error.message);
+    for (const row of data ?? []) scheduleCache.set(row.id, { raw: row.work_schedule, at: now });
+  }
+  return new Map(employeeIds.map((id) => [id, scheduleCache.get(id)?.raw ?? null]));
+}
+
 /** Per-employee login/logout override, or null when they use the company shift. */
 export async function loadEmployeeWorkSchedule(employeeId: string): Promise<WorkSchedule | null> {
   try {
-    const { data, error } = await createServiceClient()
-      .from("employees")
-      .select("work_schedule")
-      .eq("id", employeeId)
-      .maybeSingle();
-    if (error || !data) return null;
-    return parseWorkSchedule(data.work_schedule);
+    const schedules = await loadRawSchedules([employeeId]);
+    return parseWorkSchedule(schedules.get(employeeId));
   } catch {
     return null;
   }
@@ -127,11 +148,7 @@ export async function loadEmployeeWorkSettingsMap(
   const company = await loadWorkSettings();
   const map = new Map<string, WorkSettings>();
   if (employeeIds.length === 0) return map;
-  const { data } = await createServiceClient()
-    .from("employees")
-    .select("id, work_schedule")
-    .in("id", employeeIds);
-  const byId = new Map((data ?? []).map((row) => [row.id, row.work_schedule]));
+  const byId = await loadRawSchedules(employeeIds).catch(() => new Map<string, Json>());
   for (const id of employeeIds) {
     map.set(id, applyWorkSchedule(company, parseWorkSchedule(byId.get(id))));
   }

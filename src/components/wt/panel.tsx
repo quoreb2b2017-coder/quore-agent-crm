@@ -46,8 +46,10 @@ export function Pill({ tone = "neutral", children, className }: { tone?: Tone; c
 
 export function KpiStrip({
   items,
+  className,
 }: {
   items: { label: string; value: ReactNode; sub?: ReactNode; subTone?: Tone; href?: string }[];
+  className?: string;
 }) {
   const toneColor: Record<Tone, string> = {
     success: "text-[#067647]",
@@ -60,7 +62,10 @@ export function KpiStrip({
   return (
     <section
       aria-label="Key numbers"
-      className="grid grid-cols-2 overflow-hidden rounded-xl border bg-card sm:grid-cols-3 xl:grid-cols-[repeat(auto-fit,minmax(170px,1fr))]"
+      className={cn(
+        "grid grid-cols-2 overflow-hidden rounded-xl border bg-card sm:grid-cols-3 xl:grid-cols-[repeat(auto-fit,minmax(170px,1fr))]",
+        className
+      )}
     >
       {items.map((item) => {
         const body = (

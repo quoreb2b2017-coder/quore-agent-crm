@@ -1,7 +1,6 @@
-import { Coffee, Timer } from "lucide-react";
 import { createDataClient as createClient } from "@/lib/supabase/data";
-import { StatCard } from "@/components/dashboard/stat-card";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { SheetKpi } from "@/components/dashboard/sheet-kpi";
+import { Panel } from "@/components/wt/panel";
 import { ProductivityChart } from "@/components/dashboard/productivity-chart";
 import {
   addDaysIso,
@@ -95,31 +94,25 @@ export async function EmployeeProductivityOverview({
 
   return (
     <>
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <StatCard
+      <dl className="grid grid-cols-2 border bg-card xl:grid-cols-2">
+        <SheetKpi
           label={`${who}Productive today`}
           value={formatDuration(creditedToday)}
-          icon={Timer}
-          tone="success"
+          valueClassName="text-success"
           hint={`of ${formatDuration(productiveTargetSeconds(todayRow?.status))}${todayRow?.status === "HALF_DAY" ? " · half day" : ""}`}
         />
-        <StatCard
+        <SheetKpi
           label="Break today"
           value={formatBreakDuration(totalBreak)}
-          icon={Coffee}
-          tone={excessToday > 0 ? "destructive" : "warning"}
+          valueClassName={excessToday > 0 ? "text-destructive" : undefined}
           hint={excessToday > 0 ? `Excess break +${formatExcess(excessToday)}` : "No excess break"}
+          hintClassName={excessToday > 0 ? "font-medium text-destructive" : undefined}
         />
-      </div>
+      </dl>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>{who}Last 7 shifts — productive hours</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <ProductivityChart data={chartData} />
-        </CardContent>
-      </Card>
+      <Panel id="last-7-shifts" className="rounded-none" bodyClassName="p-4" title={`${who}Last 7 shifts — productive hours`}>
+        <ProductivityChart data={chartData} />
+      </Panel>
     </>
   );
 }

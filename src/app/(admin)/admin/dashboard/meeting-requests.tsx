@@ -1,6 +1,7 @@
 "use client";
 
 import { useTransition } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Check, Loader2, X } from "lucide-react";
@@ -35,7 +36,12 @@ export function MeetingRequests({ requests }: { requests: PendingMeetingRequest[
         {requests.map((request) => (
           <li key={request.id} className="flex flex-wrap items-center justify-between gap-2">
             <div className="min-w-0">
-              <p className="truncate text-sm font-medium">{request.fullName}</p>
+              <Link
+                href={`/admin/dashboard?employee=${request.employeeId}`}
+                className="block truncate text-sm font-semibold text-primary hover:underline"
+              >
+                {request.fullName}
+              </Link>
               <p className="text-[11px] text-muted-foreground">
                 {request.employeeCode} · requested {formatTime(request.requestedAt)}
               </p>

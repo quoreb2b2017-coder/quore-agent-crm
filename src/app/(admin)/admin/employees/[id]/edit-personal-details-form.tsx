@@ -36,7 +36,6 @@ export function EditPersonalDetailsForm({
   const [sameAddress, setSameAddress] = useState(
     Boolean(record?.current_address) && record?.current_address === record?.permanent_address
   );
-  const [openPersonal, setOpenPersonal] = useState(false);
 
   useEffect(() => {
     if (state.success) {
@@ -52,19 +51,8 @@ export function EditPersonalDetailsForm({
         <p className="text-xs text-muted-foreground">
           Admin can update any HR personal field — DOB, address, IDs, emergency contact, and more.
         </p>
-        <div className="flex items-center gap-2 pt-1">
-          <Checkbox
-            id="openPersonalDetails"
-            checked={openPersonal}
-            onCheckedChange={(checked) => setOpenPersonal(checked === true)}
-          />
-          <Label htmlFor="openPersonalDetails" className="text-sm font-normal">
-            Edit personal details
-          </Label>
-        </div>
       </div>
 
-      {!openPersonal ? null : (
       <div className="grid gap-8 border-t pt-6">
       <section className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div className="grid gap-2">
@@ -287,7 +275,6 @@ export function EditPersonalDetailsForm({
         </Button>
       </div>
       </div>
-      )}
     </form>
   );
 }

@@ -12,9 +12,9 @@ export type ProfileRow = {
 };
 
 const statusClass: Record<string, string> = {
-  ACTIVE: "border-success/20 bg-success/10 text-success",
-  ON_LEAVE: "border-warning/20 bg-warning/10 text-warning-foreground",
-  SUSPENDED: "border-destructive/20 bg-destructive/10 text-destructive",
+  ACTIVE: "border-success/30 bg-success/10 text-success",
+  ON_LEAVE: "border-warning/30 bg-warning/10 text-warning",
+  SUSPENDED: "border-destructive/30 bg-destructive/10 text-destructive",
   TERMINATED: "bg-muted text-muted-foreground",
 };
 
@@ -23,31 +23,45 @@ function Field({ row }: { row: ProfileRow }) {
   const value = empty ? "Not set" : row.value;
 
   return (
-    <div className="flex items-start justify-between gap-3 py-3.5">
-      <div className="min-w-0">
-        <p className="text-[11px] font-medium tracking-[0.14em] text-muted-foreground uppercase">
-          {row.label}
-        </p>
+    <div className="grid grid-cols-[7.5rem_minmax(0,1fr)] border-b last:border-b-0 sm:grid-cols-[10rem_minmax(0,1fr)]">
+      <dt className="flex items-center border-r bg-muted px-3 py-2 text-xs font-semibold text-muted-foreground">
+        {row.label}
+      </dt>
+      <dd className="flex min-h-10 min-w-0 items-center justify-between gap-2 px-3 py-1 text-[13px]">
         {row.href && !empty ? (
           <a
             href={row.href}
-            className="mt-1 block truncate text-sm font-medium text-foreground hover:underline"
+            title={value}
+            className="truncate font-medium text-primary underline-offset-2 hover:underline"
           >
             {value}
           </a>
         ) : (
-          <p
-            className={cn(
-              "mt-1 truncate text-sm font-medium",
-              empty && "text-muted-foreground"
-            )}
+          <span
+            title={empty ? undefined : value}
+            className={cn("truncate", empty ? "text-muted-foreground" : "font-medium")}
           >
             {value}
-          </p>
+          </span>
         )}
-      </div>
-      {!empty && row.copy ? <CopyValue value={row.value} /> : null}
+        {!empty && row.copy ? <CopyValue value={row.value} className="size-6 rounded-sm" /> : null}
+      </dd>
     </div>
+  );
+}
+
+export function FieldSheet({ title, rows }: { title: string; rows: ProfileRow[] }) {
+  return (
+    <section className="min-w-0 border bg-card">
+      <h2 className="border-b bg-ink px-3 py-2 text-[11px] font-semibold tracking-wider text-ink-foreground uppercase">
+        {title}
+      </h2>
+      <dl>
+        {rows.map((row) => (
+          <Field key={row.label} row={row} />
+        ))}
+      </dl>
+    </section>
   );
 }
 
@@ -68,65 +82,52 @@ export function ProfileCard({
   status?: string | null;
   tabs?: ReactNode;
   actions?: ReactNode;
-  contact: ProfileRow[];
-  work: ProfileRow[];
+  /** Leave out contact and work on tabs that show only their own sections. */
+  contact?: ProfileRow[];
+  work?: ProfileRow[];
   children?: ReactNode;
 }) {
   return (
-    <section className="overflow-hidden rounded-2xl border bg-card">
-      {tabs}
-      <div className="flex flex-col gap-5 px-6 py-6 sm:flex-row sm:items-center sm:justify-between sm:px-8">
-        <div className="flex min-w-0 items-center gap-4">
-          <div className="flex size-16 shrink-0 items-center justify-center rounded-2xl bg-primary text-lg font-semibold text-primary-foreground">
-            {initials(name)}
-          </div>
-          <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-2">
-              <h1 className="truncate text-xl font-semibold tracking-tight">{name}</h1>
-              {status ? (
-                <Badge
-                  variant="outline"
-                  className={cn(
-                    "h-6 capitalize",
-                    statusClass[status] ?? "text-muted-foreground"
-                  )}
-                >
-                  {formatEmploymentStatus(status)}
-                </Badge>
-              ) : null}
+    <div className="flex flex-col gap-4">
+      <section className="border bg-card">
+        <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
+          <div className="flex min-w-0 items-center gap-3">
+            <span className="flex size-11 shrink-0 items-center justify-center rounded-md bg-mint-soft text-sm font-bold text-primary">
+              {initials(name)}
+            </span>
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <h1 className="truncate text-xl font-semibold tracking-tight">{name}</h1>
+                {status ? (
+                  <Badge
+                    variant="outline"
+                    className={cn(
+                      "rounded-sm font-semibold capitalize",
+                      statusClass[status] ?? "text-muted-foreground"
+                    )}
+                  >
+                    {formatEmploymentStatus(status)}
+                  </Badge>
+                ) : null}
+              </div>
+              <p className="mt-0.5 truncate text-[13px] text-muted-foreground">
+                {[role, employeeCode].filter(Boolean).join(" · ")}
+              </p>
             </div>
-            <p className="mt-1 truncate text-sm text-muted-foreground">
-              {[role, employeeCode].filter(Boolean).join(" · ")}
-            </p>
           </div>
+          {actions ? <div className="shrink-0">{actions}</div> : null}
         </div>
-        {actions ? <div className="shrink-0">{actions}</div> : null}
-      </div>
+        {tabs ? <div className="border-t [&>nav]:border-b-0">{tabs}</div> : null}
+      </section>
 
-      <div className="grid border-t lg:grid-cols-2">
-        <div className="px-6 py-5 sm:px-8">
-          <p className="text-xs font-semibold tracking-[0.16em] text-muted-foreground uppercase">
-            Contact
-          </p>
-          <div className="mt-1 divide-y">
-            {contact.map((row) => (
-              <Field key={row.label} row={row} />
-            ))}
-          </div>
+      {contact && work ? (
+        <div className="grid items-start gap-4 lg:grid-cols-2">
+          <FieldSheet title="Contact" rows={contact} />
+          <FieldSheet title="Employment" rows={work} />
         </div>
-        <div className="border-t px-6 py-5 sm:px-8 lg:border-t-0 lg:border-l">
-          <p className="text-xs font-semibold tracking-[0.16em] text-muted-foreground uppercase">
-            Employment
-          </p>
-          <div className="mt-1 divide-y">
-            {work.map((row) => (
-              <Field key={row.label} row={row} />
-            ))}
-          </div>
-        </div>
-      </div>
+      ) : null}
 
-      {children ? <div className="border-t px-6 py-6 sm:px-8">{children}</div> : null}
-    </section>
+      {children ? <div className="border bg-card px-4 py-4">{children}</div> : null}
+    </div>
   );
 }

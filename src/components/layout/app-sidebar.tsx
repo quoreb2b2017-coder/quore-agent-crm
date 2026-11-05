@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
@@ -26,6 +26,8 @@ import {
 import { NavItemGlyph } from "@/components/layout/route-loading";
 import { cn } from "@/lib/utils";
 
+const HOVER_PREFETCH_DELAY_MS = 200;
+
 export function AppSidebar({
   modules,
   brand,
@@ -48,6 +50,13 @@ export function AppSidebar({
   const [warm, setWarm] = useState<ReadonlySet<string>>(() => new Set());
   const warmUp = (href: string) =>
     setWarm((current) => (current.has(href) ? current : new Set(current).add(href)));
+  // Sliding the pointer down the menu must not render every page it passes over on the server.
+  const hoverTimer = useRef<number | undefined>(undefined);
+  const warmUpAfterPause = (href: string) => {
+    window.clearTimeout(hoverTimer.current);
+    hoverTimer.current = window.setTimeout(() => warmUp(href), HOVER_PREFETCH_DELAY_MS);
+  };
+  const cancelWarmUp = () => window.clearTimeout(hoverTimer.current);
   const order = brand === "admin" ? ADMIN_GROUP_ORDER : EMPLOYEE_GROUP_ORDER;
   const sections = order
     .map((group) => ({
@@ -88,7 +97,8 @@ export function AppSidebar({
                           // ~18 menu pages on the server on every view. Now: the default (loading
                           // skeleton only), upgraded to a full prefetch on hover/focus/touch.
                           prefetch={warm.has(mod.href) ? true : undefined}
-                          onMouseEnter={() => warmUp(mod.href)}
+                          onMouseEnter={() => warmUpAfterPause(mod.href)}
+                          onMouseLeave={cancelWarmUp}
                           onFocus={() => warmUp(mod.href)}
                           onTouchStart={() => warmUp(mod.href)}
                           onClick={() => {

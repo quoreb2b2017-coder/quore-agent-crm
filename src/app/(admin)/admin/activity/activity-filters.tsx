@@ -1,9 +1,9 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState } from "react";
-import { FileDown } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { useEffect, useRef, useState, useTransition } from "react";
+import { Loader2 } from "lucide-react";
+import { ExcelDownloadButton } from "@/components/activity/excel-download-button";
 import { NATIVE_SELECT_CLASS } from "@/lib/shift";
 import { cn } from "@/lib/utils";
 
@@ -22,60 +22,101 @@ const MONTHS = [
   "December",
 ];
 
+const DAYS_TYPING_DELAY_MS = 400;
+
+type Span = "days" | "week" | "month";
+type Filters = { span: Span; dayCount: string; date: string; year: string; monthIndex: string; person: string };
+
 export function ActivityFilters({
   mode,
   days,
   month,
+  date,
   employeeId,
   employees,
 }: {
-  mode: "days" | "month";
+  mode: Span;
   days: number;
   month: string;
+  /** Any day in the week, for the week range. */
+  date: string;
   employeeId: string | null;
   employees: { id: string; full_name: string; employee_code: string }[];
 }) {
   const router = useRouter();
-  const [span, setSpan] = useState(mode);
-  const [dayCount, setDayCount] = useState(String(days));
-  const [year, setYear] = useState(month.slice(0, 4));
-  const [monthIndex, setMonthIndex] = useState(month.slice(5, 7) || "01");
-  const [person, setPerson] = useState(employeeId ?? "");
+  const [isPending, startTransition] = useTransition();
+  const [filters, setFilters] = useState<Filters>({
+    span: mode,
+    dayCount: String(days),
+    date,
+    year: month.slice(0, 4),
+    monthIndex: month.slice(5, 7) || "01",
+    person: employeeId ?? "",
+  });
+  const typing = useRef<number | undefined>(undefined);
 
-  function show() {
+  useEffect(() => () => window.clearTimeout(typing.current), []);
+
+  function show(next: Filters) {
     const params = new URLSearchParams();
-    params.set("mode", span);
-    if (span === "month") params.set("month", `${year}-${monthIndex}`);
-    else params.set("days", dayCount || "7");
-    if (person) params.set("employee", person);
-    router.push(`/admin/activity?${params.toString()}`);
+    params.set("mode", next.span);
+    if (next.span === "month") params.set("month", `${next.year}-${next.monthIndex}`);
+    else if (next.span === "week") params.set("date", next.date);
+    else params.set("days", next.dayCount || "7");
+    if (next.person) params.set("employee", next.person);
+    startTransition(() => router.push(`/admin/activity?${params.toString()}`, { scroll: false }));
   }
 
-  const pdf = new URLSearchParams();
-  pdf.set("mode", mode);
-  pdf.set("days", String(days));
-  pdf.set("month", month);
-  if (employeeId) pdf.set("employee", employeeId);
+  /** Every choice applies at once. Only the days box waits, so typing "30" is not two loads. */
+  function change(patch: Partial<Filters>) {
+    const next = { ...filters, ...patch };
+    setFilters(next);
+    window.clearTimeout(typing.current);
+    if ("dayCount" in patch) {
+      if (!next.dayCount) return;
+      typing.current = window.setTimeout(() => show(next), DAYS_TYPING_DELAY_MS);
+      return;
+    }
+    show(next);
+  }
+
+  const excelParams = new URLSearchParams({ mode, days: String(days), month, date });
+  if (employeeId) excelParams.set("employee", employeeId);
 
   return (
-    <div className="flex flex-col gap-3 rounded-2xl border bg-card p-4 sm:flex-row sm:flex-wrap sm:items-end">
+    <div className="flex flex-col gap-3 border bg-muted px-3 py-2 sm:flex-row sm:flex-wrap sm:items-end">
       <label className="flex min-w-36 flex-col gap-1 text-xs font-medium text-muted-foreground">
         Range
         <select
-          value={span}
-          onChange={(event) => setSpan(event.target.value === "month" ? "month" : "days")}
-          className={cn(NATIVE_SELECT_CLASS)}
+          value={filters.span}
+          onChange={(event) => change({ span: event.target.value as Span })}
+          className={cn(NATIVE_SELECT_CLASS, "rounded-sm bg-card text-foreground")}
         >
           <option value="days">Last N days</option>
-          <option value="month">Month</option>
+          <option value="week">Weekly</option>
+          <option value="month">Monthly</option>
         </select>
       </label>
-      {span === "month" ? (
+      {filters.span === "week" ? (
+        <label className="flex w-44 flex-col gap-1 text-xs font-medium text-muted-foreground">
+          Any day in the week
+          <input
+            type="date"
+            value={filters.date}
+            onChange={(event) => event.target.value && change({ date: event.target.value })}
+            className={cn(NATIVE_SELECT_CLASS, "rounded-sm bg-card text-foreground")}
+          />
+        </label>
+      ) : filters.span === "month" ? (
         <>
           <label className="flex w-28 flex-col gap-1 text-xs font-medium text-muted-foreground">
             Year
-            <select value={year} onChange={(event) => setYear(event.target.value)} className={cn(NATIVE_SELECT_CLASS)}>
-              {yearChoices(year).map((value) => (
+            <select
+              value={filters.year}
+              onChange={(event) => change({ year: event.target.value })}
+              className={cn(NATIVE_SELECT_CLASS, "rounded-sm bg-card text-foreground")}
+            >
+              {yearChoices(filters.year).map((value) => (
                 <option key={value} value={value}>
                   {value}
                 </option>
@@ -85,9 +126,9 @@ export function ActivityFilters({
           <label className="flex min-w-40 flex-col gap-1 text-xs font-medium text-muted-foreground">
             Month
             <select
-              value={monthIndex}
-              onChange={(event) => setMonthIndex(event.target.value)}
-              className={cn(NATIVE_SELECT_CLASS)}
+              value={filters.monthIndex}
+              onChange={(event) => change({ monthIndex: event.target.value })}
+              className={cn(NATIVE_SELECT_CLASS, "rounded-sm bg-card text-foreground")}
             >
               {MONTHS.map((name, index) => {
                 const value = String(index + 1).padStart(2, "0");
@@ -107,15 +148,19 @@ export function ActivityFilters({
             type="number"
             min={1}
             max={90}
-            value={dayCount}
-            onChange={(event) => setDayCount(event.target.value)}
-            className={cn(NATIVE_SELECT_CLASS)}
+            value={filters.dayCount}
+            onChange={(event) => change({ dayCount: event.target.value })}
+            className={cn(NATIVE_SELECT_CLASS, "rounded-sm bg-card text-foreground")}
           />
         </label>
       )}
-      <label className="flex min-w-56 flex-1 flex-col gap-1 text-xs font-medium text-muted-foreground">
+      <label className="flex min-w-56 flex-col gap-1 text-xs font-medium text-muted-foreground sm:w-80">
         Employee
-        <select value={person} onChange={(event) => setPerson(event.target.value)} className={cn(NATIVE_SELECT_CLASS)}>
+        <select
+          value={filters.person}
+          onChange={(event) => change({ person: event.target.value })}
+          className={cn(NATIVE_SELECT_CLASS, "rounded-sm bg-card text-foreground")}
+        >
           <option value="">All employees</option>
           {employees.map((employee) => (
             <option key={employee.id} value={employee.id}>
@@ -124,15 +169,13 @@ export function ActivityFilters({
           ))}
         </select>
       </label>
-      <Button type="button" onClick={show}>
-        Show
-      </Button>
-      <Button type="button" variant="outline" asChild>
-        <a href={`/api/activity/pdf?${pdf.toString()}`}>
-          <FileDown className="size-4" />
-          Download PDF
-        </a>
-      </Button>
+      {isPending ? (
+        <Loader2 className="mb-2 size-4 animate-spin text-primary" aria-label="Loading" />
+      ) : null}
+      <ExcelDownloadButton
+        href={`/api/activity/excel?${excelParams.toString()}`}
+        className="rounded-sm bg-card sm:ml-auto"
+      />
     </div>
   );
 }

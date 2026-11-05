@@ -20,6 +20,14 @@ const securityHeaders = [
 
 const nextConfig: NextConfig = {
   poweredByHeader: false,
+  serverExternalPackages: ["exceljs"],
+  experimental: {
+    // radix-ui is one big entry file; load only the parts in use.
+    optimizePackageImports: ["radix-ui"],
+    // Going back to a page within 30 seconds is instant. Saving anything still refreshes it.
+    // A page prefetched on hover is kept 1 minute, not the default 5, so it is not shown stale.
+    staleTimes: { dynamic: 30, static: 60 },
+  },
   async headers() {
     return [{ source: "/:path*", headers: securityHeaders }];
   },

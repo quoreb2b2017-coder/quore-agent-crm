@@ -79,6 +79,7 @@ async function ensureCoreDepartments(
   rows: DeptRow[]
 ) {
   const byKind = new Map<DepartmentKind, DeptRow>();
+  let changed = false;
 
   for (const row of rows) {
     const kind = normalizeDepartmentKind(row.kind, row.name);
@@ -91,6 +92,7 @@ async function ensureCoreDepartments(
       const existing = byKind.get(item.kind)!;
       if (existing.kind !== item.kind) {
         existing.kind = await writeKind(supabase, existing.id, item.kind);
+        changed = true;
       }
       continue;
     }
@@ -99,15 +101,18 @@ async function ensureCoreDepartments(
     if (byName) {
       byName.kind = await writeKind(supabase, byName.id, item.kind);
       byKind.set(item.kind, byName);
+      changed = true;
       continue;
     }
 
+    changed = true;
     const created = await insertCore(supabase, item.defaultName, item.kind);
     if (created) {
       byKind.set(item.kind, created);
       if (!rows.some((r) => r.id === created.id)) rows.push(created);
     }
   }
+  return changed;
 }
 
 function displayNameForCore(row: DeptRow, kind: DepartmentKind): string {
@@ -144,12 +149,12 @@ export async function loadDepartments(): Promise<DepartmentOption[]> {
   }
 
   const rows: DeptRow[] = [...(data ?? [])];
-  await ensureCoreDepartments(supabase, rows);
+  const changed = await ensureCoreDepartments(supabase, rows);
 
-  const { data: refreshed } = await supabase
-    .from("departments")
-    .select("id, name, kind")
-    .order("name");
+  // Read again only when the step above wrote something; normally the rows are already right.
+  const refreshed = changed
+    ? (await supabase.from("departments").select("id, name, kind").order("name")).data
+    : null;
 
   const mapped = (refreshed ?? rows).map((row) => {
     const kind = normalizeDepartmentKind(row.kind, row.name) ?? "SALES";

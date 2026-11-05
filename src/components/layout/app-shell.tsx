@@ -45,6 +45,22 @@ export function AppShell({
   const pathname = usePathname();
   const base = brand === "admin" ? "/admin" : "/portal";
   const isChat = pathname === `${base}/chat`;
+  const isSheet =
+    pathname === "/admin/approvals" ||
+    pathname === `${base}/activity` ||
+    pathname.startsWith(`${base}/activity/`) ||
+    pathname === `${base}/attendance` ||
+    pathname === `${base}/dashboard` ||
+    pathname === `${base}/leave` ||
+    pathname === `${base}/notifications` ||
+    pathname === `${base}/onboarding` ||
+    pathname === `${base}/password` ||
+    pathname === `${base}/teams` ||
+    pathname === "/admin/settings" ||
+    pathname === "/portal/profile" ||
+    pathname === `${base}/productivity` ||
+    pathname === `${base}/employees` ||
+    pathname.startsWith(`${base}/employees/`);
   const securityHref = `${base}/security`;
 
   return (
@@ -90,8 +106,19 @@ export function AppShell({
               ) : null}
               <div className="relative min-h-0 flex-1">
                 <NavigationLoader />
-                <div className={cn("h-full min-h-0", isChat ? "overflow-hidden" : "overflow-y-auto px-4 pt-5 pb-10 md:px-8")}>
-                  <div className={cn(isChat ? "h-full min-h-0" : "mx-auto w-full max-w-[1320px]")}>{children}</div>
+                <div
+                  className={cn(
+                    "h-full min-h-0",
+                    isChat
+                      ? "overflow-hidden"
+                      : isSheet
+                        ? "overflow-y-auto px-3 pt-4 pb-3"
+                        : "overflow-y-auto px-4 pt-5 pb-10 md:px-8"
+                  )}
+                >
+                  <div className={cn(isChat ? "h-full min-h-0" : isSheet ? "w-full" : "mx-auto w-full max-w-[1320px]")}>
+                    {children}
+                  </div>
                 </div>
               </div>
             </SidebarInset>

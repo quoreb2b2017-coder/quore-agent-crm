@@ -43,7 +43,7 @@ export function MonthCalendar({
   const target = counted.reduce((sum, day) => sum + day.targetSeconds, 0);
 
   return (
-    <section className="-mx-4 flex w-[calc(100%+2rem)] flex-col gap-2 md:-mx-8 md:w-[calc(100%+4rem)]">
+    <section className="flex flex-col gap-2 [&_.rounded-xl]:rounded-none">
       <div className="flex items-center justify-between gap-2 px-1">
         <div className="flex min-w-0 items-center gap-1.5">
           {prevHref ? <MonthLink href={prevHref} label="Previous month" direction="prev" /> : null}
@@ -251,7 +251,7 @@ function CalendarDay({
           ) : null}
           {late && !off ? <span className="size-1.5 shrink-0 rounded-full bg-warning" title="Late" /> : null}
           {!off && day?.status === "met" ? (
-            <Check className="size-3 shrink-0 text-success" strokeWidth={3} aria-label="Target met" />
+            <Check className="size-3 shrink-0 text-success" strokeWidth={3} aria-label="On target" />
           ) : null}
         </span>
       </div>

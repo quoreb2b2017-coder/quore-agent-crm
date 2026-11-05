@@ -1,7 +1,7 @@
-import { todayIso } from "@/lib/format";
+import { addDaysIso, todayIso, weekStartIso } from "@/lib/format";
 import { creditedProductiveSeconds } from "@/lib/shift";
 
-export type AttendanceView = "daily" | "monthly" | "yearly";
+export type AttendanceView = "daily" | "weekly" | "monthly" | "yearly";
 
 export type AttendanceQuery = {
   view: AttendanceView;
@@ -57,7 +57,7 @@ export function parseAttendanceQuery(
   const today = todayIso();
   const viewRaw = first(searchParams.view);
   const view: AttendanceView =
-    viewRaw === "monthly" || viewRaw === "yearly" ? viewRaw : "daily";
+    viewRaw === "weekly" || viewRaw === "monthly" || viewRaw === "yearly" ? viewRaw : "daily";
 
   const employeeRaw = first(searchParams.employee);
   const employeeId = lockedEmployeeId
@@ -77,6 +77,10 @@ export function parseAttendanceQuery(
 
   if (view === "daily") {
     return { view, employeeId, date, month, year, start: date, end: date };
+  }
+  if (view === "weekly") {
+    const start = weekStartIso(date);
+    return { view, employeeId, date, month, year, start, end: addDaysIso(start, 6) };
   }
   if (view === "monthly") {
     const range = monthStartEnd(month);

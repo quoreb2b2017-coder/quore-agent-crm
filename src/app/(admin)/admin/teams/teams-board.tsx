@@ -8,7 +8,11 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { HR_ROLE } from "@/lib/permissions/roles";
 import { NATIVE_SELECT_CLASS } from "@/lib/shift";
+import { sheetCellClassName, sheetHeadClassName, sheetRowClassName } from "@/lib/sheet-styles";
+import { cn } from "@/lib/utils";
 import {
   DEPARTMENT_KIND_OPTIONS,
   type AssignableRoleKey,
@@ -47,11 +51,16 @@ function peopleIn(
   roles: AssignableDepartmentRole[]
 ) {
   const allowed = new Set(rolesForKind(roles, dept.kind).map((r) => r.roleKey));
-  return employees.filter(
-    (row) =>
-      row.departmentId === dept.id ||
-      (row.departmentId == null && allowed.has(row.roleKey))
+  return employees.filter((row) =>
+    // Super Admin has no department row and always belongs with Admin Control.
+    row.isSuperAdmin
+      ? dept.kind === "ADMIN_CONTROL"
+      : row.departmentId === dept.id || (row.departmentId == null && allowed.has(row.roleKey))
   );
+}
+
+function peopleLabel(count: number) {
+  return `${count} ${count === 1 ? "person" : "people"}`;
 }
 
 export function TeamsBoard({
@@ -251,12 +260,25 @@ export function TeamsBoard({
     router.refresh();
   }
 
+  function roleLabel(person: EmployeeDirectoryOption) {
+    if (person.isSuperAdmin) return "Super Admin";
+    return assignableRoles.find((role) => role.roleKey === person.roleKey)?.label ?? person.roleKey;
+  }
+
   async function putInDepartment(employeeId: string, departmentId: string) {
     const dept = departments.find((d) => d.id === departmentId);
     if (!dept) return;
     const roleKey = defaultRole(rolesForKind(assignableRoles, dept.kind));
     if (!roleKey) {
       setError("No role for this department. Ask Super Admin to create one under Roles.");
+      return;
+    }
+    const person = employees.find((row) => row.id === employeeId);
+    if (
+      person?.roleKey === HR_ROLE &&
+      roleKey !== HR_ROLE &&
+      !window.confirm(`Move ${person.fullName} to ${dept.name}? They will lose HR access.`)
+    ) {
       return;
     }
     setBusy(true);
@@ -284,21 +306,21 @@ export function TeamsBoard({
   }
 
   return (
-    <div className="grid gap-6 lg:grid-cols-[240px_1fr]">
+    <div className="grid items-start gap-4 lg:grid-cols-[18rem_minmax(0,1fr)]">
       {/* Left: department list */}
-      <aside className="flex flex-col gap-3">
-        <div className="flex items-center justify-between gap-2">
-          <h2 className="text-sm font-semibold tracking-wide text-muted-foreground uppercase">
-            Teams
+      <aside className="border bg-card">
+        <div className="flex items-center justify-between gap-2 border-b bg-muted px-3 py-2">
+          <h2 className="text-sm font-semibold">
+            Teams <span className="font-normal text-muted-foreground">· {departments.length}</span>
           </h2>
-          <Button type="button" size="sm" variant="outline" onClick={openCreate}>
+          <Button type="button" size="sm" variant="outline" className="rounded-sm bg-card" onClick={openCreate}>
             <Plus className="size-3.5" />
             New department
           </Button>
         </div>
 
         {creating ? (
-          <div className="grid gap-2 rounded-xl border bg-card p-3">
+          <div className="grid gap-2 border-b bg-muted/40 p-3">
             <div className="grid gap-1">
               <Label htmlFor="new-dept-name" className="text-xs">
                 Department name
@@ -401,7 +423,7 @@ export function TeamsBoard({
           </div>
         ) : null}
 
-        <nav className="flex flex-col gap-1">
+        <nav className="flex flex-col">
           {departments.map((dept) => {
             const count = peopleIn(dept, employees, assignableRoles).length;
             const active = dept.id === selectedId;
@@ -412,19 +434,29 @@ export function TeamsBoard({
               <button
                 key={dept.id}
                 type="button"
+                aria-current={active ? "true" : undefined}
                 onClick={() => selectDept(dept.id)}
-                className={`rounded-lg px-3 py-2.5 text-left transition ${
-                  active
-                    ? "bg-ink text-white"
-                    : "bg-card hover:bg-muted/60 ring-1 ring-border"
-                }`}
+                className={cn(
+                  "flex items-center justify-between gap-3 border-b px-3 py-2 text-left transition-colors last:border-b-0",
+                  active ? "bg-ink text-white" : "hover:bg-accent"
+                )}
               >
-                <span className="block text-sm font-semibold">{dept.name}</span>
+                <span className="min-w-0">
+                  <span className="block truncate text-[13px] font-semibold">{dept.name}</span>
+                  <span
+                    className={cn("block truncate text-xs", active ? "text-white/70" : "text-muted-foreground")}
+                  >
+                    {roleNames || "No role"}
+                  </span>
+                </span>
                 <span
-                  className={`block text-xs ${active ? "text-white/70" : "text-muted-foreground"}`}
+                  className={cn(
+                    "shrink-0 rounded-sm px-1.5 py-0.5 text-xs font-bold tabular-nums",
+                    active ? "bg-white/15 text-white" : count > 0 ? "bg-accent text-primary" : "bg-muted text-muted-foreground"
+                  )}
+                  title={peopleLabel(count)}
                 >
-                  {count} people
-                  {roleNames ? ` · ${roleNames}` : ""}
+                  {count}
                 </span>
               </button>
             );
@@ -432,9 +464,9 @@ export function TeamsBoard({
         </nav>
 
         {canManageRoles ? (
-          <p className="mt-auto pt-4 text-xs text-muted-foreground">
+          <p className="border-t bg-muted px-3 py-1.5 text-xs text-muted-foreground">
             Role permissions:{" "}
-            <Link href="/admin/roles" className="underline underline-offset-2">
+            <Link href="/admin/roles" className="font-medium text-primary underline-offset-2 hover:underline">
               Roles page
             </Link>
           </p>
@@ -442,128 +474,168 @@ export function TeamsBoard({
       </aside>
 
       {/* Right: selected department detail */}
-      <section className="flex min-h-[28rem] flex-col gap-4 rounded-xl border bg-card p-5">
-        {error ? <p className="text-sm text-destructive">{error}</p> : null}
+      <section className="min-w-0 border bg-card">
+        {error ? (
+          <p className="border-b bg-destructive/10 px-3 py-2 text-sm font-medium text-destructive">{error}</p>
+        ) : null}
 
         {!selected ? (
-          <p className="text-sm text-muted-foreground">Select a department on the left.</p>
+          <p className="px-4 py-8 text-sm text-muted-foreground">Select a department on the left.</p>
         ) : (
           <>
-            <div className="flex flex-wrap items-end gap-2 border-b pb-4">
-              <div className="grid min-w-[12rem] flex-1 gap-1">
-                <Label htmlFor="team-name">Department name</Label>
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b bg-muted px-3 py-2">
+              <div className="min-w-0">
+                <h2 className="text-sm font-semibold">
+                  {selected.name} <span className="font-normal text-muted-foreground">· {peopleLabel(people.length)}</span>
+                </h2>
+                <p className="text-xs text-muted-foreground">
+                  New people here get role: {deptRoles.map((r) => r.label).join(", ") || "—"}
+                </p>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
                 <Input
                   id="team-name"
+                  aria-label="Department name"
                   value={nameDraft}
                   onChange={(e) => setNameDraft(e.target.value)}
+                  className="w-48 rounded-sm bg-card"
                 />
-              </div>
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                disabled={busy || nameDraft.trim() === selected.name}
-                onClick={() => void renameDept()}
-              >
-                Save name
-              </Button>
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                className="text-destructive hover:bg-destructive/10 hover:text-destructive"
-                disabled={busy}
-                onClick={() => void removeDept()}
-              >
-                <Trash2 className="size-3.5" />
-              </Button>
-            </div>
-
-            <p className="text-sm text-muted-foreground">
-              People here get role:{" "}
-              <span className="font-medium text-foreground">
-                {deptRoles.map((r) => r.label).join(", ") || "—"}
-              </span>
-            </p>
-
-            <div className="flex flex-col gap-2">
-              <h3 className="text-sm font-semibold">Employees ({people.length})</h3>
-              {people.length === 0 ? (
-                <p className="text-sm text-muted-foreground">No one in this department yet.</p>
-              ) : (
-                <ul className="divide-y rounded-lg border">
-                  {people.map((person) => (
-                    <li
-                      key={person.id}
-                      className="flex flex-wrap items-center justify-between gap-2 px-3 py-2.5 text-sm"
-                    >
-                      <span>
-                        {person.fullName}{" "}
-                        <span className="text-muted-foreground">({person.employeeCode})</span>
-                      </span>
-                      {departments.length > 1 ? (
-                        <select
-                          className={`${NATIVE_SELECT_CLASS} w-auto max-w-[10rem]`}
-                          defaultValue=""
-                          disabled={busy}
-                          aria-label={`Move ${person.fullName}`}
-                          onChange={(e) => {
-                            const next = e.target.value;
-                            e.target.value = "";
-                            if (next) void putInDepartment(person.id, next);
-                          }}
-                        >
-                          <option value="" disabled>
-                            Move to…
-                          </option>
-                          {departments
-                            .filter((d) => d.id !== selected.id)
-                            .map((d) => (
-                              <option key={d.id} value={d.id}>
-                                {d.name}
-                              </option>
-                            ))}
-                        </select>
-                      ) : null}
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-
-            <div className="mt-auto grid gap-2 border-t pt-4">
-              <Label htmlFor="add-person">Add employee to {selected.name}</Label>
-              <div className="flex flex-wrap gap-2">
-                <select
-                  id="add-person"
-                  value={addPersonId}
-                  onChange={(e) => setAddPersonId(e.target.value)}
-                  className={`${NATIVE_SELECT_CLASS} min-w-[12rem] flex-1`}
-                >
-                  <option value="">Choose employee…</option>
-                  {employees
-                    .filter((p) => p.departmentId !== selected.id)
-                    .map((p) => {
-                      const current = departments.find((d) => d.id === p.departmentId);
-                      return (
-                        <option key={p.id} value={p.id}>
-                          {p.fullName}
-                          {current ? ` · ${current.name}` : ""}
-                        </option>
-                      );
-                    })}
-                </select>
                 <Button
                   type="button"
                   size="sm"
-                  disabled={busy || !addPersonId}
-                  onClick={() => void putInDepartment(addPersonId, selected.id)}
+                  variant="outline"
+                  className="rounded-sm bg-card"
+                  disabled={busy || nameDraft.trim() === selected.name}
+                  onClick={() => void renameDept()}
                 >
-                  <UserPlus className="size-3.5" />
-                  Add
+                  Save name
+                </Button>
+                <Button
+                  type="button"
+                  size="icon-sm"
+                  variant="outline"
+                  aria-label={`Delete ${selected.name}`}
+                  title={`Delete ${selected.name}`}
+                  className="rounded-sm bg-card text-destructive hover:bg-destructive/10 hover:text-destructive"
+                  disabled={busy}
+                  onClick={() => void removeDept()}
+                >
+                  <Trash2 className="size-3.5" />
                 </Button>
               </div>
             </div>
+
+            <div className="flex flex-wrap items-center gap-2 border-b px-3 py-2">
+              <select
+                id="add-person"
+                aria-label={`Add employee to ${selected.name}`}
+                value={addPersonId}
+                onChange={(e) => setAddPersonId(e.target.value)}
+                className={cn(NATIVE_SELECT_CLASS, "w-full rounded-sm bg-card sm:w-80")}
+              >
+                <option value="">Add employee to {selected.name}…</option>
+                {employees
+                  .filter((p) => p.departmentId !== selected.id && !p.isSuperAdmin)
+                  .map((p) => {
+                    const current = departments.find((d) => d.id === p.departmentId);
+                    return (
+                      <option key={p.id} value={p.id}>
+                        {p.fullName}
+                        {current ? ` · ${current.name}` : ""}
+                      </option>
+                    );
+                  })}
+              </select>
+              <Button
+                type="button"
+                size="sm"
+                className="rounded-sm"
+                disabled={busy || !addPersonId}
+                onClick={() => void putInDepartment(addPersonId, selected.id)}
+              >
+                <UserPlus className="size-3.5" />
+                Add
+              </Button>
+            </div>
+
+            {people.length === 0 ? (
+              <p className="px-4 py-12 text-center text-sm text-muted-foreground">No one in this team yet.</p>
+            ) : (
+              <div className="[&>[data-slot=table-container]]:max-h-[calc(100svh-19rem)]">
+                <Table className="border-separate border-spacing-0">
+                  <TableHeader className="sticky top-0 z-10">
+                    <TableRow className="hover:bg-transparent">
+                      <TableHead className={cn(sheetHeadClassName, "w-11 px-1 text-center")}>#</TableHead>
+                      <TableHead className={sheetHeadClassName}>Name</TableHead>
+                      <TableHead className={sheetHeadClassName}>Employee ID</TableHead>
+                      <TableHead className={sheetHeadClassName}>Role</TableHead>
+                      <TableHead className={sheetHeadClassName}>Email</TableHead>
+                      <TableHead className={sheetHeadClassName}>Phone</TableHead>
+                      <TableHead className={cn(sheetHeadClassName, "w-44 border-r-0")}>Move to</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {people.map((person, index) => (
+                      <TableRow key={person.id} className={sheetRowClassName}>
+                        <TableCell
+                          className={cn(sheetCellClassName, "bg-muted px-1 text-center font-mono text-xs text-muted-foreground")}
+                        >
+                          {index + 1}
+                        </TableCell>
+                        <TableCell className={sheetCellClassName}>
+                          <Link
+                            href={`/admin/employees/${person.id}`}
+                            className="font-semibold text-primary underline-offset-2 hover:underline"
+                          >
+                            {person.fullName}
+                          </Link>
+                        </TableCell>
+                        <TableCell className={cn(sheetCellClassName, "font-mono text-xs font-semibold")}>
+                          {person.employeeCode}
+                        </TableCell>
+                        <TableCell className={sheetCellClassName}>
+                          <span className="rounded-sm bg-accent px-1.5 py-0.5 text-xs font-semibold text-primary">
+                            {roleLabel(person)}
+                          </span>
+                        </TableCell>
+                        <TableCell className={cn(sheetCellClassName, "text-muted-foreground")}>{person.email}</TableCell>
+                        <TableCell className={sheetCellClassName}>
+                          {person.phone || <span className="text-muted-foreground">—</span>}
+                        </TableCell>
+                        <TableCell className={cn(sheetCellClassName, "border-r-0 px-1.5")}>
+                          {person.isSuperAdmin ? (
+                            <span className="px-1.5 text-xs text-muted-foreground">Cannot be moved</span>
+                          ) : departments.length > 1 ? (
+                            <select
+                              className={cn(NATIVE_SELECT_CLASS, "rounded-sm bg-card")}
+                              defaultValue=""
+                              disabled={busy}
+                              aria-label={`Move ${person.fullName}`}
+                              onChange={(e) => {
+                                const next = e.target.value;
+                                e.target.value = "";
+                                if (next) void putInDepartment(person.id, next);
+                              }}
+                            >
+                              <option value="" disabled>
+                                Move to…
+                              </option>
+                              {departments
+                                .filter((d) => d.id !== selected.id)
+                                .map((d) => (
+                                  <option key={d.id} value={d.id}>
+                                    {d.name}
+                                  </option>
+                                ))}
+                            </select>
+                          ) : null}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
           </>
         )}
       </section>

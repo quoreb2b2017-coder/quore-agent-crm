@@ -425,7 +425,7 @@ export function ClockWidget({
                 "font-mono font-semibold tracking-tight tabular-nums",
                 compact ? "text-2xl" : "text-3xl sm:text-4xl",
                 (status === "ONLINE" || status === "MEETING") && "clock-timer",
-                status === "BREAK" && "text-warning-foreground",
+                status === "BREAK" && "text-warning",
                 status === "OFFLINE" && "text-muted-foreground"
               )}
             >

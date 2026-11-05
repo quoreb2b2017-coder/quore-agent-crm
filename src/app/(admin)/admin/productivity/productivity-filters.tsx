@@ -61,19 +61,20 @@ export function ProductivityFilters({
     query.view === "monthly" ? query.month === today.slice(0, 7) : query.start <= today && today <= query.end;
 
   return (
-    <div className="flex flex-col gap-4 rounded-2xl border bg-card p-4 shadow-[0_8px_24px_oklch(0.21_0.02_260/0.03)]">
+    <div className="flex flex-col gap-2 border bg-muted px-3 py-2">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="inline-flex rounded-xl border bg-muted/40 p-1">
+        <div className="inline-flex divide-x rounded-sm border bg-card">
           {VIEWS.map((item) => (
             <button
               key={item.id}
               type="button"
+              aria-pressed={query.view === item.id}
               onClick={() => go({ view: item.id })}
               className={cn(
-                "h-8 rounded-lg px-3.5 text-sm font-medium transition-all duration-200",
+                "h-8 px-3 text-xs font-semibold transition-colors",
                 query.view === item.id
-                  ? "bg-background text-foreground shadow-sm"
-                  : "text-muted-foreground hover:text-foreground"
+                  ? "bg-primary text-primary-foreground"
+                  : "text-muted-foreground hover:bg-accent hover:text-foreground"
               )}
             >
               {item.label}

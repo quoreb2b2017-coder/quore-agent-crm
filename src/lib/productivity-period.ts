@@ -5,7 +5,7 @@ import {
   formatMonthLabel,
   isWeekendIso,
   todayIso,
-  weekdayIndexIst,
+  weekStartIso,
 } from "@/lib/format";
 import { isUuid, monthStartEnd } from "@/lib/attendance-period";
 import { TRACKING_START_DATE } from "@/lib/shift";
@@ -31,10 +31,7 @@ function first(value: string | string[] | undefined): string {
   return value ?? "";
 }
 
-/** Monday of the week containing `iso` (weeks run Monday–Sunday). */
-export function weekStartIso(iso: string): string {
-  return addDaysIso(iso, -((weekdayIndexIst(iso) + 6) % 7));
-}
+export { weekStartIso };
 
 /**
  * Monday–Friday from the tracking start date onward. Saturday and Sunday are the week off and

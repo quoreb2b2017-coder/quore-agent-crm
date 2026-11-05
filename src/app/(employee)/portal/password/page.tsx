@@ -7,7 +7,7 @@ export default async function PortalPasswordPage() {
   if (!ctx) return null;
 
   return (
-    <section className="overflow-hidden rounded-2xl border bg-card">
+    <section className="border bg-card">
       <SettingsNav
         profileHref="/portal/profile"
         passwordHref="/portal/password"

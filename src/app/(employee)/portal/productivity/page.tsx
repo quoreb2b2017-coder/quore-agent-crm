@@ -28,7 +28,7 @@ export default async function MyProductivityPage({
   )[0];
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-4">
       <PageHeader
         title="Productivity"
         description={`${shiftWindowLabel()} · target ${PRODUCTIVE_HOURS_LABEL} productive of 9 hrs`}

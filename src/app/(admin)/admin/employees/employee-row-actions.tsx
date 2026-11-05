@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
   MoreHorizontal,
-  Pencil,
+  User,
   Ban,
   Unlock,
   Trash2,
@@ -82,8 +82,8 @@ export function EmployeeRowActions({
         </DropdownMenuItem>
         <DropdownMenuItem asChild>
           <Link href={`/admin/employees/${employeeId}?tab=profile`}>
-            <Pencil className="size-4" />
-            Edit
+            <User className="size-4" />
+            Go to profile
           </Link>
         </DropdownMenuItem>
         <DropdownMenuItem asChild>

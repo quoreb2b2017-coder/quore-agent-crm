@@ -209,6 +209,11 @@ export function weekdayIndexIst(isoDate: string): number {
   return new Date(`${isoDate.slice(0, 10)}T12:00:00+05:30`).getUTCDay();
 }
 
+/** Monday of the week containing `iso` (weeks run Monday–Sunday). */
+export function weekStartIso(iso: string): string {
+  return addDaysIso(iso, -((weekdayIndexIst(iso) + 6) % 7));
+}
+
 export function isWeekendIso(isoDate: string): boolean {
   const day = weekdayIndexIst(isoDate);
   return day === 0 || day === 6;

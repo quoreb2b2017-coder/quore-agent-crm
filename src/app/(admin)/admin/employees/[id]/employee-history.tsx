@@ -1,31 +1,12 @@
 import Link from "next/link";
-import {
-  Timer,
-  Coffee,
-  TrendingUp,
-  CalendarCheck,
-  Radio,
-  Wallet,
-  CalendarDays,
-} from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Radio, Wallet, CalendarDays } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { StatCard } from "@/components/dashboard/stat-card";
 import { EmptyState } from "@/components/dashboard/empty-state";
 import { ProductivityChart } from "@/components/dashboard/productivity-chart";
-import { BreaksPanel } from "@/components/dashboard/breaks-panel";
-import { AttendanceStatusBadge } from "@/components/attendance/attendance-status-badge";
-import { EditAttendanceDialog } from "@/components/attendance/edit-attendance-dialog";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import { BreakExcessCell } from "@/components/attendance/break-excess";
+import { SheetKpi as KpiCell } from "@/components/dashboard/sheet-kpi";
+import { Panel } from "@/components/wt/panel";
+import { AttendanceSheet } from "@/components/attendance/attendance-sheet";
 import {
   formatBreakDuration,
   formatDuration,
@@ -36,7 +17,6 @@ import {
 } from "@/lib/format";
 import {
   BREAK_POLICY_LABEL,
-  emptyExcess,
   PRODUCTIVE_HOURS_LABEL,
   productiveTargetSeconds,
 } from "@/lib/shift";
@@ -61,176 +41,108 @@ export function EmployeeHistory({
   data: EmployeeHistoryPayload;
   showPayroll?: boolean;
 }) {
+  const hasExcess = data.excessBreakSeconds > 0;
   return (
-    <div className="flex flex-col gap-6">
-      <section className="grid grid-cols-2 gap-3 xl:grid-cols-4">
-        <StatCard
+    <div className="flex flex-col gap-4">
+      <dl className="grid grid-cols-2 border bg-card xl:grid-cols-4">
+        <KpiCell
           label="Present (30 days)"
           value={data.presentDays}
-          icon={CalendarCheck}
-          tone="success"
+          valueClassName="text-success"
           hint={data.leaveDays > 0 ? `${data.leaveDays} on leave` : "Shift days marked present"}
         />
-        <StatCard
+        <KpiCell
           label="Productivity today"
           value={`${data.todayProductivityPct}%`}
-          icon={TrendingUp}
-          tone="info"
+          valueClassName="text-info"
           hint={`vs ${PRODUCTIVE_HOURS_LABEL}`}
           progress={Math.min(100, data.todayProductivityPct)}
         />
-        <StatCard
+        <KpiCell
           label="Productive (30 days)"
           value={formatDuration(data.activeSeconds)}
-          icon={Timer}
-          tone="success"
+          valueClassName="text-success"
           hint={`Today ${formatDuration(data.todayActiveSeconds)} of ${formatDuration(productiveTargetSeconds(data.attendance.find((row) => row.attendance_date === data.today)?.status))}`}
         />
-        <StatCard
+        <KpiCell
           label="Breaks (30 days)"
           value={formatBreakDuration(data.breakSeconds)}
-          icon={Coffee}
-          tone={data.excessBreakSeconds > 0 ? "destructive" : "warning"}
-          hint={
-            data.excessBreakSeconds > 0
-              ? `Excess break +${formatExcess(data.excessBreakSeconds)}`
-              : BREAK_POLICY_LABEL
-          }
+          valueClassName={hasExcess ? "text-destructive" : undefined}
+          hint={hasExcess ? `Excess break +${formatExcess(data.excessBreakSeconds)}` : BREAK_POLICY_LABEL}
+          hintClassName={hasExcess ? "font-medium text-destructive" : undefined}
         />
-      </section>
+      </dl>
+
+      <AttendanceSheet
+        employeeId={employeeId}
+        employeeName={employeeName}
+        today={data.today}
+        attendance={data.sheetAttendance}
+        excessByDate={data.sheetExcessByDate}
+        canEdit
+        showTimeLeft
+      />
 
       <section className="grid grid-cols-1 gap-4 lg:grid-cols-5">
-        <Card className="gap-0 py-0 lg:col-span-3">
-          <CardHeader className="border-b py-4">
-            <CardTitle className="text-[15px] font-semibold">Productivity — last 7 shifts</CardTitle>
-            <p className="text-sm text-muted-foreground">
-              Productive hours vs the {PRODUCTIVE_HOURS_LABEL} target
-            </p>
-          </CardHeader>
-          <CardContent className="py-5">
-            <ProductivityChart data={data.chartData} />
-          </CardContent>
-        </Card>
+        <Panel
+          id="productivity"
+          className="rounded-none lg:col-span-3"
+          bodyClassName="p-4"
+          title="Productivity — last 7 shifts"
+          description={`Productive hours vs the ${PRODUCTIVE_HOURS_LABEL} target`}
+        >
+          <ProductivityChart data={data.chartData} />
+        </Panel>
 
-        <Card className="gap-0 py-0 lg:col-span-2">
-          <CardHeader className="border-b py-4">
-            <CardTitle className="text-[15px] font-semibold">Today&apos;s activity</CardTitle>
-            <p className="text-sm text-muted-foreground">
-              Login, logout, breaks, washroom ({data.todayWashroomVisits}{" "}
-              {data.todayWashroomVisits === 1 ? "visit" : "visits"}), and meetings this shift
-            </p>
-          </CardHeader>
-          <CardContent className="py-4">
-            {data.timeline.length === 0 ? (
+        <Panel
+          id="today-activity"
+          className="rounded-none lg:col-span-2"
+          title="Today's activity"
+          description={`Login, logout, breaks, washroom (${data.todayWashroomVisits} ${data.todayWashroomVisits === 1 ? "visit" : "visits"}), and meetings this shift`}
+        >
+          {data.timeline.length === 0 ? (
+            <div className="p-4">
               <EmptyState
                 icon={Radio}
                 title="No activity yet today"
                 description="Clock-in and breaks will appear here."
               />
-            ) : (
-              <ol className="flex flex-col gap-3">
-                {data.timeline.map((event, index) => (
-                  <li key={`${event.time}-${index}`} className="flex items-center gap-3 text-sm">
-                    <span className="w-[4.5rem] shrink-0 tabular-nums text-muted-foreground">
-                      {formatTime(event.time)}
-                    </span>
-                    <span className="size-1.5 shrink-0 rounded-full bg-primary" />
-                    <span>{event.label}</span>
-                  </li>
-                ))}
-              </ol>
-            )}
-          </CardContent>
-        </Card>
-      </section>
-
-      <Card className="gap-0 overflow-hidden py-0">
-        <CardHeader className="border-b py-4">
-          <CardTitle className="text-[15px] font-semibold">Attendance</CardTitle>
-          <p className="text-sm text-muted-foreground">Last 30 shift days, with check-in and hours</p>
-        </CardHeader>
-        <CardContent className="p-0">
-          {data.attendance.length === 0 ? (
-            <div className="p-6">
-              <EmptyState icon={CalendarCheck} title="No attendance in the last 30 days" />
             </div>
           ) : (
-            <Table>
-              <TableHeader>
-                <TableRow className="hover:bg-transparent">
-                  <TableHead className="pl-5">Date</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Check in</TableHead>
-                  <TableHead>Check out</TableHead>
-                  <TableHead>Productive</TableHead>
-                  <TableHead>Break</TableHead>
-                  <TableHead>Overtime</TableHead>
-                  <TableHead>Excess break</TableHead>
-                  <TableHead className="pr-5 text-right">Edit</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {data.attendance.map((row) => (
-                  <TableRow key={row.id} className="hover:bg-muted/40">
-                    <TableCell className="pl-5 font-medium">{formatIsoDate(row.attendance_date)}</TableCell>
-                    <TableCell>
-                      <AttendanceStatusBadge status={row.status} />
-                    </TableCell>
-                    <TableCell className="tabular-nums text-muted-foreground">
-                      {row.first_check_in ? formatTime(row.first_check_in) : "—"}
-                    </TableCell>
-                    <TableCell className="tabular-nums text-muted-foreground">
-                      {row.last_check_out ? formatTime(row.last_check_out) : "—"}
-                    </TableCell>
-                    <TableCell className="tabular-nums">{formatDuration(row.total_active_seconds)}</TableCell>
-                    <TableCell className="tabular-nums">{formatBreakDuration(row.total_break_seconds)}</TableCell>
-                    <TableCell className="tabular-nums text-muted-foreground">
-                      {row.overtime_minutes > 0 ? `${row.overtime_minutes} min` : "—"}
-                    </TableCell>
-                    <TableCell>
-                      <BreakExcessCell excess={data.excessByDate[row.attendance_date] ?? emptyExcess()} />
-                    </TableCell>
-                    <TableCell className="pr-5 text-right">
-                      <EditAttendanceDialog
-                        employeeId={employeeId}
-                        employeeName={employeeName}
-                        attendanceDate={row.attendance_date}
-                        attendance={row}
-                      />
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+            <ol className="max-h-72 divide-y overflow-y-auto">
+              {data.timeline.map((event, index) => (
+                <li
+                  key={`${event.time}-${index}`}
+                  className="flex flex-wrap items-center justify-between gap-x-4 gap-y-0.5 px-5 py-2 text-[13px]"
+                >
+                  <span className="font-medium">{event.label}</span>
+                  <span className="whitespace-nowrap tabular-nums text-muted-foreground">
+                    {formatTime(event.time)}
+                  </span>
+                </li>
+              ))}
+            </ol>
           )}
-        </CardContent>
-      </Card>
-
-      <BreaksPanel
-        rows={data.breaks}
-        showEmployee={false}
-        description={`${BREAK_POLICY_LABEL}. Breaks taken by this employee in the last 30 days.`}
-        emptyDescription="No tea or lunch breaks recorded in the last 30 days."
-      />
+        </Panel>
+      </section>
 
       <section className={showPayroll ? "grid grid-cols-1 gap-4 lg:grid-cols-2" : "grid grid-cols-1"}>
         {showPayroll ? (
-        <Card className="gap-0 py-0">
-          <CardHeader className="border-b py-4">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <CardTitle className="text-[15px] font-semibold">Payroll</CardTitle>
-                <p className="text-sm text-muted-foreground">Current salary setup</p>
-              </div>
-              <Button variant="outline" size="sm" asChild>
+          <Panel
+            id="payroll"
+            className="rounded-none"
+            bodyClassName="p-5"
+            title="Payroll"
+            description="Current salary setup"
+            actions={
+              <Button variant="outline" size="sm" className="rounded-sm" asChild>
                 <Link href={`/admin/salary-slips?employee=${employeeId}`}>
                   <Wallet className="size-3.5" />
                   Salary slip
                 </Link>
               </Button>
-            </div>
-          </CardHeader>
-          <CardContent className="py-5">
+            }
+          >
             {data.payroll ? (
               <dl className="grid grid-cols-2 gap-4 text-sm">
                 <div>
@@ -257,43 +169,36 @@ export function EmployeeHistory({
                 description="Set this up from Payroll in the sidebar."
               />
             )}
-          </CardContent>
-        </Card>
+          </Panel>
         ) : null}
 
-        <Card className="gap-0 overflow-hidden py-0">
-          <CardHeader className="border-b py-4">
-            <CardTitle className="text-[15px] font-semibold">Leave</CardTitle>
-            <p className="text-sm text-muted-foreground">Recent leave requests</p>
-          </CardHeader>
-          <CardContent className="p-0">
-            {data.leaves.length === 0 ? (
-              <div className="p-6">
-                <EmptyState icon={CalendarDays} title="No leave requests" />
-              </div>
-            ) : (
-              <ul className="divide-y">
-                {data.leaves.map((row) => (
-                  <li key={row.id} className="flex items-center justify-between gap-3 px-5 py-3">
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-medium">{row.leaveType}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {formatIsoDate(row.start_date)} – {formatIsoDate(row.end_date)} · {row.days_count} day
-                        {row.days_count === 1 ? "" : "s"}
-                      </p>
-                    </div>
-                    <Badge
-                      variant="outline"
-                      className={cn("capitalize", leaveTone[row.status] ?? "bg-muted text-muted-foreground")}
-                    >
-                      {row.status.toLowerCase()}
-                    </Badge>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </CardContent>
-        </Card>
+        <Panel id="leave" className="rounded-none" title="Leave" description="Recent leave requests">
+          {data.leaves.length === 0 ? (
+            <div className="p-6">
+              <EmptyState icon={CalendarDays} title="No leave requests" />
+            </div>
+          ) : (
+            <ul className="divide-y">
+              {data.leaves.map((row) => (
+                <li key={row.id} className="flex items-center justify-between gap-3 px-5 py-3">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium">{row.leaveType}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {formatIsoDate(row.start_date)} – {formatIsoDate(row.end_date)} · {row.days_count} day
+                      {row.days_count === 1 ? "" : "s"}
+                    </p>
+                  </div>
+                  <Badge
+                    variant="outline"
+                    className={cn("rounded-sm capitalize", leaveTone[row.status] ?? "bg-muted text-muted-foreground")}
+                  >
+                    {row.status.toLowerCase()}
+                  </Badge>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Panel>
       </section>
     </div>
   );

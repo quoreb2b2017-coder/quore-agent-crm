@@ -304,7 +304,7 @@ export const ONBOARDING_STATUS_LABEL: Record<OnboardingStatus, string> = {
 
 export const ONBOARDING_STATUS_TONE: Record<OnboardingStatus, string> = {
   NOT_STARTED: "bg-muted text-muted-foreground border-transparent",
-  IN_PROGRESS: "bg-warning/10 text-warning-foreground border-warning/20",
+  IN_PROGRESS: "bg-warning/10 text-warning border-warning/30",
   COMPLETED: "bg-success/10 text-success border-success/20",
 };
 

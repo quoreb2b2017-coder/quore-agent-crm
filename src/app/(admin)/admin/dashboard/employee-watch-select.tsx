@@ -22,7 +22,7 @@ export function EmployeeWatchSelect({
         const value = event.target.value;
         router.push(value ? `/admin/dashboard?employee=${value}` : "/admin/dashboard");
       }}
-      className={cn(NATIVE_SELECT_CLASS, "border-white/25 bg-white text-foreground shadow-sm")}
+      className={cn(NATIVE_SELECT_CLASS, "rounded-sm bg-card text-foreground")}
     >
       <option value="">All employees</option>
       {employees.map((employee) => (
