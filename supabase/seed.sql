@@ -136,7 +136,7 @@ with rp (role_key, permission_key) as (
     ('HR', 'attendance.view'), ('HR', 'attendance.manage'),
     ('HR', 'activity.view'),
     ('HR', 'tasks.view'),
-    ('HR', 'salary.view'), ('HR', 'salary.manage'), ('HR', 'payroll.manage'),
+    ('HR', 'salary.view'), ('HR', 'salary.manage'),
     ('HR', 'leave.view'), ('HR', 'leave.apply'), ('HR', 'leave.approve'),
     ('HR', 'reports.view'),
 

@@ -30,7 +30,7 @@ import {
   OT_WINDOW_MINUTES,
   type PolicyBreakType,
 } from "@/lib/shift";
-import { ADMIN_LOGOUT_TYPE, insertAndEmitNotification, notifySuperAdmins } from "@/lib/realtime/notify";
+import { ADMIN_LOGOUT_TYPE, insertAndEmitNotification, notifyAdminsOfAction } from "@/lib/realtime/notify";
 import { ensureGoogleTime, googleDate } from "@/lib/google-time";
 import {
   applyAttendanceShiftSnapshot,
@@ -45,7 +45,7 @@ import type { Database } from "@/types/supabase";
 type AttendanceUpdate = Database["public"]["Tables"]["attendance"]["Update"];
 type AttendanceInsert = Database["public"]["Tables"]["attendance"]["Insert"];
 
-type Result = { error?: string; activated?: boolean; skipped?: boolean };
+type Result = { error?: string; activated?: boolean; skipped?: boolean; closed?: boolean };
 
 const ATTENDANCE_STATUSES = [
   "PRESENT",
@@ -508,16 +508,8 @@ export async function clockIn(): Promise<Result> {
     .eq("type", ADMIN_LOGOUT_TYPE)
     .eq("data->>pending_signout", "true");
 
-  try {
-    void notifySuperAdmins({
-      type: "EMPLOYEE_LOGIN",
-      title: `${ctx.fullName} logged in`,
-      body: `${ctx.fullName} (${ctx.employeeCode}) signed in and clocked in.`,
-      excludeEmployeeId: ctx.employeeId,
-    });
-  } catch {
-    /* login still succeeds if the alert cannot be sent */
-  }
+  // Password sign-in already reported this. This catches opening the app on a saved sign-in.
+  notifyAdminsOfAction(ctx, "logged in", { type: "EMPLOYEE_LOGIN", skipIfSentWithinMs: 2 * 60 * 1000 });
 
   revalidateLive();
   return { activated: true };
@@ -552,7 +544,9 @@ export async function clockOut(): Promise<Result> {
     return { error: "End washroom before clocking out." };
   }
 
-  return closeWorkSession(ctx.employeeId, "ENDED");
+  const result = await closeWorkSession(ctx.employeeId, "ENDED");
+  if (result.closed) notifyAdminsOfAction(ctx, "logged out");
+  return result;
 }
 
 /**
@@ -644,7 +638,7 @@ export async function closeWorkSession(
   }
 
   if (options?.revalidate !== false) revalidateLive();
-  return {};
+  return { closed: true };
 }
 
 /** Click time, kept only when it is within a minute of the server clock. */
@@ -709,6 +703,7 @@ export async function startBreak(breakType: PolicyBreakType, clickedAt?: string)
   });
   if (error) return { error: error.message };
 
+  notifyAdminsOfAction(ctx, `started ${formatBreakType(breakType)}`);
   revalidateLive();
   return {};
 }
@@ -757,6 +752,7 @@ export async function endBreak(): Promise<Result> {
     return { error: e instanceof Error ? e.message : "Failed to update attendance" };
   }
 
+  notifyAdminsOfAction(ctx, `ended ${formatBreakType(openBreak.break_type)}`);
   revalidateLive();
   return {};
 }
@@ -812,16 +808,10 @@ export async function startMeeting(): Promise<Result> {
   });
   if (error && error.code !== "23505") return { error: error.message };
 
-  try {
-    void notifySuperAdmins({
-      type: "MEETING_REQUEST",
-      title: `${ctx.fullName} requested a meeting`,
-      body: `${ctx.fullName} (${ctx.employeeCode}) is waiting for you to accept. Meeting time starts after you accept.`,
-      excludeEmployeeId: ctx.employeeId,
-    });
-  } catch {
-    /* request still saved if the alert cannot be sent */
-  }
+  notifyAdminsOfAction(ctx, "requested a meeting", {
+    type: "MEETING_REQUEST",
+    detail: "Waiting for you to accept. Meeting time starts after you accept.",
+  });
 
   revalidateLive();
   return {};
@@ -840,24 +830,9 @@ export async function endMeeting(): Promise<Result> {
     .eq("employee_id", ctx.employeeId)
     .eq("status", "ACTIVE");
 
+  notifyAdminsOfAction(ctx, "ended a meeting");
   revalidateLive();
   return {};
-}
-
-/** Keeps the admins' list complete: a request is followed by what was decided, and by whom. */
-async function notifyAdminsOfMeetingDecision(employeeId: string, accepted: boolean, decidedBy: string) {
-  const { data: employee } = await createServiceClient()
-    .from("employees")
-    .select("full_name, employee_code")
-    .eq("id", employeeId)
-    .maybeSingle();
-  if (!employee) return;
-  const outcome = accepted ? "accepted" : "not accepted";
-  await notifySuperAdmins({
-    type: accepted ? "MEETING_ACCEPTED" : "MEETING_REJECTED",
-    title: `${employee.full_name} meeting ${outcome}`,
-    body: `${employee.full_name} (${employee.employee_code}) meeting ${outcome} by ${decidedBy}.${accepted ? " The meeting timer has started." : ""}`,
-  });
 }
 
 export async function acceptMeeting(meetingId: string): Promise<Result> {
@@ -893,10 +868,10 @@ export async function acceptMeeting(meetingId: string): Promise<Result> {
       title: "Meeting accepted",
       body: "Admin accepted your meeting. The meeting timer has started.",
     });
-    void notifyAdminsOfMeetingDecision(meeting.employee_id, true, ctx.fullName);
   } catch {
     /* accept still succeeds */
   }
+  notifyAdminsOfAction(ctx, "accepted the meeting of", { targetEmployeeId: meeting.employee_id });
 
   revalidateLive();
   return {};
@@ -930,10 +905,10 @@ export async function rejectMeeting(meetingId: string): Promise<Result> {
       title: "Meeting not accepted",
       body: "Admin did not accept the meeting request. You are back on your shift.",
     });
-    void notifyAdminsOfMeetingDecision(meeting.employee_id, false, ctx.fullName);
   } catch {
     /* reject still succeeds */
   }
+  notifyAdminsOfAction(ctx, "did not accept the meeting of", { targetEmployeeId: meeting.employee_id });
 
   revalidateLive();
   return {};
@@ -986,6 +961,7 @@ export async function startWashroom(): Promise<Result> {
   });
   if (error && error.code !== "23505") return { error: error.message };
 
+  notifyAdminsOfAction(ctx, "went to the washroom");
   revalidateLive();
   return {};
 }
@@ -996,6 +972,7 @@ export async function endWashroom(): Promise<Result> {
   if (!ctx) return { error: "Not authenticated" };
   if (isManagement(ctx.roleKey)) return { skipped: true };
   await closeOpenWashroom(ctx.employeeId);
+  notifyAdminsOfAction(ctx, "came back from the washroom");
   revalidateLive();
   return {};
 }
@@ -1028,12 +1005,15 @@ export async function logoutEmployeeByAdmin(employeeId: string): Promise<Result>
   } catch {
     /* the timer is already stopped */
   }
+  notifyAdminsOfAction(ctx, "logged out", { targetEmployeeId: employeeId });
   return {};
 }
 
 export async function endWorkSession(): Promise<Result> {
   const ctx = await getCurrentEmployeeContext();
   if (!ctx) return { error: "Not authenticated" };
+  // Reported for everyone, even with no timer running: weekend, leave day, or HR.
+  notifyAdminsOfAction(ctx, "logged out");
   if (isManagement(ctx.roleKey)) return { skipped: true };
   return closeWorkSession(ctx.employeeId, "ENDED");
 }
@@ -1112,6 +1092,11 @@ export async function upsertAttendanceByAdmin(
   } catch {
     /* attendance row is saved; totals can catch up on next clock-out */
   }
+
+  notifyAdminsOfAction(ctx, "edited the attendance of", {
+    targetEmployeeId: parsed.data.employeeId,
+    detail: `Date: ${parsed.data.attendanceDate}.`,
+  });
 
   revalidateLive();
   return { success: true };
@@ -1217,6 +1202,11 @@ export async function setEmployeeOvertimeByAdmin(
     /* overtime is saved; totals catch up on next clock-out */
   }
 
+  notifyAdminsOfAction(ctx, "set the overtime of", {
+    targetEmployeeId: parsed.data.employeeId,
+    detail: `Date: ${parsed.data.attendanceDate}. Overtime: ${parsed.data.overtimeMinutes} min.`,
+  });
+
   revalidatePath(`/admin/employees/${parsed.data.employeeId}`);
   revalidatePath("/admin/dashboard");
   revalidateLive();
@@ -1268,6 +1258,11 @@ export async function approvePendingOvertime(
   } catch {
     /* approved minutes are saved */
   }
+
+  notifyAdminsOfAction(ctx, "approved the overtime of", {
+    targetEmployeeId: employeeId,
+    detail: `Date: ${attendanceDate}. Overtime: ${next} min.`,
+  });
 
   revalidatePath(`/admin/employees/${employeeId}`);
   revalidatePath("/admin/dashboard");

@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { PublicShell } from "@/components/layout/public-shell";
 import { createClient } from "@/lib/supabase/client";
+import { reportLogin } from "@/lib/actions/notifications";
 import { postLoginPath, readWorktrackJwtClaims } from "@/lib/auth/jwt-claims";
 import { MFA_ENFORCED } from "@/lib/auth/mfa-flags";
 
@@ -59,6 +60,10 @@ export default function VerifyPage() {
       setBusy(false);
       return;
     }
+    await Promise.race([
+      reportLogin().catch(() => undefined),
+      new Promise((resolve) => setTimeout(resolve, 3000)),
+    ]);
     const { data } = await supabase.auth.getSession();
     const claims = readWorktrackJwtClaims(data.session?.access_token);
     window.location.assign(postLoginPath(claims.roleKey));

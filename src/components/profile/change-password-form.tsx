@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { PasswordInput } from "@/components/ui/password-input";
 import { createClient } from "@/lib/supabase/client";
+import { reportBrowserAction } from "@/lib/actions/notifications";
 
 export function ChangePasswordForm() {
   const [isPending, setIsPending] = useState(false);
@@ -29,8 +30,12 @@ export function ChangePasswordForm() {
     const { error } = await supabase.auth.updateUser({ password });
     setIsPending(false);
 
-    if (error) toast.error(error.message);
-    else toast.success("Password updated");
+    if (error) {
+      toast.error(error.message);
+      return;
+    }
+    toast.success("Password updated");
+    void reportBrowserAction("password").catch(() => undefined);
   }
 
   return (

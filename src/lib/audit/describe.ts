@@ -26,6 +26,48 @@ const TABLE_LABELS: Record<string, string> = {
   security_events: "security event",
 };
 
+/** Record types grouped the way people think about them, for the filter. */
+export const AUDIT_AREAS: { name: string; tables: string[] }[] = [
+  { name: "People", tables: ["employees", "employee_onboarding", "onboarding_documents"] },
+  { name: "Access", tables: ["employee_roles", "role_permissions", "roles", "permissions"] },
+  { name: "Time & leave", tables: ["attendance", "meetings", "leave_requests"] },
+  { name: "Pay", tables: ["salary_records", "salary_slips"] },
+  { name: "Settings", tables: ["app_settings", "work_policies"] },
+  {
+    name: "Compliance",
+    tables: [
+      "compliance_controls",
+      "control_requirement_mappings",
+      "evidence_items",
+      "control_tests",
+      "risks",
+      "soa_entries",
+      "corrective_actions",
+      "control_exceptions",
+    ],
+  },
+  { name: "Security", tables: ["security_events"] },
+];
+
+export const AUDIT_OPERATIONS = [
+  { id: "INSERT", label: "Created" },
+  { id: "UPDATE", label: "Changed" },
+  { id: "DELETE", label: "Deleted" },
+  { id: "SECURITY", label: "Security" },
+];
+
+export type AuditOperationTone = "success" | "info" | "danger" | "warning" | "neutral";
+
+/** Short verb for the Action column, and its colour. */
+export function auditOperation(action: string): { label: string; tone: AuditOperationTone } {
+  const op = action.split("_")[0];
+  if (op === "INSERT") return { label: "Created", tone: "success" };
+  if (op === "UPDATE") return { label: "Changed", tone: "info" };
+  if (op === "DELETE") return { label: "Deleted", tone: "danger" };
+  if (op === "SECURITY") return { label: "Security", tone: "warning" };
+  return { label: action, tone: "neutral" };
+}
+
 export function tableLabel(table: string | null) {
   if (!table) return "record";
   return TABLE_LABELS[table] ?? table.replaceAll("_", " ");

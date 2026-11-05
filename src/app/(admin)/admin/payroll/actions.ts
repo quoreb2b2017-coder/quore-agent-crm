@@ -6,6 +6,7 @@ import { createDataClient as createClient } from "@/lib/supabase/data";
 import { requireManagement } from "@/lib/permissions/server";
 import { todayIso } from "@/lib/format";
 import { isSuperAdminEmployee } from "@/lib/queries/admin-dashboard";
+import { notifyAdminsOfAction } from "@/lib/realtime/notify";
 import { refreshEmployeeSalarySlips } from "@/lib/salary-slip-generate";
 import type { PayLine } from "@/lib/payroll";
 
@@ -94,6 +95,8 @@ export async function setupPayroll(
   if (employeeError) return { error: employeeError.message };
 
   await refreshEmployeeSalarySlips(parsed.data.employeeId, ctx.employeeId);
+
+  notifyAdminsOfAction(ctx, "changed the salary of", { targetEmployeeId: parsed.data.employeeId });
 
   revalidatePath("/admin/payroll");
   revalidatePath("/admin/employees");

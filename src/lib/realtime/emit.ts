@@ -26,8 +26,8 @@ export async function emitNotifications(notifications: RealtimeNotification[]) {
   if (notifications.length === 0) return;
   // Existing in-app realtime path (unchanged).
   await postSocket("/notify", { notifications });
-  // Parallel offline channel — never blocks or rolls back the DB/socket path.
-  void sendWebPushForNotifications(notifications).catch(() => {});
+  // Runs after the row and socket are done. Awaited so a hosted function is not frozen before it sends.
+  await sendWebPushForNotifications(notifications).catch(() => {});
 }
 
 export async function emitToEmployees(employeeIds: string[], event: string, payload: unknown) {

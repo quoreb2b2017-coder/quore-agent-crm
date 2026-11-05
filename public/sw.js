@@ -33,15 +33,7 @@ async function handlePush(event) {
   }
 
   const clients = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
-  const focused = clients.some((client) => client.focused);
-  // Avoid duplicate OS banner when the user already sees the in-app toast via Socket.IO.
-  if (focused) {
-    for (const client of clients) {
-      client.postMessage({ type: "worktrack:push-suppressed", id: payload.id });
-    }
-    return;
-  }
-
+  // Always show the OS alert, even with a tab in front: people work in other apps with it open.
   for (const client of clients) {
     client.postMessage({ type: "worktrack:notification", id: payload.id });
   }

@@ -6,6 +6,7 @@ import { createDataClient as createClient } from "@/lib/supabase/data";
 import { getCurrentEmployeeContext, isManagement } from "@/lib/permissions/server";
 import { leaveDaysCount, packLeaveNote, UNDECIDED_LEAVE_TYPE } from "@/lib/leave";
 import { createServiceClient } from "@/lib/supabase/service";
+import { notifyAdminsOfAction } from "@/lib/realtime/notify";
 
 export type ActionState = { error?: string; success?: boolean };
 
@@ -79,6 +80,9 @@ export async function applyForLeave(
 
   if (error) return { error: error.message };
 
+  notifyAdminsOfAction(ctx, "applied for leave", {
+    detail: `${parsed.data.startDate} to ${parsed.data.endDate}, ${daysCount} working day${daysCount === 1 ? "" : "s"}.`,
+  });
   revalidatePath("/portal/leave");
   revalidatePath("/admin/leave");
   return { success: true };

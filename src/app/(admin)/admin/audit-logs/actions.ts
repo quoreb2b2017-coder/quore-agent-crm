@@ -24,6 +24,60 @@ async function requireAuditor() {
   return ctx;
 }
 
+export type AuditFieldChange = { field: string; before: string | null; after: string | null };
+
+export type AuditEntryDetail = {
+  fields: AuditFieldChange[];
+  requestId: string | null;
+  recordId: string | null;
+  rowHash: string | null;
+};
+
+const NEVER_SHOWN = /password|token|secret/i;
+const NOISE_FIELDS = new Set(["updated_at", "version"]);
+const MAX_VALUE_LENGTH = 600;
+
+function displayValue(field: string, value: unknown) {
+  if (value === null || value === undefined) return null;
+  if (NEVER_SHOWN.test(field)) return "Hidden";
+  const text = typeof value === "string" ? value : JSON.stringify(value);
+  return text.length > MAX_VALUE_LENGTH ? `${text.slice(0, MAX_VALUE_LENGTH)}…` : text;
+}
+
+/** Before and after for one entry. Loaded on demand so the list never carries everyone's data. */
+export async function loadAuditEntryDetail(
+  id: string
+): Promise<AuditEntryDetail | { error: string }> {
+  if (!(await requireAuditor())) return { error: "Only Super Admin or an auditor can read this." };
+
+  const { data, error } = await createServiceClient()
+    .from("audit_logs")
+    .select("old_data, new_data, request_id, record_id, row_hash")
+    .eq("id", id)
+    .maybeSingle();
+  if (error || !data) return { error: error?.message ?? "Entry not found." };
+
+  const before = (data.old_data ?? {}) as Record<string, unknown>;
+  const after = (data.new_data ?? {}) as Record<string, unknown>;
+  const isChange = Boolean(data.old_data && data.new_data);
+  const fields = [...new Set([...Object.keys(before), ...Object.keys(after)])]
+    .filter((field) => !NOISE_FIELDS.has(field))
+    // A change lists what moved. A create or delete lists what the record held.
+    .filter((field) =>
+      isChange
+        ? JSON.stringify(before[field]) !== JSON.stringify(after[field])
+        : (before[field] ?? after[field]) != null
+    )
+    .sort()
+    .map((field) => ({
+      field,
+      before: displayValue(field, before[field]),
+      after: displayValue(field, after[field]),
+    }));
+
+  return { fields, requestId: data.request_id, recordId: data.record_id, rowHash: data.row_hash };
+}
+
 /**
  * 1) Pull any live Supabase rows missing from audit into the chain
  * 2) Seal unsealed rows if seal RPC exists

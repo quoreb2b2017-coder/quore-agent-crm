@@ -5,6 +5,7 @@ import { z } from "zod";
 import { createDataClient as createClient } from "@/lib/supabase/data";
 import { getCurrentEmployeeContext } from "@/lib/permissions/server";
 import { isDepartmentKind } from "@/lib/departments";
+import { notifyAdminsOfAction } from "@/lib/realtime/notify";
 
 export type ActionState = { error?: string; success?: boolean };
 
@@ -13,6 +14,11 @@ async function assertSuperAdmin() {
   if (!ctx || ctx.roleKey !== "SUPER_ADMIN") {
     throw new Error("Only Super Admin can manage roles and permissions.");
   }
+}
+
+async function notifyRoleChange(action: string) {
+  const ctx = await getCurrentEmployeeContext();
+  if (ctx) notifyAdminsOfAction(ctx, action);
 }
 
 const departmentKindSchema = z.enum([
@@ -76,6 +82,7 @@ export async function createRole(
     return { error: error.message };
   }
 
+  await notifyRoleChange(`created the role ${parsed.data.displayName}`);
   revalidatePath("/admin/roles");
   revalidatePath("/admin/employees");
   return { success: true };
@@ -159,6 +166,7 @@ export async function updateRole(
     return { error: error.message };
   }
 
+  await notifyRoleChange(`updated the role ${payload.display_name}`);
   revalidatePath("/admin/roles");
   revalidatePath("/admin/employees");
   return { success: true };
@@ -211,6 +219,7 @@ export async function deleteRole(
   const { error } = await supabase.from("roles").delete().eq("id", existing.id);
   if (error) return { error: error.message };
 
+  await notifyRoleChange(`deleted the role ${existing.role_key}`);
   revalidatePath("/admin/roles");
   revalidatePath("/admin/employees");
   return { success: true };
@@ -251,6 +260,7 @@ export async function setRolePermissions(
     if (insertError) return { error: insertError.message };
   }
 
+  await notifyRoleChange(`changed the permissions of the role ${role.role_key}`);
   revalidatePath("/admin/roles");
   return { success: true };
 }

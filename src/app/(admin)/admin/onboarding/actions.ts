@@ -6,6 +6,7 @@ import { createDataClient as createClient } from "@/lib/supabase/data";
 import { createServiceClient } from "@/lib/supabase/service";
 import { getCurrentEmployeeContext, isManagement } from "@/lib/permissions/server";
 import { isSuperAdminEmployee } from "@/lib/queries/admin-dashboard";
+import { notifyAdminsOfAction } from "@/lib/realtime/notify";
 import {
   buildFacts,
   isMissingOfferColumn,
@@ -149,6 +150,7 @@ export async function saveOffer(
     .eq("id", employeeId);
   if (joinError) return { error: joinError.message };
 
+  notifyAdminsOfAction(auth.ctx, "saved the offer of", { targetEmployeeId: employeeId });
   revalidate(employeeId);
   return { success: true };
 }
@@ -177,6 +179,11 @@ export async function setOfferStage(
 
   const error = await save(auth.supabase, { employee_id: employeeId, offer: offer as unknown as Json });
   if (error) return { error };
+  notifyAdminsOfAction(
+    auth.ctx,
+    value ? `marked the offer as ${stage} for` : `removed the ${stage} mark from the offer of`,
+    { targetEmployeeId: employeeId }
+  );
   revalidate(employeeId);
   return { success: true };
 }
@@ -275,6 +282,7 @@ export async function savePersonalDetails(
     .eq("id", employeeId);
   if (joinError) return { error: joinError.message };
 
+  notifyAdminsOfAction(auth.ctx, "updated the personal details of", { targetEmployeeId: employeeId });
   revalidate(employeeId);
   revalidatePath(`/admin/employees/${employeeId}`);
   return { success: true };
@@ -323,6 +331,7 @@ export async function saveBankDetails(
   });
   if (error) return { error };
 
+  notifyAdminsOfAction(auth.ctx, "updated the bank details of", { targetEmployeeId: employeeId });
   revalidate(employeeId);
   return { success: true };
 }
@@ -347,6 +356,7 @@ export async function setSetupTask(
 
   const error = await save(auth.supabase, { employee_id: employeeId, checklist });
   if (error) return { error };
+  notifyAdminsOfAction(auth.ctx, "updated a setup task of", { targetEmployeeId: employeeId });
   revalidate(employeeId);
   return { success: true };
 }
@@ -390,6 +400,9 @@ export async function setOnboardingCompleted(
   });
   if (error) return { error };
 
+  notifyAdminsOfAction(ctx, completed ? "completed the onboarding of" : "reopened the onboarding of", {
+    targetEmployeeId: employeeId,
+  });
   revalidate(employeeId);
   return { success: true };
 }
@@ -412,6 +425,8 @@ export async function deleteOnboardingDocument(
   const { error } = await auth.supabase.from("onboarding_documents").delete().eq("id", doc.id);
   if (error) return { error: error.message };
   await createServiceClient().storage.from(ONBOARDING_BUCKET).remove([doc.file_path]);
+
+  notifyAdminsOfAction(auth.ctx, "deleted a document of", { targetEmployeeId: employeeId });
 
   revalidate(employeeId);
   return { success: true };

@@ -4,6 +4,7 @@ import { z } from "zod";
 import { createDataClient as createClient } from "@/lib/supabase/data";
 import { getCurrentEmployeeContext } from "@/lib/permissions/server";
 import { vapidPublicKey } from "@/lib/env";
+import { sendTestWebPush } from "@/lib/push/web-push-server";
 
 export type PushActionState = { error?: string; success?: boolean };
 
@@ -45,6 +46,24 @@ export async function savePushSubscription(
   );
   if (error) return { error: error.message };
   return { success: true };
+}
+
+/** Test alert to this browser. Only ever reaches a subscription of the signed-in person. */
+export async function sendTestPushNotification(endpoint: string): Promise<PushActionState> {
+  const ctx = await getCurrentEmployeeContext();
+  if (!ctx) return { error: "Not authenticated" };
+
+  const supabase = await createClient();
+  const { data: subscription } = await supabase
+    .from("push_subscriptions")
+    .select("endpoint, p256dh, auth")
+    .eq("employee_id", ctx.employeeId)
+    .eq("endpoint", endpoint)
+    .maybeSingle();
+  if (!subscription) return { error: "This browser is not registered yet. Turn desktop alerts on first." };
+
+  const result = await sendTestWebPush(subscription);
+  return result.error ? { error: result.error } : { success: true };
 }
 
 /** Remove this browser endpoint (permission revoked or user opted out). */

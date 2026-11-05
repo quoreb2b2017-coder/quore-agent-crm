@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { createClient } from "@/lib/supabase/client";
+import { reportBrowserAction } from "@/lib/actions/notifications";
 
 type Factor = { id: string; friendly_name?: string | null; status: string; created_at: string };
 type Enrolment = { factorId: string; qr: string; secret: string };
@@ -82,6 +83,7 @@ export function MfaManager({ required }: { required: boolean }) {
     setEnrolment(null);
     setCode("");
     toast.success("Two-factor sign-in is on");
+    await reportBrowserAction("mfaOn").catch(() => undefined);
     await refresh();
     window.location.reload();
   }
@@ -107,6 +109,7 @@ export function MfaManager({ required }: { required: boolean }) {
       return;
     }
     toast.success("Authenticator removed");
+    await reportBrowserAction("mfaOff").catch(() => undefined);
     await refresh();
     window.location.reload();
   }
@@ -115,8 +118,12 @@ export function MfaManager({ required }: { required: boolean }) {
     setBusy(true);
     const { error: signOutError } = await createClient().auth.signOut({ scope: "others" });
     setBusy(false);
-    if (signOutError) toast.error(signOutError.message);
-    else toast.success("Signed out of every other browser and device");
+    if (signOutError) {
+      toast.error(signOutError.message);
+      return;
+    }
+    toast.success("Signed out of every other browser and device");
+    void reportBrowserAction("otherDevices").catch(() => undefined);
   }
 
   return (

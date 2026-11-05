@@ -23,24 +23,21 @@ export function EmployeeTabs({
   ];
 
   return (
-    <nav className="flex overflow-x-auto border-b px-2">
+    <nav className="flex divide-x overflow-x-auto border-b bg-muted">
       {items.map((item) => (
         <Link
           key={item.id}
           href={item.href}
           aria-current={active === item.id ? "page" : undefined}
           className={cn(
-            "relative inline-flex h-12 shrink-0 items-center gap-2 px-4 text-sm font-medium whitespace-nowrap transition",
+            "inline-flex h-11 shrink-0 items-center gap-2 px-5 text-[13px] whitespace-nowrap transition-colors",
             active === item.id
-              ? "text-foreground"
-              : "text-muted-foreground hover:text-foreground"
+              ? "bg-primary font-semibold text-primary-foreground"
+              : "font-medium text-foreground hover:bg-accent hover:text-primary"
           )}
         >
           <item.icon className="size-4" />
           {item.label}
-          {active === item.id ? (
-            <span className="absolute inset-x-3 bottom-0 h-0.5 rounded-full bg-primary" />
-          ) : null}
         </Link>
       ))}
     </nav>

@@ -3,15 +3,12 @@
 import { useEffect, useState, useTransition } from "react";
 import { BellRing, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { getPushPublicKey, removePushSubscription, savePushSubscription } from "@/lib/actions/push-subscriptions";
-import {
-  currentPushSubscription,
-  ensurePushServiceWorker,
-  pushSupported,
-  subscribeBrowserPush,
-} from "@/lib/push/browser";
+import { currentPushSubscription, ensurePushServiceWorker, pushSupported } from "@/lib/push/browser";
+import { enableDesktopNotifications } from "@/lib/push/enable";
 
 const DISMISS_KEY = "worktrack.push.banner.dismissed";
+/** Dismissing only delays the reminder, so nobody stays without alerts by accident. */
+const DISMISS_FOR_MS = 7 * 24 * 60 * 60 * 1000;
 
 /**
  * Soft opt-in for desktop notifications. Does not call requestPermission until
@@ -27,25 +24,15 @@ export function EnablePushNotifications() {
     async function check() {
       if (!pushSupported()) return;
       if (typeof window === "undefined") return;
-      if (localStorage.getItem(DISMISS_KEY) === "1") return;
+      if (Date.now() - Number(localStorage.getItem(DISMISS_KEY) ?? 0) < DISMISS_FOR_MS) return;
       if (Notification.permission === "denied") return;
 
       await ensurePushServiceWorker().catch(() => null);
       const existing = await currentPushSubscription();
       if (cancelled) return;
       if (existing && Notification.permission === "granted") {
-        // Refresh server copy in case this device was wiped from DB.
-        const { publicKey } = await getPushPublicKey();
-        if (publicKey) {
-          const json = existing.toJSON();
-          if (json.endpoint && json.keys?.p256dh && json.keys?.auth) {
-            void savePushSubscription({
-              endpoint: json.endpoint,
-              keys: { p256dh: json.keys.p256dh, auth: json.keys.auth },
-              userAgent: navigator.userAgent.slice(0, 500),
-            });
-          }
-        }
+        // Refresh the server copy: the device may be wiped from DB, or another person signed in here.
+        void enableDesktopNotifications().catch(() => null);
         return;
       }
       setVisible(true);
@@ -88,31 +75,11 @@ export function EnablePushNotifications() {
             setError(null);
             startTransition(async () => {
               try {
-                const { publicKey } = await getPushPublicKey();
-                if (!publicKey) {
-                  setError("Push is not configured on the server.");
-                  return;
-                }
-                const sub = await subscribeBrowserPush(publicKey);
-                const json = sub.toJSON();
-                if (!json.endpoint || !json.keys?.p256dh || !json.keys?.auth) {
-                  setError("Browser returned an incomplete subscription.");
-                  return;
-                }
-                const result = await savePushSubscription({
-                  endpoint: json.endpoint,
-                  keys: { p256dh: json.keys.p256dh, auth: json.keys.auth },
-                  userAgent: navigator.userAgent.slice(0, 500),
-                });
-                if (result.error) {
-                  setError(result.error);
-                  return;
-                }
+                await enableDesktopNotifications();
                 setVisible(false);
               } catch (err) {
                 const message = err instanceof Error ? err.message : "Could not enable notifications";
                 if (/denied/i.test(message)) {
-                  localStorage.setItem(DISMISS_KEY, "1");
                   setVisible(false);
                   return;
                 }
@@ -130,16 +97,8 @@ export function EnablePushNotifications() {
           className="px-2"
           aria-label="Dismiss"
           onClick={() => {
-            localStorage.setItem(DISMISS_KEY, "1");
+            localStorage.setItem(DISMISS_KEY, String(Date.now()));
             setVisible(false);
-            void (async () => {
-              const sub = await currentPushSubscription();
-              if (sub) {
-                const endpoint = sub.endpoint;
-                await sub.unsubscribe().catch(() => null);
-                await removePushSubscription(endpoint);
-              }
-            })();
           }}
         >
           <X className="size-4" />

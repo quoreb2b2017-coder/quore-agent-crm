@@ -3,7 +3,27 @@
 import { createDataClient as createClient } from "@/lib/supabase/data";
 import { createServiceClient } from "@/lib/supabase/service";
 import { getCurrentEmployeeContext, isManagement } from "@/lib/permissions/server";
+import { notifyAdminsOfAction } from "@/lib/realtime/notify";
 import type { RecentNotification } from "@/lib/realtime/types";
+
+const BROWSER_ACTIONS = {
+  password: "changed their password",
+  mfaOn: "turned on two-factor sign-in",
+  mfaOff: "removed a two-factor authenticator",
+  otherDevices: "signed out of their other devices",
+} as const;
+
+/** Password sign-in happens in the browser, and it must be reported even if no timer starts. */
+export async function reportLogin() {
+  const ctx = await getCurrentEmployeeContext();
+  if (ctx) notifyAdminsOfAction(ctx, "logged in", { type: "EMPLOYEE_LOGIN" });
+}
+
+/** These go straight from the browser to the sign-in service, so the server is told separately. */
+export async function reportBrowserAction(action: keyof typeof BROWSER_ACTIONS) {
+  const ctx = await getCurrentEmployeeContext();
+  if (ctx && Object.hasOwn(BROWSER_ACTIONS, action)) notifyAdminsOfAction(ctx, BROWSER_ACTIONS[action]);
+}
 
 export async function getNotificationBellState(): Promise<{
   unreadCount: number;

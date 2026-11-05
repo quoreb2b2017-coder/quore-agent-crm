@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { createDataClient as createClient } from "@/lib/supabase/data";
 import { getCurrentEmployeeContext, isManagement } from "@/lib/permissions/server";
-import { insertAndEmitNotification } from "@/lib/realtime/notify";
+import { insertAndEmitNotification, notifyAdminsOfAction } from "@/lib/realtime/notify";
 import { eachDateInclusive, isWeekendIso, todayIso } from "@/lib/format";
 import { isUndecidedLeaveType, leaveDaysCount, packLeaveNote, UNDECIDED_LEAVE_TYPE } from "@/lib/leave";
 import { getLeaveBalanceRows, getPaidLeaveQuota, primaryPaidLeaveTypeId } from "@/lib/queries/leave";
@@ -195,6 +195,11 @@ export async function reviewLeaveRequest(
     /* the decision is already saved */
   }
 
+  notifyAdminsOfAction(ctx, `${decision === "APPROVED" ? "approved" : "rejected"} the leave of`, {
+    targetEmployeeId: request.employee_id,
+    detail: `${request.start_date} to ${request.end_date}.`,
+  });
+
   revalidateLeave();
   return {};
 }
@@ -329,6 +334,10 @@ export async function updateLeaveRequest(formData: FormData) {
     title: "Leave request updated",
     body: "An admin updated your leave request.",
   });
+  notifyAdminsOfAction(ctx, "updated the leave of", {
+    targetEmployeeId: request.employee_id,
+    detail: `${parsed.data.startDate} to ${parsed.data.endDate}.`,
+  });
 
   revalidateLeave();
   return {};
@@ -359,6 +368,10 @@ export async function deleteLeaveRequest(requestId: string) {
     type: "LEAVE_UPDATE",
     title: "Leave request removed",
     body: "An admin deleted your leave request.",
+  });
+  notifyAdminsOfAction(ctx, "deleted the leave of", {
+    targetEmployeeId: request.employee_id,
+    detail: `${request.start_date} to ${request.end_date}.`,
   });
 
   revalidateLeave();
@@ -425,6 +438,10 @@ export async function setLeaveRemaining(
     year
   );
   if (saved.error) return saved;
+  notifyAdminsOfAction(ctx, "changed the leave balance of", {
+    targetEmployeeId: employeeId,
+    detail: `${remaining} paid days left in ${year}.`,
+  });
   revalidateLeave();
   return {};
 }
@@ -446,6 +463,9 @@ export async function setLeaveRemainingForAll(
     year
   );
   if (saved.error) return saved;
+  notifyAdminsOfAction(ctx, "changed the leave balance of all employees", {
+    detail: `${remaining} paid days left in ${year}.`,
+  });
   revalidateLeave();
   return {};
 }

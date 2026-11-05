@@ -47,6 +47,7 @@ export function AppShell({
   const isChat = pathname === `${base}/chat`;
   const isSheet =
     pathname === "/admin/approvals" ||
+    pathname === "/admin/audit-logs" ||
     pathname === `${base}/activity` ||
     pathname.startsWith(`${base}/activity/`) ||
     pathname === `${base}/attendance` ||
@@ -55,6 +56,7 @@ export function AppShell({
     pathname === `${base}/notifications` ||
     pathname === `${base}/onboarding` ||
     pathname === `${base}/password` ||
+    pathname === `${base}/roles` ||
     pathname === `${base}/teams` ||
     pathname === "/admin/settings" ||
     pathname === "/portal/profile" ||

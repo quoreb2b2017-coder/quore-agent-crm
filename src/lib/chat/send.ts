@@ -2,6 +2,7 @@ import { createDataClient as createClient } from "@/lib/supabase/data";
 import { createServiceClient } from "@/lib/supabase/service";
 import { getCurrentEmployeeContext } from "@/lib/permissions/server";
 import { emitToEmployees } from "@/lib/realtime/emit";
+import { notifyAdminsOfAction } from "@/lib/realtime/notify";
 import {
   CHAT_ATTACHMENT_BUCKET,
   CHAT_ATTACHMENT_MAX_BYTES,
@@ -274,6 +275,9 @@ export async function deliverChatMessage(input: {
       participantA: convo.participant_a,
       participantB: convo.participant_b,
     });
+
+    // Only that a message went out: chat stays private, so no text and no recipient.
+    notifyAdminsOfAction(ctx, file ? "sent a file in chat" : "sent a chat message");
 
     return { message, conversationId: convo.id };
   } catch (error) {

@@ -5,6 +5,7 @@ import { z } from "zod";
 import { createDataClient as createClient } from "@/lib/supabase/data";
 import { getCurrentEmployeeContext, isManagement } from "@/lib/permissions/server";
 import { emitNotifications } from "@/lib/realtime/emit";
+import { notifyAdminsOfAction } from "@/lib/realtime/notify";
 
 export type ActionState = { error?: string; success?: boolean };
 
@@ -74,6 +75,7 @@ export async function sendNotification(
     }))
   );
 
+  notifyAdminsOfAction(ctx, `sent the notification "${parsed.data.title}"`);
   revalidatePath("/admin/notifications");
   revalidatePath("/portal/notifications");
   return { success: true };

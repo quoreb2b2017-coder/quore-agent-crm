@@ -21,6 +21,7 @@ import { PublicShell } from "@/components/layout/public-shell";
 import { ClientGreeting, DualOfficeClocks, ShiftCountdown } from "@/components/layout/live-time";
 import { formatTime, shiftWindowLabel } from "@/lib/format";
 import { createClient } from "@/lib/supabase/client";
+import { reportLogin } from "@/lib/actions/notifications";
 import { postLoginPath, readWorktrackJwtClaims } from "@/lib/auth/jwt-claims";
 
 const HIGHLIGHTS = [
@@ -111,6 +112,12 @@ export default function LoginPage() {
     //   window.location.assign("/verify");
     //   return;
     // }
+
+    // Leaving the page cancels a running request, so wait for it, but never hold the login up for long.
+    await Promise.race([
+      reportLogin().catch(() => undefined),
+      new Promise((resolve) => setTimeout(resolve, 3000)),
+    ]);
 
     const claims = readWorktrackJwtClaims(signInData.session?.access_token);
     // Hard navigation is faster than soft RSC replace after auth cookie write.

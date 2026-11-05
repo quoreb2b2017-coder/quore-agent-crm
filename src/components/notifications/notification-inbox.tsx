@@ -2,7 +2,7 @@
 
 import { Fragment, useEffect, useMemo, useState, useTransition } from "react";
 import Link from "next/link";
-import { Bell, CheckCheck, Loader2, LogIn, Megaphone, Search, Users } from "lucide-react";
+import { Activity, Bell, CheckCheck, Loader2, LogIn, Megaphone, Search, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -21,9 +21,12 @@ export type InboxNotification = {
   type?: string;
 };
 
-type Filter = "all" | "unread" | "login" | "meeting" | "announcement";
+type Filter = "all" | "unread" | "action" | "login" | "meeting" | "announcement";
 
 export function typeMeta(type?: string) {
+  if (type === "STAFF_ACTION") {
+    return { label: "Action", Icon: Activity, tone: "bg-primary/10 text-primary", group: "action" as const };
+  }
   if (type === "EMPLOYEE_LOGIN") {
     return { label: "Login", Icon: LogIn, tone: "bg-success/10 text-success", group: "login" as const };
   }
@@ -46,6 +49,13 @@ const PERSON_ACTIVITY: Record<string, string> = {
 
 /** Login and meeting alerts name the employee in their text: "Anis logged in", "Anis (1007) signed in...". */
 function personFrom(item: InboxNotification) {
+  if (item.type === "STAFF_ACTION") {
+    // Body is always "Name (code) what they did."
+    const parts = item.body ? /^(.+?) \(([^)]+)\) /.exec(item.body) : null;
+    if (!parts || !item.title.startsWith(`${parts[1]} `)) return null;
+    const action = item.title.slice(parts[1].length + 1);
+    return { name: parts[1], code: parts[2], activity: action.charAt(0).toUpperCase() + action.slice(1) };
+  }
   const match = /^(.+) (logged in|requested a meeting|meeting accepted|meeting not accepted)$/.exec(item.title);
   if (!match) return null;
   const activity = PERSON_ACTIVITY[match[2]];
@@ -84,6 +94,7 @@ export function NotificationInbox({
     return {
       all: items.length,
       unread,
+      action: items.filter((item) => typeMeta(item.type).group === "action").length,
       login: items.filter((item) => typeMeta(item.type).group === "login").length,
       meeting: items.filter((item) => typeMeta(item.type).group === "meeting").length,
       announcement: items.filter((item) => typeMeta(item.type).group === "announcement").length,
@@ -146,6 +157,7 @@ export function NotificationInbox({
   const filters: { id: Filter; label: string; count: number }[] = [
     { id: "all", label: "All", count: counts.all },
     { id: "unread", label: "Unread", count: counts.unread },
+    { id: "action", label: "Actions", count: counts.action },
     { id: "login", label: "Login", count: counts.login },
     { id: "meeting", label: "Meeting", count: counts.meeting },
     { id: "announcement", label: "Notes", count: counts.announcement },

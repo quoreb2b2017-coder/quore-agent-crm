@@ -8,6 +8,7 @@ import {
   validateWorkSettings,
 } from "@/lib/work-settings-server";
 import { createDataClient } from "@/lib/supabase/data";
+import { notifyAdminsOfAction } from "@/lib/realtime/notify";
 import { timeValueToMinutes, type WorkSettings } from "@/lib/work-settings";
 
 export async function saveWorkSettings(
@@ -56,6 +57,7 @@ export async function saveWorkSettings(
     return { error: error.message };
   }
 
+  notifyAdminsOfAction(ctx, "changed the work settings");
   rememberWorkSettings(settings);
   await loadWorkSettings();
   revalidatePath("/", "layout");

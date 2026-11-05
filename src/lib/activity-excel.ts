@@ -43,7 +43,7 @@ const GREEN = "FF067647";
 const AMBER = "FFB54708";
 
 /** Dark header, frozen first row, filter buttons and borders, so each sheet is ready to use. */
-function finishSheet(sheet: Worksheet) {
+export function finishSheet(sheet: Worksheet) {
   const header = sheet.getRow(1);
   header.height = 22;
   header.eachCell((cell) => {

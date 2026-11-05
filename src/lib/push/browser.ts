@@ -21,13 +21,18 @@ export function pushSupported() {
 export async function ensurePushServiceWorker() {
   if (!pushSupported()) return null;
   const existing = await navigator.serviceWorker.getRegistration("/");
-  if (existing) return existing;
+  if (existing) {
+    // Pick up a changed sw.js now rather than at the browser's next check.
+    void existing.update().catch(() => null);
+    return existing;
+  }
   return navigator.serviceWorker.register("/sw.js", { scope: "/" });
 }
 
 export async function subscribeBrowserPush(publicKey: string) {
-  const registration = await ensurePushServiceWorker();
-  if (!registration) throw new Error("Service worker unavailable");
+  if (!(await ensurePushServiceWorker())) throw new Error("Service worker unavailable");
+  // A first-time worker is still installing, and subscribing needs an active one.
+  const registration = await navigator.serviceWorker.ready;
 
   const permission =
     Notification.permission === "granted"
@@ -37,12 +42,22 @@ export async function subscribeBrowserPush(publicKey: string) {
     throw new Error("Notification permission denied");
   }
 
+  const serverKey = urlBase64ToUint8Array(publicKey);
   const existing = await registration.pushManager.getSubscription();
-  if (existing) return existing;
+  if (existing) {
+    const currentKey = existing.options.applicationServerKey;
+    const sameKey =
+      currentKey != null &&
+      new Uint8Array(currentKey).every((byte, index) => byte === serverKey[index]) &&
+      currentKey.byteLength === serverKey.length;
+    if (sameKey) return existing;
+    // Made with an older server key, so the push service would refuse every alert.
+    await existing.unsubscribe();
+  }
 
   return registration.pushManager.subscribe({
     userVisibleOnly: true,
-    applicationServerKey: urlBase64ToUint8Array(publicKey),
+    applicationServerKey: serverKey,
   });
 }
 

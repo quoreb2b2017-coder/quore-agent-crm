@@ -44,7 +44,8 @@ const SUPER_ADMIN_ONLY_PERMISSIONS = new Set([
   "compliance.audit",
 ]);
 
-const HR_BLOCKED_PERMISSIONS = new Set(["audit_logs.view"]);
+/** payroll.manage stays with Super Admin: HR sets salaries, so must not also run payroll (ISO A.5.3). */
+const HR_BLOCKED_PERMISSIONS = new Set(["audit_logs.view", "payroll.manage"]);
 
 export function isSuperAdmin(roleKey: string) {
   return roleKey === SUPER_ADMIN_ROLE;

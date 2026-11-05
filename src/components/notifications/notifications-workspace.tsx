@@ -11,6 +11,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { NotificationInbox, typeMeta, type InboxNotification } from "@/components/notifications/notification-inbox";
 import { SendNotificationDialog } from "@/app/(admin)/admin/notifications/send-notification-dialog";
 import { PageHeader } from "@/components/dashboard/page-header";
+import { DesktopAlertsControl } from "@/components/notifications/desktop-alerts-control";
 
 type SentRow = {
   id: string;
@@ -43,6 +44,7 @@ export function NotificationsWorkspace({
     return (
       <div className="flex flex-col gap-4 pb-8">
         <PageHeader title="Notifications" description="Your alerts, meetings, and messages." />
+        <DesktopAlertsControl />
         <NotificationInbox initialItems={inbox} />
       </div>
     );
@@ -55,6 +57,7 @@ export function NotificationsWorkspace({
         description="Logins, meetings, and messages. Filter the list, or send one to the team."
         actions={<SendNotificationDialog />}
       />
+      <DesktopAlertsControl />
       <Tabs
         defaultValue="inbox"
         onValueChange={(value) => {

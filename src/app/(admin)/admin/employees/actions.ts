@@ -25,6 +25,7 @@ import {
   type WorkSchedule,
 } from "@/lib/work-settings";
 import { forgetEmployeeSchedule, validateWorkSchedule } from "@/lib/work-settings-server";
+import { notifyAdminsOfAction } from "@/lib/realtime/notify";
 import type { Json } from "@/types/supabase";
 
 /** Any role key under a department (built-in or custom). */
@@ -156,6 +157,11 @@ async function assertCanManageEmployees() {
     throw new Error("You do not have permission to manage employees.");
   }
   return ctx;
+}
+
+async function notifyDepartmentChange(action: string) {
+  const ctx = await getCurrentEmployeeContext();
+  if (ctx) notifyAdminsOfAction(ctx, action);
 }
 
 /** HR may manage staff only, never Super Admin or other HR accounts. */
@@ -310,6 +316,7 @@ export async function createDepartment(
   revalidatePath("/admin/teams");
   revalidatePath("/admin/roles");
   revalidatePath("/admin/onboarding");
+  await notifyDepartmentChange(`created the department ${data.name}`);
   return {
     success: true,
     departmentId: data.id,
@@ -362,6 +369,7 @@ export async function renameDepartment(
   revalidatePath("/admin/employees");
   revalidatePath("/admin/teams");
   revalidatePath("/admin/onboarding");
+  await notifyDepartmentChange(`updated the department ${data.name}`);
   return {
     success: true,
     departmentId: data.id,
@@ -423,6 +431,7 @@ export async function deleteDepartment(
   revalidatePath("/admin/employees");
   revalidatePath("/admin/teams");
   revalidatePath("/admin/onboarding");
+  await notifyDepartmentChange(`deleted the department ${existing.name}`);
   return { success: true, departmentId: existing.id, name: existing.name };
 }
 
@@ -526,6 +535,7 @@ export async function assignEmployeeToDepartment(
   revalidatePath("/admin/teams");
   revalidatePath(`/admin/employees/${employeeId}`);
   revalidatePath("/admin/onboarding");
+  notifyAdminsOfAction(ctx, "changed the team and role of", { targetEmployeeId: employeeId });
   return { success: true, employeeId };
 }
 
@@ -697,6 +707,7 @@ export async function createEmployee(
 
   revalidatePath("/admin/employees");
   revalidatePath("/admin/onboarding");
+  notifyAdminsOfAction(ctx, "added the employee", { targetEmployeeId: employee.id });
   return { success: true, employeeId: employee.id };
 }
 
@@ -860,6 +871,10 @@ export async function updateEmployee(
   revalidateShiftPages(employeeId);
   if (!skipWorkSchedule) await refreshTodayAfterShiftChange(employeeId, previousSchedule, workSchedule);
 
+  notifyAdminsOfAction(ctx, "updated the profile of", {
+    targetEmployeeId: employeeId,
+    detail: data.password ? "The password was also changed." : undefined,
+  });
   return { success: true, employeeId };
 }
 
@@ -961,6 +976,7 @@ export async function updateEmployeeShift(
 
   revalidateShiftPages(employeeId);
   await refreshTodayAfterShiftChange(employeeId, previousSchedule, workSchedule);
+  notifyAdminsOfAction(ctx, "changed the shift of", { targetEmployeeId: employeeId });
   return { success: true, employeeId };
 }
 
@@ -1110,6 +1126,7 @@ export async function updateEmployeePersonalDetails(
   );
   if (onboardingError) return { error: onboardingError.message };
 
+  notifyAdminsOfAction(ctx, "updated the personal details of", { targetEmployeeId: employeeId });
   revalidatePath(`/admin/employees/${employeeId}`);
   revalidatePath(`/admin/onboarding/${employeeId}`);
   revalidatePath("/admin/onboarding");
@@ -1189,6 +1206,9 @@ async function changeEmployeeAccess(
   revalidatePath("/admin/dashboard");
   revalidatePath("/admin/attendance");
   revalidatePath("/admin/teams");
+  const accessAction =
+    status === "TERMINATED" ? "disabled" : status === "SUSPENDED" ? "blocked" : verb === "disable" ? "enabled" : "unblocked";
+  notifyAdminsOfAction(ctx, `${accessAction} the employee`, { targetEmployeeId: employeeId });
   return { success: true };
 }
 
@@ -1215,7 +1235,7 @@ export async function deleteEmployee(employeeId: string): Promise<ActionState> {
   const supabase = await createClient();
   const { data: employee, error: findError } = await supabase
     .from("employees")
-    .select("auth_user_id")
+    .select("auth_user_id, full_name, employee_code")
     .eq("id", employeeId)
     .single();
 
@@ -1231,6 +1251,8 @@ export async function deleteEmployee(employeeId: string): Promise<ActionState> {
     await service.auth.admin.deleteUser(employee.auth_user_id);
   }
 
+  // The row is gone by the time the alert runs, so the name is passed in directly.
+  notifyAdminsOfAction(ctx, `deleted the employee ${employee.full_name} (${employee.employee_code})`);
   revalidatePath("/admin/employees");
   return { success: true };
 }

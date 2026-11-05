@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { getCurrentEmployeeContext } from "@/lib/permissions/server";
 import { isSuperAdmin } from "@/lib/permissions/roles";
 import { createDataClient } from "@/lib/supabase/data";
+import { notifyAdminsOfAction } from "@/lib/realtime/notify";
 
 type Result = { error?: string };
 
@@ -37,6 +38,7 @@ export async function reviewEvidence(id: string, decision: "ACCEPTED" | "REJECTE
     .eq("id", id)
     .eq("status", "PENDING_REVIEW");
   if (error) return { error: error.message };
+  notifyAdminsOfAction(ctx, `${decision === "ACCEPTED" ? "accepted" : "rejected"} compliance evidence`);
   revalidatePath("/admin/approvals");
   revalidatePath("/admin/compliance", "layout");
   return {};
@@ -69,6 +71,7 @@ export async function decideException(id: string, decision: "APPROVED" | "REJECT
     )
     .eq("id", id);
   if (error) return { error: error.message };
+  notifyAdminsOfAction(ctx, `${decision === "APPROVED" ? "approved" : "rejected"} a security exception`);
   revalidatePath("/admin/approvals");
   revalidatePath("/admin/compliance", "layout");
   return {};

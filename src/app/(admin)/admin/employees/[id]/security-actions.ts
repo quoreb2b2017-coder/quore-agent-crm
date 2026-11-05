@@ -5,6 +5,7 @@ import { getCurrentEmployeeContext } from "@/lib/permissions/server";
 import { isSuperAdmin } from "@/lib/permissions/roles";
 import { createDataClient } from "@/lib/supabase/data";
 import { createServiceClient } from "@/lib/supabase/service";
+import { notifyAdminsOfAction } from "@/lib/realtime/notify";
 
 /**
  * Removes every second factor for an employee who lost their phone, and signs
@@ -34,6 +35,7 @@ export async function resetEmployeeMfa(employeeId: string): Promise<{ error?: st
     p_details: { factors_removed: (factors?.factors ?? []).length, sessions_revoked: true },
   });
 
+  notifyAdminsOfAction(ctx, "reset the two-factor sign-in of", { targetEmployeeId: employeeId });
   revalidatePath(`/admin/employees/${employeeId}`);
   return {};
 }

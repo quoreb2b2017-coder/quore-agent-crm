@@ -6,6 +6,7 @@ import { complianceManager } from "@/lib/compliance/access";
 import { MANUAL_CONTROL_STATUSES } from "@/lib/compliance/labels";
 import { createDataClient } from "@/lib/supabase/data";
 import { createServiceClient } from "@/lib/supabase/service";
+import { notifyAdminsOfAction } from "@/lib/realtime/notify";
 import type { ComplianceControlStatus } from "@/types/supabase";
 
 export type ActionResult = { error?: string; success?: boolean };
@@ -50,6 +51,7 @@ export async function runAutomatedControlChecks(): Promise<RunChecksResult> {
   const supabase = await createDataClient();
   const { data, error } = await supabase.rpc("run_automated_control_checks");
   if (error) return { error: error.message };
+  notifyAdminsOfAction(ctx, "ran the compliance control checks");
   refresh();
   return { results: data ?? [] };
 }
@@ -76,6 +78,7 @@ export async function updateControl(formData: FormData): Promise<ActionResult> {
     })
     .eq("id", id);
   if (error) return { error: dbError(error.message) };
+  notifyAdminsOfAction(ctx, "updated a compliance control");
   refresh();
   return { success: true };
 }
@@ -131,6 +134,7 @@ export async function addEvidence(formData: FormData): Promise<ActionResult> {
     limitations: optional(formData, "limitations"),
   });
   if (error) return { error: dbError(error.message) };
+  notifyAdminsOfAction(ctx, `added compliance evidence to ${control.control_code}`);
   refresh();
   return { success: true };
 }
@@ -165,6 +169,7 @@ export async function recordControlTest(formData: FormData): Promise<ActionResul
     evidence_id: optional(formData, "evidence_id"),
   });
   if (error) return { error: dbError(error.message) };
+  notifyAdminsOfAction(ctx, "recorded a compliance control test");
   refresh();
   return { success: true };
 }
@@ -239,6 +244,7 @@ export async function saveRisk(formData: FormData): Promise<ActionResult> {
     const { error } = await supabase.from("risk_control_links").insert(controlIds.map((control_id) => ({ risk_id: riskId, control_id })));
     if (error) return { error: dbError(error.message) };
   }
+  notifyAdminsOfAction(ctx, `saved the risk "${title}"`);
   refresh();
   return { success: true };
 }
@@ -268,6 +274,7 @@ export async function saveSoaEntry(formData: FormData): Promise<ActionResult> {
     })
     .eq("id", id);
   if (error) return { error: dbError(error.message) };
+  notifyAdminsOfAction(ctx, "updated the Statement of Applicability");
   refresh();
   return { success: true };
 }
@@ -304,6 +311,7 @@ export async function updateCorrectiveAction(formData: FormData): Promise<Action
     })
     .eq("id", id);
   if (error) return { error: dbError(error.message) };
+  notifyAdminsOfAction(ctx, "updated a corrective action");
   refresh();
   return { success: true };
 }
@@ -331,6 +339,7 @@ export async function requestException(formData: FormData): Promise<ActionResult
     status: "REQUESTED",
   });
   if (error) return { error: dbError(error.message) };
+  notifyAdminsOfAction(ctx, "requested a security exception");
   refresh();
   return { success: true };
 }

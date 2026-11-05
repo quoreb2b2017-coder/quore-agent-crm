@@ -1,6 +1,6 @@
 import { timingSafeEqual } from "node:crypto";
 import { NextResponse } from "next/server";
-import { getCurrentEmployeeContext, isManagement } from "@/lib/permissions/server";
+import { getCurrentEmployeeContext, hasPermission } from "@/lib/permissions/server";
 import { autoGeneratePayrollMonth } from "@/lib/payroll";
 import { ensureAutoSalarySlips } from "@/lib/salary-slip-generate";
 
@@ -19,7 +19,7 @@ async function run(request: Request) {
 
   if (!cronOk) {
     const ctx = await getCurrentEmployeeContext();
-    if (!ctx || !isManagement(ctx.roleKey)) {
+    if (!ctx || !hasPermission(ctx, "payroll.manage")) {
       return NextResponse.json({ error: "Not authorized" }, { status: 401 });
     }
     const slips = await ensureAutoSalarySlips(ctx.employeeId);

@@ -4,7 +4,7 @@ import { closeWorkSession } from "@/lib/actions/attendance";
 import { shiftDateIso } from "@/lib/format";
 import { softOvertimeMinutes, shiftWindowUtc } from "@/lib/shift";
 import { ensureGoogleTime, googleDate } from "@/lib/google-time";
-import { ADMIN_LOGOUT_TYPE } from "@/lib/realtime/notify";
+import { ADMIN_LOGOUT_TYPE, notifySuperAdmins, STAFF_ACTION_TYPE } from "@/lib/realtime/notify";
 import { loadEffectiveWorkSettings } from "@/lib/work-settings-server";
 import type { WorkSettings } from "@/lib/work-settings";
 
@@ -105,7 +105,8 @@ export async function runPresenceHeartbeat(_input: {
     const overtimeMinutes = await overtimeForBreak(ctx.employeeId, openBreak.started_at);
     const endsAt = openBreakEndsAt(openBreak, settings, overtimeMinutes);
     if (endsAt.getTime() <= now) {
-      await closeWorkSession(ctx.employeeId, "TIMED_OUT", { endedAt: endsAt });
+      const closed = await closeWorkSession(ctx.employeeId, "TIMED_OUT", { endedAt: endsAt });
+      if (closed.closed) await notifyAutoLogout(ctx.employeeId);
       return { expired: true, reason: "break", at: endsAt.getTime() };
     }
     await markSeen();
@@ -114,6 +115,25 @@ export async function runPresenceHeartbeat(_input: {
 
   await markSeen();
   return { expired: false, active: true };
+}
+
+/** Nobody clicked anything here, so this sends directly: it can run outside a request. */
+async function notifyAutoLogout(employeeId: string) {
+  try {
+    const { data: employee } = await createServiceClient()
+      .from("employees")
+      .select("full_name, employee_code")
+      .eq("id", employeeId)
+      .maybeSingle();
+    if (!employee) return;
+    await notifySuperAdmins({
+      type: STAFF_ACTION_TYPE,
+      title: `${employee.full_name} was logged out automatically`,
+      body: `${employee.full_name} (${employee.employee_code}) was logged out automatically. Their break was still open when the time ended.`,
+    });
+  } catch {
+    /* the session is already closed */
+  }
 }
 
 /**
@@ -135,7 +155,8 @@ export async function sweepIdleSessions(options?: { force?: boolean }) {
     const overtimeMinutes = await overtimeForBreak(openBreak.employee_id, openBreak.started_at);
     const endsAt = openBreakEndsAt(openBreak, settings, overtimeMinutes);
     if (endsAt.getTime() <= now) {
-      await closeWorkSession(openBreak.employee_id, "TIMED_OUT", { revalidate: false, endedAt: endsAt });
+      const closed = await closeWorkSession(openBreak.employee_id, "TIMED_OUT", { revalidate: false, endedAt: endsAt });
+      if (closed.closed) await notifyAutoLogout(openBreak.employee_id);
     }
   }
 }

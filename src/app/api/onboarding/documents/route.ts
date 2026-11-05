@@ -6,6 +6,7 @@ import { createServiceClient } from "@/lib/supabase/service";
 import { getCurrentEmployeeContext, isManagement } from "@/lib/permissions/server";
 import { isSuperAdminEmployee } from "@/lib/queries/admin-dashboard";
 import { isMissingOnboardingTable } from "@/lib/queries/onboarding";
+import { notifyAdminsOfAction } from "@/lib/realtime/notify";
 import {
   ONBOARDING_BUCKET,
   ONBOARDING_DOC_MAX_BYTES,
@@ -83,6 +84,7 @@ export async function POST(request: Request) {
     );
   }
 
+  notifyAdminsOfAction(ctx, "uploaded a document for", { targetEmployeeId: employeeId });
   revalidatePath("/admin/onboarding");
   revalidatePath(`/admin/onboarding/${employeeId}`);
   return NextResponse.json({ ok: true });

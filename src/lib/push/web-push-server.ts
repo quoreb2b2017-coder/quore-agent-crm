@@ -36,6 +36,38 @@ async function inboxPathForEmployee(employeeId: string): Promise<string> {
   return link ? "/admin/notifications" : "/portal/notifications";
 }
 
+/** High urgency so a sleeping laptop or browser is not held back; kept a day if it is offline. */
+const PUSH_OPTIONS = { TTL: 24 * 60 * 60, urgency: "high" as const };
+
+/** Sends a test alert to one saved browser and says plainly why it failed. */
+export async function sendTestWebPush(subscription: { endpoint: string; p256dh: string; auth: string }) {
+  if (!isWebPushConfigured() || !ensureVapid()) return { error: "Push is not configured on the server." };
+  try {
+    await webpush.sendNotification(
+      { endpoint: subscription.endpoint, keys: { p256dh: subscription.p256dh, auth: subscription.auth } },
+      JSON.stringify({
+        id: `test-${Date.now()}`,
+        title: "WorkTrack desktop alerts are on",
+        body: "This is a test. Real alerts will appear like this.",
+        type: "TEST",
+        url: "/",
+      }),
+      PUSH_OPTIONS
+    );
+    return {};
+  } catch (error) {
+    const status = (error as { statusCode?: number })?.statusCode;
+    if (status === 404 || status === 410) {
+      await deleteSubscription(subscription.endpoint);
+      return { error: "This browser's registration expired. Turn desktop alerts on again." };
+    }
+    if (status === 401 || status === 403) {
+      return { error: "The push service refused the server key. Turn desktop alerts on again." };
+    }
+    return { error: `The push service could not deliver it (status ${status ?? "unknown"}).` };
+  }
+}
+
 /** Remove dead browser endpoints (expired / unsubscribed). */
 async function deleteSubscription(endpoint: string) {
   const supabase = createServiceClient();
@@ -94,17 +126,14 @@ export async function sendWebPushForNotifications(notifications: RealtimeNotific
               keys: { p256dh: sub.p256dh, auth: sub.auth },
             },
             payload,
-            {
-              TTL: 60 * 60,
-              urgency: "normal",
-              // Same tag in SW collapses duplicates for one notification id.
-              headers: {},
-            }
+            PUSH_OPTIONS
           );
         } catch (error) {
           const status = (error as { statusCode?: number })?.statusCode;
           if (status === 404 || status === 410) {
             await deleteSubscription(sub.endpoint);
+          } else {
+            console.error(`Web push failed with status ${status ?? "unknown"}`);
           }
         }
       }
