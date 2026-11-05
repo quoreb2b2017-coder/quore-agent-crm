@@ -18,8 +18,14 @@ import type {
   RealtimeNotification,
 } from "@/lib/realtime/types";
 
+const LOCAL_HOSTS = ["localhost", "127.0.0.1"];
+
 function socketUrl() {
-  return clientSocketUrl();
+  const url = clientSocketUrl();
+  if (!url) return null;
+  // A local address built into a deployed site points at each viewer's own computer, so it can never connect.
+  const pointsLocal = LOCAL_HOSTS.includes(new URL(url).hostname);
+  return pointsLocal && !LOCAL_HOSTS.includes(window.location.hostname) ? null : url;
 }
 
 function chatOpenWith(senderId: string) {
