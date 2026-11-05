@@ -4,7 +4,7 @@ import { Fragment } from "react";
 import { ActivityEventCells, type ActivityFeedEvent } from "@/components/activity/activity-feed";
 import { useLiveNowMs } from "@/components/layout/trusted-clock";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { sheetCellClassName, sheetHeadClassName, sheetRowClassName } from "@/lib/sheet-styles";
+import { sheetCellClassName, sheetDateRowClassName, sheetHeadClassName, sheetRowClassName } from "@/lib/sheet-styles";
 import { getWorkSettings } from "@/lib/work-settings";
 import { cn } from "@/lib/utils";
 
@@ -47,7 +47,7 @@ export function ActivityLogTable({
                   <ActivityEventCells event={event} now={now} zone={zone} />
                 </TableRow>
               ))}
-              <TableRow className="bg-secondary hover:bg-secondary">
+              <TableRow className={sheetDateRowClassName}>
                 <TableCell
                   colSpan={3}
                   className={cn(sheetCellClassName, dayEndClassName, "border-r-0 font-bold")}

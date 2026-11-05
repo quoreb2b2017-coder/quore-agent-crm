@@ -23,6 +23,7 @@ import {
 import { emptyExcess, PRODUCTIVE_HOURS_LABEL, type BreakExcess } from "@/lib/shift";
 import {
   sheetCellClassName as cellClassName,
+  sheetDateRowClassName,
   sheetHeadClassName as headClassName,
   sheetRowClassName,
 } from "@/lib/sheet-styles";
@@ -178,7 +179,7 @@ export function AttendanceSheet({
                         </TableRow>
                       );
                     })}
-                    <TableRow className="bg-secondary hover:bg-secondary">
+                    <TableRow className={sheetDateRowClassName}>
                       <TableCell
                         className={cn(cellClassName, frozenDateClassName, totalCellClassName, "z-[1] bg-inherit")}
                       >

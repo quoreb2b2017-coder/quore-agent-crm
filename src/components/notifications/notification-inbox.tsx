@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { formatRelativeTime, formatTimeInZone, formatRelativeDay } from "@/lib/format";
 import { markAllNotificationsRead, markNotificationRead } from "@/lib/actions/notifications";
-import { sheetCellClassName, sheetHeadClassName, sheetRowClassName } from "@/lib/sheet-styles";
+import { sheetCellClassName, sheetDateRowClassName, sheetHeadClassName, sheetRowClassName } from "@/lib/sheet-styles";
 import { getWorkSettings } from "@/lib/work-settings";
 import { cn } from "@/lib/utils";
 
@@ -230,7 +230,7 @@ export function NotificationInbox({
             <TableBody>
               {groups.map(([label, rows]) => (
                 <Fragment key={label}>
-                  <TableRow className="bg-secondary hover:bg-secondary">
+                  <TableRow className={sheetDateRowClassName}>
                     <TableCell
                       colSpan={showPeople ? 7 : 5}
                       className={cn(

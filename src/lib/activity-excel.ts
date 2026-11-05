@@ -41,6 +41,7 @@ const WHITE = "FFFFFFFF";
 const RED = "FFB42318";
 const GREEN = "FF067647";
 const AMBER = "FFB54708";
+const YELLOW = "FFFEF08A";
 
 /** Dark header, frozen first row, filter buttons and borders, so each sheet is ready to use. */
 export function finishSheet(sheet: Worksheet) {
@@ -116,10 +117,17 @@ export async function buildActivityWorkbook(input: ActivityWorkbookInput) {
     { header: "Event", key: "event", width: 24 },
     { header: "Detail", key: "detail", width: 16 },
   ];
-  for (const row of input.events) {
+  input.events.forEach((row, index) => {
     const added = events.addRow(row);
     if (row.over) added.getCell("detail").font = { bold: true, color: { argb: RED } };
-  }
+    // Last row of a person's date: this sheet stays one flat list so its filters keep working.
+    const next = input.events[index + 1];
+    if (!next || next.date !== row.date || next.employeeCode !== row.employeeCode) {
+      added.eachCell((cell) => {
+        cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: YELLOW } };
+      });
+    }
+  });
   finishSheet(events);
 
   return Buffer.from(await workbook.xlsx.writeBuffer());

@@ -51,7 +51,7 @@ import {
   parseAttendanceQuery,
   type AttendanceCounts,
 } from "@/lib/attendance-period";
-import { sheetCellClassName, sheetHeadClassName, sheetRowClassName } from "@/lib/sheet-styles";
+import { sheetCellClassName, sheetDateRowClassName, sheetHeadClassName, sheetRowClassName } from "@/lib/sheet-styles";
 import { cn } from "@/lib/utils";
 
 type AttendanceRecord = {
@@ -398,7 +398,7 @@ export default async function AdminAttendancePage({
                     </TableRow>
                   );
                 })}
-                <TableRow className="bg-secondary hover:bg-secondary">
+                <TableRow className={sheetDateRowClassName}>
                   <TableCell className={cn(sheetCellClassName, totalCellClassName, frozenClassName, "z-[1] bg-inherit")}>
                     Total · {monthDays.length} days
                   </TableCell>
