@@ -1117,9 +1117,19 @@ export async function updateEmployeePersonalDetails(
   return { success: true };
 }
 
-export async function setEmployeeBlocked(
+export async function setEmployeeBlocked(employeeId: string, blocked: boolean): Promise<ActionState> {
+  return changeEmployeeAccess(employeeId, blocked ? "SUSPENDED" : "ACTIVE", "block");
+}
+
+/** Takes someone off every list and stops sign-in. All their records stay, and it can be undone. */
+export async function setEmployeeDisabled(employeeId: string, disabled: boolean): Promise<ActionState> {
+  return changeEmployeeAccess(employeeId, disabled ? "TERMINATED" : "ACTIVE", "disable");
+}
+
+async function changeEmployeeAccess(
   employeeId: string,
-  blocked: boolean
+  status: "ACTIVE" | "SUSPENDED" | "TERMINATED",
+  verb: "block" | "disable"
 ): Promise<ActionState> {
   let ctx;
   try {
@@ -1129,15 +1139,17 @@ export async function setEmployeeBlocked(
   }
 
   if (ctx.employeeId === employeeId) {
-    return { error: "You cannot block your own account." };
+    return { error: `You cannot ${verb} your own account.` };
   }
 
   const targetError = await assertCanManageTarget(ctx, employeeId);
   if (targetError) return { error: targetError };
 
   if (await employeeIsLastSuperAdmin(employeeId)) {
-    return { error: "You cannot block the last Super Admin." };
+    return { error: `You cannot ${verb} the last Super Admin.` };
   }
+
+  const blocked = status !== "ACTIVE";
 
   const supabase = await createClient();
   const { data: employee, error: findError } = await supabase
@@ -1152,7 +1164,7 @@ export async function setEmployeeBlocked(
 
   const { error: updateError } = await supabase
     .from("employees")
-    .update({ employment_status: blocked ? "SUSPENDED" : "ACTIVE" })
+    .update({ employment_status: status })
     .eq("id", employeeId);
 
   if (updateError) return { error: updateError.message };
@@ -1174,6 +1186,9 @@ export async function setEmployeeBlocked(
 
   revalidatePath("/admin/employees");
   revalidatePath(`/admin/employees/${employeeId}`);
+  revalidatePath("/admin/dashboard");
+  revalidatePath("/admin/attendance");
+  revalidatePath("/admin/teams");
   return { success: true };
 }
 

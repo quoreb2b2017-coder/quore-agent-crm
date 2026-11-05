@@ -844,6 +844,22 @@ export async function endMeeting(): Promise<Result> {
   return {};
 }
 
+/** Keeps the admins' list complete: a request is followed by what was decided, and by whom. */
+async function notifyAdminsOfMeetingDecision(employeeId: string, accepted: boolean, decidedBy: string) {
+  const { data: employee } = await createServiceClient()
+    .from("employees")
+    .select("full_name, employee_code")
+    .eq("id", employeeId)
+    .maybeSingle();
+  if (!employee) return;
+  const outcome = accepted ? "accepted" : "not accepted";
+  await notifySuperAdmins({
+    type: accepted ? "MEETING_ACCEPTED" : "MEETING_REJECTED",
+    title: `${employee.full_name} meeting ${outcome}`,
+    body: `${employee.full_name} (${employee.employee_code}) meeting ${outcome} by ${decidedBy}.${accepted ? " The meeting timer has started." : ""}`,
+  });
+}
+
 export async function acceptMeeting(meetingId: string): Promise<Result> {
   await ensureGoogleTime();
   const ctx = await getCurrentEmployeeContext();
@@ -877,6 +893,7 @@ export async function acceptMeeting(meetingId: string): Promise<Result> {
       title: "Meeting accepted",
       body: "Admin accepted your meeting. The meeting timer has started.",
     });
+    void notifyAdminsOfMeetingDecision(meeting.employee_id, true, ctx.fullName);
   } catch {
     /* accept still succeeds */
   }
@@ -913,6 +930,7 @@ export async function rejectMeeting(meetingId: string): Promise<Result> {
       title: "Meeting not accepted",
       body: "Admin did not accept the meeting request. You are back on your shift.",
     });
+    void notifyAdminsOfMeetingDecision(meeting.employee_id, false, ctx.fullName);
   } catch {
     /* reject still succeeds */
   }

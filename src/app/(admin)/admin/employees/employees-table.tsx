@@ -79,7 +79,9 @@ const blockedRowClassName =
 const frozenNumberClassName = "sticky left-0 w-11 min-w-11 px-1 text-center";
 const frozenNameClassName = "sm:sticky sm:left-11";
 
-type StatusFilter = "all" | "active" | "inactive";
+type StatusFilter = "total" | "active" | "inactive" | "disabled";
+
+const isDisabled = (status: string) => status === "TERMINATED";
 type SortKey = "fullName" | "email" | "employeeCode" | "departmentName" | "phone" | "employmentStatus";
 type SortState = { key: SortKey; direction: "asc" | "desc" } | null;
 
@@ -160,7 +162,7 @@ export function EmployeesTable({
   canDelete: boolean;
 }) {
   const [query, setQuery] = useState("");
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("total");
   const [sort, setSort] = useState<SortState>(null);
 
   const filtered = useMemo(() => {
@@ -173,10 +175,13 @@ export function EmployeesTable({
         row.employeeCode.toLowerCase().includes(q) ||
         row.departmentName.toLowerCase().includes(q) ||
         (row.phone ?? "").toLowerCase().includes(q);
+      // Disabled people appear only under their own filter.
       const matchesStatus =
-        statusFilter === "all" ||
-        (statusFilter === "active" && isEmploymentActive(row.employmentStatus)) ||
-        (statusFilter === "inactive" && !isEmploymentActive(row.employmentStatus));
+        statusFilter === "disabled"
+          ? isDisabled(row.employmentStatus)
+          : !isDisabled(row.employmentStatus) &&
+            (statusFilter === "total" ||
+              (statusFilter === "active") === isEmploymentActive(row.employmentStatus));
       return matchesQuery && matchesStatus;
     });
   }, [rows, query, statusFilter]);
@@ -207,16 +212,15 @@ export function EmployeesTable({
     );
   }, [rows]);
 
-  const counts = {
-    all: rows.length,
-    active: rows.filter((row) => isEmploymentActive(row.employmentStatus)).length,
-    inactive: rows.filter((row) => !isEmploymentActive(row.employmentStatus)).length,
-  };
+  const disabledCount = rows.filter((row) => isDisabled(row.employmentStatus)).length;
+  const activeCount = rows.filter((row) => isEmploymentActive(row.employmentStatus)).length;
+  const totalCount = rows.length - disabledCount;
 
   const filters: { id: StatusFilter; label: string; count: number }[] = [
-    { id: "all", label: "All", count: counts.all },
-    { id: "active", label: "Active", count: counts.active },
-    { id: "inactive", label: "Inactive", count: counts.inactive },
+    { id: "total", label: "Total", count: totalCount },
+    { id: "active", label: "Active", count: activeCount },
+    { id: "inactive", label: "Inactive", count: totalCount - activeCount },
+    { id: "disabled", label: "Disabled", count: disabledCount },
   ];
 
   return (
@@ -392,6 +396,7 @@ export function EmployeesTable({
                         employeeId={row.id}
                         fullName={row.fullName}
                         isBlocked={row.employmentStatus === "SUSPENDED"}
+                        isDisabled={isDisabled(row.employmentStatus)}
                         isSelf={row.id === currentEmployeeId}
                         canDelete={canDelete}
                       />
@@ -408,7 +413,10 @@ export function EmployeesTable({
         aria-live="polite"
       >
         Showing <span className="font-semibold text-foreground">{filtered.length}</span> of{" "}
-        <span className="font-semibold text-foreground">{rows.length}</span> employees
+        <span className="font-semibold text-foreground">
+          {statusFilter === "disabled" ? disabledCount : totalCount}
+        </span>{" "}
+        {statusFilter === "disabled" ? "disabled employees. Their records are kept." : "employees"}
       </p>
     </div>
   );

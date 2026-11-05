@@ -155,6 +155,7 @@ export default async function EmployeeDetailPage({
               employeeId={employee.id}
               fullName={employee.full_name}
               isBlocked={employee.employment_status === "SUSPENDED"}
+              isDisabled={employee.employment_status === "TERMINATED"}
               isSelf={employee.id === ctx.employeeId}
               canDelete={viewerIsSuperAdmin}
             />

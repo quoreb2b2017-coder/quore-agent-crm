@@ -13,6 +13,8 @@ import {
   Wallet,
   History,
   ClipboardCheck,
+  UserCheck,
+  UserX,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -23,18 +25,20 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { deleteEmployee, setEmployeeBlocked } from "./actions";
+import { deleteEmployee, setEmployeeBlocked, setEmployeeDisabled } from "./actions";
 
 export function EmployeeRowActions({
   employeeId,
   fullName,
   isBlocked,
+  isDisabled,
   isSelf,
   canDelete,
 }: {
   employeeId: string;
   fullName: string;
   isBlocked: boolean;
+  isDisabled: boolean;
   isSelf: boolean;
   canDelete: boolean;
 }) {
@@ -49,6 +53,26 @@ export function EmployeeRowActions({
         return;
       }
       toast.success(blocked ? `${fullName} is blocked` : `${fullName} is unblocked`);
+      router.refresh();
+    });
+  }
+
+  function runDisable(disabled: boolean) {
+    if (
+      disabled &&
+      !window.confirm(
+        `Disable ${fullName}? They will leave the employee list and cannot sign in. Their attendance, salary and history are kept, and you can enable them again.`
+      )
+    ) {
+      return;
+    }
+    startTransition(async () => {
+      const result = await setEmployeeDisabled(employeeId, disabled);
+      if (result.error) {
+        toast.error(result.error);
+        return;
+      }
+      toast.success(disabled ? `${fullName} is disabled` : `${fullName} is enabled`);
       router.refresh();
     });
   }
@@ -98,23 +122,35 @@ export function EmployeeRowActions({
             Setup payroll
           </Link>
         </DropdownMenuItem>
+        {isDisabled ? null : (
+          <DropdownMenuItem
+            disabled={isSelf}
+            title={isSelf ? "You cannot block your own account" : undefined}
+            onClick={() => {
+              if (isSelf) return;
+              const nextBlocked = !isBlocked;
+              if (
+                nextBlocked &&
+                !window.confirm(`Block ${fullName}? They will not be able to sign in until you unblock them.`)
+              ) {
+                return;
+              }
+              runBlock(nextBlocked);
+            }}
+          >
+            {isBlocked ? <Unlock className="size-4" /> : <Ban className="size-4" />}
+            {isBlocked ? "Unblock" : "Block"}
+          </DropdownMenuItem>
+        )}
         <DropdownMenuItem
           disabled={isSelf}
-          title={isSelf ? "You cannot block your own account" : undefined}
+          title={isSelf ? "You cannot disable your own account" : undefined}
           onClick={() => {
-            if (isSelf) return;
-            const nextBlocked = !isBlocked;
-            if (
-              nextBlocked &&
-              !window.confirm(`Block ${fullName}? They will not be able to sign in until you unblock them.`)
-            ) {
-              return;
-            }
-            runBlock(nextBlocked);
+            if (!isSelf) runDisable(!isDisabled);
           }}
         >
-          {isBlocked ? <Unlock className="size-4" /> : <Ban className="size-4" />}
-          {isBlocked ? "Unblock" : "Block"}
+          {isDisabled ? <UserCheck className="size-4" /> : <UserX className="size-4" />}
+          {isDisabled ? "Enable" : "Disable"}
         </DropdownMenuItem>
         {canDelete ? (
           <>

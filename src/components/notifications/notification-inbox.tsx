@@ -37,11 +37,18 @@ export function typeMeta(type?: string) {
   return { label: "Alert", Icon: Bell, tone: "bg-muted text-muted-foreground", group: "all" as const };
 }
 
+const PERSON_ACTIVITY: Record<string, string> = {
+  "logged in": "Logged in",
+  "requested a meeting": "Requested a meeting",
+  "meeting accepted": "Meeting accepted",
+  "meeting not accepted": "Meeting not accepted",
+};
+
 /** Login and meeting alerts name the employee in their text: "Anis logged in", "Anis (1007) signed in...". */
 function personFrom(item: InboxNotification) {
-  const match = /^(.+) (logged in|requested a meeting)$/.exec(item.title);
+  const match = /^(.+) (logged in|requested a meeting|meeting accepted|meeting not accepted)$/.exec(item.title);
   if (!match) return null;
-  const activity = match[2] === "logged in" ? "Logged in" : "Requested a meeting";
+  const activity = PERSON_ACTIVITY[match[2]];
   const code = item.body ? /\(([^)]+)\)/.exec(item.body)?.[1] : undefined;
   return { name: match[1], code: code ?? "—", activity };
 }
