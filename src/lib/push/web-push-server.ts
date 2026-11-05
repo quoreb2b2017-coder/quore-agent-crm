@@ -74,6 +74,53 @@ async function deleteSubscription(endpoint: string) {
   await supabase.from("push_subscriptions").delete().eq("endpoint", endpoint);
 }
 
+/** Sends one alert to one saved browser. Dead browsers are removed; nothing here can fail the caller. */
+async function pushToSubscription(sub: { endpoint: string; p256dh: string; auth: string }, payload: string) {
+  try {
+    await webpush.sendNotification(
+      { endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } },
+      payload,
+      PUSH_OPTIONS
+    );
+  } catch (error) {
+    const status = (error as { statusCode?: number })?.statusCode;
+    if (status === 404 || status === 410) {
+      await deleteSubscription(sub.endpoint);
+    } else {
+      console.error(`Web push failed with status ${status ?? "unknown"}`);
+    }
+  }
+}
+
+/**
+ * Popup outside the app for a new chat message, sent only to the person it was written to.
+ * Not stored in notifications: chat keeps its own unread count, so the bell stays for alerts.
+ */
+export async function sendChatWebPush(input: {
+  recipientId: string;
+  senderId: string;
+  senderName: string;
+  messageId: string;
+  preview: string;
+}) {
+  if (!isWebPushConfigured() || !ensureVapid()) return;
+  const { data: subs } = await createServiceClient()
+    .from("push_subscriptions")
+    .select("endpoint, p256dh, auth")
+    .eq("employee_id", input.recipientId);
+  if (!subs?.length) return;
+
+  const inbox = await inboxPathForEmployee(input.recipientId);
+  const payload = JSON.stringify({
+    id: input.messageId,
+    title: input.senderName,
+    body: input.preview,
+    type: "CHAT_MESSAGE",
+    url: inbox.replace("/notifications", `/chat?with=${input.senderId}`),
+  });
+  await Promise.all(subs.map((sub) => pushToSubscription(sub, payload)));
+}
+
 /**
  * Fan-out Web Push for notifications already written to DB.
  * Fire-and-forget safe: failures never roll back the notification row or socket emit.
@@ -119,23 +166,7 @@ export async function sendWebPushForNotifications(notifications: RealtimeNotific
           url,
           createdAt: row.createdAt,
         });
-        try {
-          await webpush.sendNotification(
-            {
-              endpoint: sub.endpoint,
-              keys: { p256dh: sub.p256dh, auth: sub.auth },
-            },
-            payload,
-            PUSH_OPTIONS
-          );
-        } catch (error) {
-          const status = (error as { statusCode?: number })?.statusCode;
-          if (status === 404 || status === 410) {
-            await deleteSubscription(sub.endpoint);
-          } else {
-            console.error(`Web push failed with status ${status ?? "unknown"}`);
-          }
-        }
+        await pushToSubscription(sub, payload);
       }
     })
   );

@@ -1,6 +1,8 @@
+import { after } from "next/server";
 import { createDataClient as createClient } from "@/lib/supabase/data";
 import { createServiceClient } from "@/lib/supabase/service";
 import { getCurrentEmployeeContext } from "@/lib/permissions/server";
+import { sendChatWebPush } from "@/lib/push/web-push-server";
 import { emitToEmployees } from "@/lib/realtime/emit";
 import { notifyAdminsOfAction } from "@/lib/realtime/notify";
 import {
@@ -275,6 +277,17 @@ export async function deliverChatMessage(input: {
       participantA: convo.participant_a,
       participantB: convo.participant_b,
     });
+
+    // After the response, so sending stays quick. The socket only reaches a tab that is open.
+    after(() =>
+      sendChatWebPush({
+        recipientId: input.peerEmployeeId,
+        senderId: ctx.employeeId,
+        senderName: ctx.fullName,
+        messageId: message.id,
+        preview: (text || displayName || "Attachment").slice(0, 140),
+      }).catch(() => undefined)
+    );
 
     // Only that a message went out: chat stays private, so no text and no recipient.
     notifyAdminsOfAction(ctx, file ? "sent a file in chat" : "sent a chat message");

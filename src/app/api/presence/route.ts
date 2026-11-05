@@ -1,5 +1,6 @@
 import { after } from "next/server";
-import { runPresenceHeartbeat, sweepIdleSessions } from "@/lib/presence-server";
+import { getCurrentEmployeeContext } from "@/lib/permissions/server";
+import { recordLastSeen, runPresenceHeartbeat, sweepIdleSessions } from "@/lib/presence-server";
 
 /**
  * Presence heartbeat. A route handler (not a Server Action) so it never queues behind the
@@ -11,6 +12,8 @@ export async function POST(request: Request) {
     idleMs: Number(body.idleMs),
     hadSession: body.hadSession === true,
   });
+  const ctx = await getCurrentEmployeeContext();
+  if (ctx) after(() => recordLastSeen(ctx.employeeId));
   after(() => sweepIdleSessions());
   return Response.json(result, { headers: { "Cache-Control": "no-store" } });
 }

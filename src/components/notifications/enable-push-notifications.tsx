@@ -51,6 +51,7 @@ export function EnablePushNotifications() {
     function onMessage(event: MessageEvent) {
       if (event.data?.type === "worktrack:notification") {
         window.dispatchEvent(new Event("worktrack:notification"));
+        if (event.data.pushType === "CHAT_MESSAGE") window.dispatchEvent(new Event("worktrack:chat-unread"));
       }
     }
     navigator.serviceWorker.addEventListener("message", onMessage);

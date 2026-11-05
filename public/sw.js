@@ -35,7 +35,16 @@ async function handlePush(event) {
   const clients = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
   // Always show the OS alert, even with a tab in front: people work in other apps with it open.
   for (const client of clients) {
-    client.postMessage({ type: "worktrack:notification", id: payload.id });
+    client.postMessage({ type: "worktrack:notification", id: payload.id, pushType: payload.type });
+  }
+
+  // No popup for a message in the chat you are reading right now.
+  if (payload.type === "CHAT_MESSAGE") {
+    const reading = clients.some((client) => {
+      const url = new URL(client.url);
+      return client.focused && url.pathname + url.search === payload.url;
+    });
+    if (reading) return;
   }
 
   await self.registration.showNotification(payload.title || "WorkTrack", {

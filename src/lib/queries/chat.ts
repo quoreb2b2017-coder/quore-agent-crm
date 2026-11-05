@@ -122,6 +122,28 @@ export async function getChatBootstrap(peerId?: string | null): Promise<ChatBoot
   };
 }
 
+/** Latest conversation rows, for keeping an open chat current when no socket server is running. */
+export async function getChatPreviews(meId: string): Promise<ChatPreview[]> {
+  const supabase = await createClient();
+  const { data } = await supabase
+    .from("chat_conversations")
+    .select("id, participant_a, participant_b, last_message_at, last_message_preview, unread_a, unread_b")
+    .or(`participant_a.eq.${meId},participant_b.eq.${meId}`)
+    .order("last_message_at", { ascending: false });
+
+  const since = chatRetentionSince();
+  return (data ?? []).map((row) => {
+    const fresh = row.last_message_at >= since;
+    return {
+      conversationId: row.id,
+      peerId: row.participant_a === meId ? row.participant_b : row.participant_a,
+      lastMessageAt: fresh ? row.last_message_at : null,
+      lastPreview: fresh ? row.last_message_preview : null,
+      unread: fresh ? (row.participant_a === meId ? row.unread_a : row.unread_b) : 0,
+    };
+  });
+}
+
 export async function getChatUnreadTotal(employeeId: string) {
   const supabase = await createClient();
   const { data, error } = await supabase

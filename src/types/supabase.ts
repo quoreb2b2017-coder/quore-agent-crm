@@ -862,6 +862,16 @@ export interface Database {
           last_read_at?: string;
         }
       >;
+      employee_presence: Table<
+        {
+          employee_id: string;
+          last_seen_at: string;
+        },
+        {
+          employee_id: string;
+          last_seen_at?: string;
+        }
+      >;
       notifications: Table<
 
         {

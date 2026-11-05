@@ -45,6 +45,13 @@ async function overtimeForBreak(employeeId: string, startedAt: string) {
   return softOvertimeMinutes(data?.overtime_minutes ?? 0);
 }
 
+/** Everyone with the app open, Super Admin and HR included. Fails quietly until migration 0041 is applied. */
+export async function recordLastSeen(employeeId: string) {
+  await createServiceClient()
+    .from("employee_presence")
+    .upsert({ employee_id: employeeId, last_seen_at: new Date().toISOString() });
+}
+
 /**
  * Heartbeat from an open CRM tab.
  * Keyboard / mouse idle does not sign anyone out; a break still open at shift end does.

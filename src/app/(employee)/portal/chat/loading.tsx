@@ -1,9 +1,9 @@
 export default function ChatLoading() {
   return (
-    <div className="flex h-full min-h-[24rem] overflow-hidden bg-[#efeae2] dark:bg-[#0b141a]">
-      <div className="hidden w-[22.5rem] border-r border-black/5 bg-white dark:border-white/10 dark:bg-[#111b21] md:block">
-        <div className="border-b border-black/5 px-4 py-3 dark:border-white/10">
-          <div className="h-5 w-16 animate-pulse rounded bg-muted" />
+    <div className="flex h-full min-h-[24rem] overflow-hidden bg-muted">
+      <div className="hidden w-80 border-r bg-card lg:block xl:w-96">
+        <div className="border-b bg-muted px-3 py-3">
+          <div className="h-5 w-16 animate-pulse rounded bg-border" />
         </div>
         <div className="space-y-2 p-3">
           {Array.from({ length: 7 }).map((_, index) => (

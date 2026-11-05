@@ -2,13 +2,13 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
-import { ArrowLeft, Check, CheckCheck, MessageCircle, Paperclip, Search, Send, Smile, X } from "lucide-react";
+import { ArrowLeft, Check, CheckCheck, Clock3, Loader2, MessageCircle, Paperclip, Search, Send, Smile, X } from "lucide-react";
 import { toast } from "sonner";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { getChatThread, markChatRead, sendChatMessage } from "@/lib/actions/chat";
+import { getChatThread, getChatUpdates, markChatRead, sendChatMessage } from "@/lib/actions/chat";
 import {
   CHAT_ATTACHMENT_MAX_BYTES,
   CHAT_MESSAGE_MAX,
@@ -73,10 +73,30 @@ function PersonAvatar({
   );
 }
 
+/** How often an open chat looks for new messages when no socket server is reachable. */
+const POLL_MS = 4000;
+const POLL_WITH_SOCKET_MS = 15_000;
+
+/** Server rows win over what is on screen, except rows already here, so their file links do not reload. */
+function mergeThread(existing: ChatMessage[], incoming: ChatMessage[]) {
+  const byId = new Map(incoming.map((row) => [row.id, row]));
+  for (const row of existing) {
+    if (!row.id.startsWith("temp-")) byId.set(row.id, row);
+  }
+  return Array.from(byId.values()).sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+}
+
 export function ChatWorkspace({ bootstrap }: { bootstrap: ChatBootstrap }) {
   const pathname = usePathname();
-  const { socket, onlineIds } = useAppSocket();
+  const { socket, connected, onlineIds: socketOnlineIds } = useAppSocket();
+  const [polledOnlineIds, setPolledOnlineIds] = useState<string[]>([]);
+  const [peerSeenAt, setPeerSeenAt] = useState<Record<string, string>>({});
+  const onlineIds = useMemo(
+    () => new Set([...socketOnlineIds, ...polledOnlineIds]),
+    [socketOnlineIds, polledOnlineIds]
+  );
   const [query, setQuery] = useState("");
+  const [onlyUnread, setOnlyUnread] = useState(false);
   const [draft, setDraft] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [filePreview, setFilePreview] = useState<string | null>(null);
@@ -120,6 +140,7 @@ export function ChatWorkspace({ bootstrap }: { bootstrap: ChatBootstrap }) {
   const listedPeople = useMemo(() => {
     const needle = query.trim().toLowerCase();
     const filtered = bootstrap.people.filter((person) => {
+      if (onlyUnread && !previewByPeer.get(person.id)?.unread) return false;
       if (!needle) return true;
       return (
         person.fullName.toLowerCase().includes(needle) ||
@@ -138,7 +159,12 @@ export function ChatWorkspace({ bootstrap }: { bootstrap: ChatBootstrap }) {
       if (onlineIds.has(a.id) !== onlineIds.has(b.id)) return onlineIds.has(a.id) ? -1 : 1;
       return a.fullName.localeCompare(b.fullName);
     });
-  }, [bootstrap.people, previewByPeer, query, onlineIds]);
+  }, [bootstrap.people, previewByPeer, query, onlineIds, onlyUnread]);
+
+  const unreadPeople = useMemo(
+    () => bootstrap.people.filter((person) => previewByPeer.get(person.id)?.unread).length,
+    [bootstrap.people, previewByPeer]
+  );
 
   const rememberUrl = useCallback(
     (peerId: string | null) => {
@@ -196,18 +222,7 @@ export function ChatWorkspace({ bootstrap }: { bootstrap: ChatBootstrap }) {
           toast.error(result.error);
           return;
         }
-        setThreads((current) => {
-          const incoming = result.messages;
-          const existing = current[peerId] ?? [];
-          const byId = new Map(incoming.map((row) => [row.id, row]));
-          for (const row of existing) {
-            if (!row.id.startsWith("temp-")) byId.set(row.id, row);
-          }
-          return {
-            ...current,
-            [peerId]: Array.from(byId.values()).sort((a, b) => a.createdAt.localeCompare(b.createdAt)),
-          };
-        });
+        setThreads((current) => ({ ...current, [peerId]: mergeThread(current[peerId] ?? [], result.messages) }));
         if (result.conversationId) {
           setConversationByPeer((current) => ({ ...current, [peerId]: result.conversationId! }));
         }
@@ -251,7 +266,12 @@ export function ChatWorkspace({ bootstrap }: { bootstrap: ChatBootstrap }) {
       const peerId = peerFromMessage(bootstrap.meId, payload);
       if (!peopleById.has(peerId)) return;
       upsertMessage(peerId, payload, payload.senderId === bootstrap.meId);
-      if (selectedRef.current === peerId && payload.senderId !== bootstrap.meId) {
+      // Blue ticks mean it was seen, so a chat open in a background tab does not count yet.
+      if (
+        selectedRef.current === peerId &&
+        payload.senderId !== bootstrap.meId &&
+        document.visibilityState === "visible"
+      ) {
         void markChatRead(peerId).then((marked) => {
           if (!marked.conversationId) return;
           setPreviews((current) =>
@@ -284,6 +304,62 @@ export function ChatWorkspace({ bootstrap }: { bootstrap: ChatBootstrap }) {
       window.clearTimeout(typingTimer.current);
     };
   }, [socket, bootstrap.meId, peopleById, upsertMessage]);
+
+  const threadsRef = useRef(threads);
+  threadsRef.current = threads;
+
+  // Coming back to a chat left open in the background is the moment its messages are seen.
+  useEffect(() => {
+    function onVisible() {
+      const peerId = selectedRef.current;
+      if (document.visibilityState !== "visible" || !peerId) return;
+      void markChatRead(peerId).then(() => window.dispatchEvent(new Event("worktrack:chat-read-self")));
+    }
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, []);
+
+  // The hosted site has no socket server, so without this new messages would need a page refresh.
+  // Online and delivered come from here either way, so it keeps running, slower, with a socket.
+  useEffect(() => {
+    let busy = false;
+
+    async function tick() {
+      if (busy || document.visibilityState !== "visible") return;
+      busy = true;
+      try {
+        const peerId = selectedRef.current;
+        const updates = await getChatUpdates(peerId);
+        setPreviews(
+          updates.previews.map((row) => (row.peerId === selectedRef.current ? { ...row, unread: 0 } : row))
+        );
+        setPolledOnlineIds(updates.onlineIds);
+        if (!peerId) return;
+        const { peerLastReadAt, peerLastSeenAt } = updates;
+        if (peerLastReadAt) setPeerReadAt((current) => ({ ...current, [peerId]: peerLastReadAt }));
+        if (peerLastSeenAt) setPeerSeenAt((current) => ({ ...current, [peerId]: peerLastSeenAt }));
+
+        const latest = updates.previews.find((row) => row.peerId === peerId)?.lastMessageAt;
+        const thread = threadsRef.current[peerId];
+        // No thread yet means opening the chat is already loading it.
+        if (!latest || !thread || thread.some((row) => row.createdAt >= latest)) return;
+        const result = await getChatThread(peerId);
+        if (result.error) return;
+        setThreads((current) => ({ ...current, [peerId]: mergeThread(current[peerId] ?? [], result.messages) }));
+        if (selectedRef.current === peerId) {
+          void markChatRead(peerId).then(() => window.dispatchEvent(new Event("worktrack:chat-read-self")));
+        }
+      } catch {
+        /* the next tick tries again */
+      } finally {
+        busy = false;
+      }
+    }
+
+    void tick();
+    const timer = window.setInterval(() => void tick(), connected ? POLL_WITH_SOCKET_MS : POLL_MS);
+    return () => window.clearInterval(timer);
+  }, [connected, selectedId]);
 
   async function handleSend() {
     if (!selectedId || sending) return;
@@ -390,31 +466,46 @@ export function ChatWorkspace({ bootstrap }: { bootstrap: ChatBootstrap }) {
   const selectedOnline = selectedId ? onlineIds.has(selectedId) : false;
   const selectedTyping = Boolean(selectedId && typingPeerId === selectedId);
   const readAt = selectedId ? peerReadAt[selectedId] : null;
+  const seenAt = selectedId ? peerSeenAt[selectedId] : null;
 
   return (
-    <div className="flex h-full min-h-0 overflow-hidden bg-[#efeae2] dark:bg-[#0b141a]">
+    <div className="flex h-full min-h-0 overflow-hidden bg-muted">
+      {/* One pane until there is room for both next to the app sidebar. */}
       <aside
         className={cn(
-          "flex w-full min-h-0 flex-col border-r border-black/5 bg-[#fff] dark:border-white/10 dark:bg-[#111b21] md:w-[22.5rem] md:max-w-[22.5rem]",
-          selectedId ? "hidden md:flex" : "flex"
+          "w-full min-h-0 flex-col border-r bg-card lg:w-80 lg:shrink-0 xl:w-96",
+          selectedId ? "hidden lg:flex" : "flex"
         )}
       >
-        <div className="shrink-0 border-b border-black/5 bg-[#f0f2f5] px-4 py-3 dark:border-white/10 dark:bg-[#202c33]">
-          <p className="text-[17px] font-semibold tracking-tight">Chats</p>
-          <p className="text-[11px] text-muted-foreground">
-            Select an employee to chat. Messages and files auto-delete after 7 days.
-          </p>
+        <div className="shrink-0 border-b bg-muted px-3 py-2.5">
+          <p className="text-[15px] font-semibold tracking-tight">Chats</p>
+          <p className="text-[11px] text-muted-foreground">Messages and files delete after 7 days.</p>
         </div>
-        <div className="shrink-0 px-3 py-2">
-          <label className="relative block">
+        <div className="flex shrink-0 items-center gap-2 border-b px-3 py-2">
+          <label className="relative block min-w-0 flex-1">
             <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" />
             <Input
               value={query}
               onChange={(event) => setQuery(event.target.value)}
-              placeholder="Search employees"
-              className="h-9 rounded-lg bg-[#f0f2f5] pl-8 dark:bg-[#202c33]"
+              placeholder="Search name or ID"
+              aria-label="Search employees"
+              className="h-8 rounded-sm pl-8"
             />
           </label>
+          <button
+            type="button"
+            aria-pressed={onlyUnread}
+            onClick={() => setOnlyUnread((value) => !value)}
+            className={cn(
+              "inline-flex h-8 shrink-0 items-center gap-1.5 rounded-sm border px-2.5 text-xs font-semibold transition-colors",
+              onlyUnread
+                ? "border-primary bg-primary text-primary-foreground"
+                : "bg-card text-muted-foreground hover:bg-accent hover:text-foreground"
+            )}
+          >
+            Unread
+            <span className="tabular-nums">{unreadPeople}</span>
+          </button>
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto">
           {bootstrap.people.length === 0 ? (
@@ -422,7 +513,9 @@ export function ChatWorkspace({ bootstrap }: { bootstrap: ChatBootstrap }) {
               No other employees to chat with yet
             </p>
           ) : listedPeople.length === 0 ? (
-            <p className="px-4 py-10 text-center text-sm text-muted-foreground">No employees match that search</p>
+            <p className="px-4 py-10 text-center text-sm text-muted-foreground">
+              {onlyUnread && !query.trim() ? "No unread messages" : "No employees match that search"}
+            </p>
           ) : (
             listedPeople.map((person) => {
               const preview = previewByPeer.get(person.id);
@@ -434,14 +527,16 @@ export function ChatWorkspace({ bootstrap }: { bootstrap: ChatBootstrap }) {
                   type="button"
                   onClick={() => void openPeer(person.id)}
                   className={cn(
-                    "flex w-full items-center gap-3 border-b border-black/5 px-3 py-2.5 text-left transition hover:bg-[#f5f6f6] dark:border-white/5 dark:hover:bg-white/5",
-                    active && "bg-[#f0f2f5] dark:bg-white/8"
+                    "flex w-full items-center gap-3 border-b px-3 py-2.5 text-left transition-colors hover:bg-accent",
+                    active && "bg-accent shadow-[inset_3px_0_0_0_var(--primary)]"
                   )}
                 >
                   <PersonAvatar person={person} online={onlineIds.has(person.id)} />
                   <span className="min-w-0 flex-1">
                     <span className="flex items-baseline justify-between gap-2">
-                      <span className="truncate text-[14px] font-medium">{person.fullName}</span>
+                      <span className={cn("truncate text-[13.5px]", preview?.unread ? "font-bold" : "font-medium")}>
+                        {person.fullName}
+                      </span>
                       {preview?.lastMessageAt ? (
                         <span className="shrink-0 text-[11px] text-muted-foreground">
                           {formatRelativeTime(preview.lastMessageAt)}
@@ -453,13 +548,13 @@ export function ChatWorkspace({ bootstrap }: { bootstrap: ChatBootstrap }) {
                         className={cn(
                           "min-w-0 flex-1 truncate text-[12.5px]",
                           preview?.unread ? "font-medium text-foreground" : "text-muted-foreground",
-                          typing && "font-medium text-emerald-600"
+                          typing && "font-medium text-primary"
                         )}
                       >
                         {typing ? "typing…" : preview?.lastPreview || person.roleLabel || person.employeeCode}
                       </span>
                       {preview && preview.unread > 0 ? (
-                        <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-emerald-600 px-1.5 text-[10px] font-semibold text-white">
+                        <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1.5 text-[10px] font-semibold text-primary-foreground">
                           {preview.unread > 99 ? "99+" : preview.unread}
                         </span>
                       ) : null}
@@ -475,29 +570,29 @@ export function ChatWorkspace({ bootstrap }: { bootstrap: ChatBootstrap }) {
       <section
         className={cn(
           "min-h-0 min-w-0 flex-1 flex-col",
-          selectedId ? "flex" : "hidden md:flex"
+          selectedId ? "flex" : "hidden lg:flex"
         )}
       >
         {!selected ? (
           <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center">
-            <span className="flex size-16 items-center justify-center rounded-full bg-white/80 text-emerald-700 shadow-sm dark:bg-white/10">
-              <MessageCircle className="size-8" />
+            <span className="flex size-12 items-center justify-center rounded-md border bg-card text-primary">
+              <MessageCircle className="size-6" />
             </span>
             <div>
-              <p className="text-lg font-semibold tracking-tight">WorkTrack Chat</p>
+              <p className="text-base font-semibold tracking-tight">Pick someone to chat with</p>
               <p className="mt-1 max-w-sm text-sm text-muted-foreground">
-                Pick a teammate on the left to start or continue a private conversation.
+                Choose a name on the left to start or continue a private conversation.
               </p>
             </div>
           </div>
         ) : (
           <>
-            <header className="flex shrink-0 items-center gap-3 border-b border-black/5 bg-[#f0f2f5] px-3 py-2.5 dark:border-white/10 dark:bg-[#202c33]">
+            <header className="flex shrink-0 items-center gap-3 border-b bg-card px-3 py-2">
               <Button
                 type="button"
                 variant="ghost"
                 size="icon"
-                className="md:hidden"
+                className="shrink-0 lg:hidden"
                 onClick={() => {
                   setSelectedId(null);
                   rememberUrl(null);
@@ -521,7 +616,7 @@ export function ChatWorkspace({ bootstrap }: { bootstrap: ChatBootstrap }) {
 
             <div
               ref={scrollerRef}
-              className="relative min-h-0 flex-1 overflow-y-auto px-3 py-3 md:px-8"
+              className="relative min-h-0 flex-1 overflow-y-auto px-3 py-3 lg:px-6"
               onDragEnter={(event) => {
                 event.preventDefault();
                 if (event.dataTransfer.types.includes("Files")) setDragging(true);
@@ -537,38 +632,40 @@ export function ChatWorkspace({ bootstrap }: { bootstrap: ChatBootstrap }) {
                 const dropped = event.dataTransfer.files[0];
                 if (dropped) applyFile(dropped);
               }}
-              style={{
-                backgroundImage:
-                  "radial-gradient(rgba(0,0,0,0.045) 0.8px, transparent 0.8px)",
-                backgroundSize: "18px 18px",
-              }}
             >
               {dragging ? (
-                <div className="pointer-events-none absolute inset-3 z-10 flex items-center justify-center rounded-xl border-2 border-dashed border-emerald-600 bg-emerald-600/10 text-sm font-medium text-emerald-800 dark:text-emerald-200">
+                <div className="pointer-events-none absolute inset-3 z-10 flex items-center justify-center rounded-md border-2 border-dashed border-primary bg-mint-soft text-sm font-medium text-primary">
                   Drop a file up to 5 MB
                 </div>
               ) : null}
               {loadingThread && messages.length === 0 ? (
-                <p className="py-16 text-center text-sm text-muted-foreground">Loading messages…</p>
+                <p className="flex items-center justify-center gap-2 py-16 text-sm text-muted-foreground">
+                  <Loader2 className="size-4 animate-spin text-primary" aria-hidden />
+                  Loading messages
+                </p>
               ) : messages.length === 0 ? (
                 <div className="flex h-full min-h-[16rem] flex-col items-center justify-center text-center">
-                  <p className="rounded-full bg-white/80 px-4 py-2 text-sm text-muted-foreground shadow-sm dark:bg-black/30">
+                  <p className="rounded-sm border bg-card px-4 py-2 text-sm text-muted-foreground">
                     Say hello to {selected.fullName.split(" ")[0]}
                   </p>
                 </div>
               ) : (
-                <ol className="mx-auto flex max-w-3xl flex-col gap-1.5">
+                <ol className="mx-auto flex w-full max-w-4xl flex-col">
                   {messages.map((message, index) => {
                     const mine = message.senderId === bootstrap.meId;
                     const day = formatChatDayLabel(message.createdAt);
                     const previous = messages[index - 1];
                     const showDay = !previous || formatChatDayLabel(previous.createdAt) !== day;
+                    const sameSender = !showDay && previous?.senderId === message.senderId;
+                    const pending = message.id.startsWith("temp-");
                     const seen = Boolean(readAt && message.createdAt <= readAt);
+                    // Delivered: they are online now, or their app has been open since it was sent.
+                    const delivered = seen || selectedOnline || Boolean(seenAt && message.createdAt <= seenAt);
                     return (
-                      <li key={message.id}>
+                      <li key={message.id} className={sameSender ? "mt-0.5" : "mt-2.5"}>
                         {showDay ? (
                           <div className="my-3 flex justify-center">
-                            <span className="rounded-full bg-white/90 px-3 py-1 text-[11px] font-medium text-muted-foreground shadow-sm dark:bg-black/40">
+                            <span className="rounded-sm border bg-card px-2.5 py-0.5 text-[11px] font-semibold text-muted-foreground">
                               {day}
                             </span>
                           </div>
@@ -577,25 +674,25 @@ export function ChatWorkspace({ bootstrap }: { bootstrap: ChatBootstrap }) {
                           <div
                             title={formatTime(message.createdAt)}
                             className={cn(
-                              "max-w-[min(100%,28rem)] overflow-hidden rounded-lg px-2.5 py-1.5 text-[13.5px] leading-5 shadow-sm",
-                              mine
-                                ? "rounded-br-sm bg-[#d9fdd3] text-[#111b21] dark:bg-[#005c4b] dark:text-[#e9edef]"
-                                : "rounded-bl-sm bg-white text-[#111b21] dark:bg-[#202c33] dark:text-[#e9edef]"
+                              "max-w-[85%] overflow-hidden rounded-md border px-2.5 py-1.5 text-[13.5px] leading-5 text-foreground sm:max-w-[70%] xl:max-w-xl",
+                              mine ? "border-primary/25 bg-mint-soft" : "bg-card"
                             )}
                           >
                             {message.attachment ? (
                               <ChatMedia attachment={message.attachment} messageId={message.id} />
                             ) : null}
                             {message.body ? <ChatText text={message.body} /> : null}
-                            <span className="mt-0.5 flex items-center justify-end gap-1 text-[10px] text-black/45 dark:text-white/50">
+                            <span className="mt-0.5 flex items-center justify-end gap-1 text-[10px] text-muted-foreground tabular-nums">
                               {formatCompactTime(message.createdAt)}
-                              {mine ? (
-                                seen ? (
-                                  <CheckCheck className="size-3.5 text-sky-600 dark:text-sky-300" />
-                                ) : (
-                                  <Check className="size-3.5" />
-                                )
-                              ) : null}
+                              {!mine ? null : pending ? (
+                                <Clock3 className="size-3" aria-label="Sending" />
+                              ) : seen ? (
+                                <CheckCheck className="size-3.5 text-sky-600 dark:text-sky-300" aria-label="Seen" />
+                              ) : delivered ? (
+                                <CheckCheck className="size-3.5" aria-label="Delivered" />
+                              ) : (
+                                <Check className="size-3.5" aria-label="Sent" />
+                              )}
                             </span>
                           </div>
                         </div>
@@ -607,19 +704,19 @@ export function ChatWorkspace({ bootstrap }: { bootstrap: ChatBootstrap }) {
             </div>
 
             <form
-              className="flex shrink-0 flex-col gap-2 border-t border-black/5 bg-[#f0f2f5] px-3 py-2.5 dark:border-white/10 dark:bg-[#202c33]"
+              className="flex shrink-0 flex-col gap-2 border-t bg-card px-2 py-2 sm:px-3"
               onSubmit={(event) => {
                 event.preventDefault();
                 void handleSend();
               }}
             >
               {file ? (
-                <div className="flex items-center gap-2 rounded-lg bg-white px-2 py-1.5 ring-1 ring-black/5 dark:bg-[#2a3942] dark:ring-white/10">
+                <div className="flex items-center gap-2 rounded-sm border bg-muted px-2 py-1.5">
                   {filePreview ? (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img src={filePreview} alt="" className="size-10 rounded object-cover" />
                   ) : (
-                    <span className="flex size-10 items-center justify-center rounded bg-emerald-600 text-white">
+                    <span className="flex size-10 items-center justify-center rounded bg-primary text-primary-foreground">
                       <Paperclip className="size-4" />
                     </span>
                   )}
@@ -632,7 +729,7 @@ export function ChatWorkspace({ bootstrap }: { bootstrap: ChatBootstrap }) {
                   </Button>
                 </div>
               ) : null}
-              <div className="flex items-end gap-1.5">
+              <div className="flex items-end gap-1">
                 <input
                   ref={fileInputRef}
                   type="file"
@@ -645,7 +742,7 @@ export function ChatWorkspace({ bootstrap }: { bootstrap: ChatBootstrap }) {
                 />
                 <Popover open={emojiOpen} onOpenChange={setEmojiOpen}>
                   <PopoverTrigger asChild>
-                    <Button type="button" variant="ghost" size="icon" className="size-10 rounded-full text-muted-foreground" aria-label="Emoji">
+                    <Button type="button" variant="ghost" size="icon" className="size-10 shrink-0 rounded-sm text-muted-foreground" aria-label="Emoji">
                       <Smile className="size-5" />
                     </Button>
                   </PopoverTrigger>
@@ -657,7 +754,7 @@ export function ChatWorkspace({ bootstrap }: { bootstrap: ChatBootstrap }) {
                   type="button"
                   variant="ghost"
                   size="icon"
-                  className="size-10 rounded-full text-muted-foreground"
+                  className="size-10 shrink-0 rounded-sm text-muted-foreground"
                   aria-label="Attach file"
                   onClick={() => fileInputRef.current?.click()}
                 >
@@ -681,16 +778,17 @@ export function ChatWorkspace({ bootstrap }: { bootstrap: ChatBootstrap }) {
                   }}
                   rows={1}
                   placeholder="Type a message"
-                  className="field-sizing-content max-h-32 min-h-10 flex-1 resize-none rounded-[1.5rem] border-0 bg-white px-4 py-2.5 text-sm outline-none ring-1 ring-black/5 placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-emerald-600/40 dark:bg-[#2a3942] dark:ring-white/10"
+                  aria-label="Message"
+                  className="field-sizing-content max-h-32 min-h-10 min-w-0 flex-1 resize-none rounded-sm border bg-background px-3 py-2.5 text-sm outline-none placeholder:text-muted-foreground focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-primary/25"
                 />
                 <Button
                   type="submit"
                   size="icon"
                   disabled={sending || (!draft.trim() && !file)}
-                  className="size-10 rounded-full bg-emerald-600 text-white hover:bg-emerald-700"
+                  className="size-10 shrink-0 rounded-sm"
                   aria-label="Send"
                 >
-                  <Send className="size-4" />
+                  {sending ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />}
                 </Button>
               </div>
             </form>

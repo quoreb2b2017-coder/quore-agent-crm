@@ -17,6 +17,10 @@ export function ChatUnreadButton({ href }: { href: string }) {
     const timer = window.setTimeout(() => {
       void load();
     }, 900);
+    // Without a socket server nothing announces a new message, so check every so often.
+    const poll = window.setInterval(() => {
+      if (document.visibilityState === "visible") void load();
+    }, 30_000);
     function onUnread() {
       setUnread((count) => count + 1);
     }
@@ -24,6 +28,7 @@ export function ChatUnreadButton({ href }: { href: string }) {
     window.addEventListener("worktrack:chat-read-self", load);
     return () => {
       window.clearTimeout(timer);
+      window.clearInterval(poll);
       window.removeEventListener("worktrack:chat-unread", onUnread);
       window.removeEventListener("worktrack:chat-read-self", load);
     };

@@ -3,7 +3,7 @@
 import { createDataClient as createClient } from "@/lib/supabase/data";
 import { getCurrentEmployeeContext } from "@/lib/permissions/server";
 import { emitToEmployees } from "@/lib/realtime/emit";
-import { getChatUnreadTotal } from "@/lib/queries/chat";
+import { getChatPreviews, getChatUnreadTotal } from "@/lib/queries/chat";
 import { chatPair } from "@/lib/chat/types";
 import {
   deliverChatMessage,
@@ -58,6 +58,42 @@ export async function getChatThread(peerEmployeeId: string) {
     conversationId: convo.id,
     messages,
     peerLastReadAt: readRow?.last_read_at ?? null,
+  };
+}
+
+/** The heartbeat runs every 20 seconds, and browsers slow it down in background tabs. */
+const ONLINE_WINDOW_MS = 90_000;
+
+/** What changed since the last look: conversations, who is online, and how far the open chat's peer got. */
+export async function getChatUpdates(peerEmployeeId: string | null) {
+  const ctx = await getCurrentEmployeeContext();
+  if (!ctx) return { previews: [], onlineIds: [], peerLastReadAt: null, peerLastSeenAt: null };
+
+  const previews = await getChatPreviews(ctx.employeeId);
+  const open = peerEmployeeId ? previews.find((row) => row.peerId === peerEmployeeId) : null;
+
+  const supabase = await createClient();
+  const onlineSince = new Date(Date.now() - ONLINE_WINDOW_MS).toISOString();
+  const [{ data: seenRows }, peerSeen, peerRead] = await Promise.all([
+    supabase.from("employee_presence").select("employee_id").gte("last_seen_at", onlineSince),
+    open
+      ? supabase.from("employee_presence").select("last_seen_at").eq("employee_id", open.peerId).maybeSingle()
+      : null,
+    open
+      ? supabase
+          .from("chat_reads")
+          .select("last_read_at")
+          .eq("conversation_id", open.conversationId)
+          .eq("employee_id", open.peerId)
+          .maybeSingle()
+      : null,
+  ]);
+
+  return {
+    previews,
+    onlineIds: (seenRows ?? []).map((row) => row.employee_id),
+    peerLastReadAt: peerRead?.data?.last_read_at ?? null,
+    peerLastSeenAt: peerSeen?.data?.last_seen_at ?? null,
   };
 }
 
