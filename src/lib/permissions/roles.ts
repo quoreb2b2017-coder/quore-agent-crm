@@ -1,8 +1,11 @@
 export const SUPER_ADMIN_ROLE = "SUPER_ADMIN";
 export const HR_ROLE = "HR";
 
-/** Legacy seed roles kept in DB but hidden from admin role UI. */
-export const HIDDEN_ROLE_KEYS = ["MANAGER"] as const;
+/**
+ * Legacy seed roles kept in DB but hidden from admin role UI. Neither has screens of its own
+ * (no team view, no field-visit pages), so nobody can be given one by mistake.
+ */
+export const HIDDEN_ROLE_KEYS = ["MANAGER", "FIELD_EMPLOYEE"] as const;
 
 export function isHiddenRole(roleKey: string) {
   return (HIDDEN_ROLE_KEYS as readonly string[]).includes(roleKey);
@@ -42,6 +45,24 @@ const SUPER_ADMIN_ONLY_PERMISSIONS = new Set([
   "compliance.view",
   "compliance.manage",
   "compliance.audit",
+]);
+
+/**
+ * Only Super Admin and HR may hold these. The database refuses them for any other role
+ * (migration 0046), and the WT-IAM-03 automated check uses the same list.
+ */
+export const RESTRICTED_STAFF_PERMISSIONS = new Set([
+  "salary.view",
+  "salary.manage",
+  "payroll.manage",
+  "attendance.manage",
+  "activity.manage",
+  "leave.approve",
+  "policies.manage",
+  "devices.manage",
+  "employees.manage",
+  "audit_logs.view",
+  "compliance.manage",
 ]);
 
 /** payroll.manage stays with Super Admin: HR sets salaries, so must not also run payroll (ISO A.5.3). */

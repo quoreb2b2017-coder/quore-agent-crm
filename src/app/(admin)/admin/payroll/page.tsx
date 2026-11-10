@@ -1,18 +1,12 @@
 import { BadgeIndianRupee, Users, CircleAlert } from "lucide-react";
-import { createDataClient as createClient } from "@/lib/supabase/data";
 import { PageHeader } from "@/components/dashboard/page-header";
 import { StatCard } from "@/components/dashboard/stat-card";
 import { requireManagement } from "@/lib/permissions/server";
 import { formatInr } from "@/lib/format";
-import {
-  readSalaryComponents,
-  salaryFixedDeductions,
-  salaryPackageGross,
-  type SalaryComponents,
-} from "@/lib/payroll";
-import { excludeIds, superAdminEmployeeIds } from "@/lib/queries/admin-dashboard";
+import { loadPayrollRows } from "@/lib/queries/payroll-rows";
+import { ExcelDownloadButton } from "@/components/activity/excel-download-button";
 import { SetupPayrollSheet } from "./setup-payroll-sheet";
-import { PayrollTable, type PayrollRow } from "./payroll-table";
+import { PayrollTable } from "./payroll-table";
 
 export default async function PayrollPage({
   searchParams,
@@ -23,76 +17,9 @@ export default async function PayrollPage({
   const params = await searchParams;
   const requestedEmployee = Array.isArray(params.employee) ? params.employee[0] : params.employee;
 
-  const supabase = await createClient();
-  const adminIds = await superAdminEmployeeIds(supabase);
-  const skip = excludeIds(adminIds);
+  const rows = await loadPayrollRows();
 
-  let employeesQuery = supabase
-    .from("employees")
-    .select("id, full_name, employee_code, salary, employment_status")
-    .neq("employment_status", "TERMINATED")
-    .order("full_name");
-  if (skip) employeesQuery = employeesQuery.not("id", "in", skip);
-
-  const [{ data: employees }, { data: records }] = await Promise.all([
-    employeesQuery,
-    supabase
-      .from("salary_records")
-      .select("id, employee_id, effective_from, base_salary, pay_frequency, components, created_at")
-      .order("effective_from", { ascending: false })
-      .order("created_at", { ascending: false }),
-  ]);
-
-  const latestByEmployee = new Map<
-    string,
-    {
-      effective_from: string;
-      base_salary: number;
-      pay_frequency: string;
-      components: SalaryComponents;
-    }
-  >();
-  for (const record of records ?? []) {
-    if (latestByEmployee.has(record.employee_id)) continue;
-    latestByEmployee.set(record.employee_id, {
-      effective_from: record.effective_from,
-      base_salary: Number(record.base_salary),
-      pay_frequency: record.pay_frequency,
-      components: readSalaryComponents(record.components),
-    });
-  }
-
-  const rows: PayrollRow[] = (employees ?? []).map((employee) => {
-    const setup = latestByEmployee.get(employee.id);
-    const components = setup?.components;
-    const base = setup?.base_salary ?? employee.salary ?? null;
-    const hra = components?.hra ?? 0;
-    const allowance = components?.allowance ?? 0;
-    return {
-      id: employee.id,
-      full_name: employee.full_name,
-      employee_code: employee.employee_code,
-      base,
-      hra,
-      allowance,
-      conveyance: components?.conveyance ?? 0,
-      incomeTax: components?.incomeTax ?? 0,
-      providentFund: components?.providentFund ?? 0,
-      professionalTax: components?.professionalTax ?? 0,
-      extraEarnings: components?.extraEarnings ?? [],
-      extraDeductions: components?.extraDeductions ?? [],
-      deductions: components ? salaryFixedDeductions(components) : 0,
-      gross: base == null || !components ? base : salaryPackageGross(base, components),
-      pay_frequency: setup?.pay_frequency ?? null,
-      effective_from: setup?.effective_from ?? null,
-    };
-  });
-
-  const options = (employees ?? []).map((employee) => ({
-    id: employee.id,
-    full_name: employee.full_name,
-    employee_code: employee.employee_code,
-  }));
+  const options = rows.map((row) => ({ id: row.id, full_name: row.full_name, employee_code: row.employee_code }));
   const presetEmployee = options.some((employee) => employee.id === requestedEmployee)
     ? requestedEmployee
     : undefined;
@@ -107,10 +34,13 @@ export default async function PayrollPage({
         title="Payroll"
         description="30-day payment cycle. Unpaid leave and absences reduce paid days. Payslips generate on the 10th and update when you edit."
         actions={
-          <SetupPayrollSheet
-            employees={options}
-            defaults={presetEmployee ? { employeeId: presetEmployee } : undefined}
-          />
+          <div className="flex flex-wrap gap-2">
+            <ExcelDownloadButton href="/api/payroll/excel" />
+            <SetupPayrollSheet
+              employees={options}
+              defaults={presetEmployee ? { employeeId: presetEmployee } : undefined}
+            />
+          </div>
         }
       />
 

@@ -17,27 +17,10 @@ import { Card, CardContent } from "@/components/ui/card";
 import { EmptyState } from "@/components/dashboard/empty-state";
 import { formatInr, formatIsoDate, initials } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import type { PayLine } from "@/lib/payroll";
+import type { PayrollRow } from "@/lib/queries/payroll-rows";
 import { SetupPayrollSheet, type PayrollEmployeeOption } from "./setup-payroll-sheet";
 
-export type PayrollRow = {
-  id: string;
-  full_name: string;
-  employee_code: string;
-  base: number | null;
-  hra: number;
-  allowance: number;
-  conveyance: number;
-  incomeTax: number;
-  providentFund: number;
-  professionalTax: number;
-  extraEarnings: PayLine[];
-  extraDeductions: PayLine[];
-  deductions: number;
-  gross: number | null;
-  pay_frequency: string | null;
-  effective_from: string | null;
-};
+export type { PayrollRow };
 
 type StatusFilter = "all" | "setup" | "missing";
 

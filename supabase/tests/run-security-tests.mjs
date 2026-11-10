@@ -389,6 +389,196 @@ await test("Onboarding changes are audited with identity and bank numbers redact
   expect(data.pan_number === "***4F" && data.aadhaar_number === "***1234" && data.bank_account_number === "***6677", `not redacted: ${JSON.stringify(data)}`);
 });
 
+await test("Sign-in attempts, presence, salary requests and acknowledgements are server-only", async () => {
+  for (const table of ["auth_sign_in_attempts", "employee_presence", "salary_change_requests", "policy_acknowledgements"]) {
+    const read = await rejects(() => asUser(agent, () => q(`select * from public.${table}`)));
+    const write = await rejects(() =>
+      asUser(admin, () => q(`insert into public.${table} default values`))
+    );
+    expect(read && write, `${table} is reachable by a signed-in user`);
+  }
+});
+
+await test("A salary change cannot be decided by the person who asked for it", async () => {
+  const selfDecided = await rejects(() =>
+    asService(hr.id, () =>
+      q(
+        `insert into public.salary_change_requests (employee_id, record, requested_by, status, decided_by)
+         values ($1, '{}'::jsonb, $2, 'APPROVED', $2)`,
+        [agent.id, hr.id]
+      )
+    )
+  );
+  const rows = await asService(admin.id, async () => {
+    await q(
+      `insert into public.salary_change_requests (employee_id, record, requested_by, status, decided_by)
+       values ($1, '{}'::jsonb, $2, 'APPROVED', $3)`,
+      [agent.id, hr.id, admin.id]
+    );
+    return q("select 1 from public.audit_logs where table_name = 'salary_change_requests'");
+  });
+  expect(selfDecided, "the requester approved their own salary change");
+  expect(rows.length === 1, "salary change decision not in the audit log");
+});
+
+await test("Making someone Super Admin alerts the other Super Admins", async () => {
+  const alerts = await asService(admin.id, async () => {
+    await q(
+      `update public.employee_roles set role_id = (select id from public.roles where role_key = 'SUPER_ADMIN')
+       where employee_id = $1`,
+      [agent2.id]
+    );
+    return q("select employee_id, type from public.notifications where title like '%is now a Super Admin'");
+  });
+  expect(
+    alerts.length === 1 && alerts[0].employee_id === admin.id,
+    `expected one alert to the existing Super Admin, got ${JSON.stringify(alerts)}`
+  );
+});
+
+await test("WT-IAM-03 staff roles hold no restricted permission, and cannot be given one", async () => {
+  const held = await q(
+    `select r.role_key, p.permission_key from public.role_permissions rp
+     join public.roles r on r.id = rp.role_id join public.permissions p on p.id = rp.permission_id
+     where r.role_key not in ('SUPER_ADMIN', 'HR') and public.is_restricted_permission(p.permission_key)`
+  );
+  const regrant = await rejects(() =>
+    asService(admin.id, () =>
+      q(
+        `insert into public.role_permissions (role_id, permission_id)
+         select r.id, p.id from public.roles r, public.permissions p
+         where r.role_key = 'AGENT' and p.permission_key = 'salary.view'`
+      )
+    )
+  );
+  const hrStillAllowed = await asService(admin.id, async () => {
+    await q(
+      `insert into public.role_permissions (role_id, permission_id)
+       select r.id, p.id from public.roles r, public.permissions p
+       where r.role_key = 'HR' and p.permission_key = 'leave.approve'
+       on conflict do nothing`
+    );
+    return true;
+  });
+  expect(held.length === 0, `staff roles still hold: ${JSON.stringify(held)}`);
+  expect(regrant, "salary.view could be given to the Agent role");
+  expect(hrStillAllowed, "HR could not be given leave.approve");
+});
+
+await test("Role changes outside WorkTrack alert Super Admin once; changes in the app do not", async () => {
+  const outside = await asService(null, async () => {
+    await q(
+      `delete from public.role_permissions
+       where role_id = (select id from public.roles where role_key = 'AGENT')`
+    );
+    return q("select employee_id from public.notifications where title = 'Role permissions changed outside WorkTrack'");
+  });
+  const inApp = await asService(admin.id, async () => {
+    await q(
+      `delete from public.role_permissions
+       where role_id = (select id from public.roles where role_key = 'AGENT')`
+    );
+    return q("select 1 from public.notifications where title = 'Role permissions changed outside WorkTrack'");
+  });
+  expect(outside.length === 1 && outside[0].employee_id === admin.id, `expected one alert, got ${outside.length}`);
+  expect(inApp.length === 0, "a change made in the app raised the outside-WorkTrack alert");
+});
+
+// F-02: tables the app now reads and writes with the signed-in person's own token.
+await test("F-02 chat is private to the two people in it, enforced by the database", async () => {
+  const convo = await asUser(agent, async () => {
+    const [a, b] = [agent.id, agent2.id].sort();
+    const [row] = await q(
+      `insert into public.chat_conversations (participant_a, participant_b) values ($1, $2) returning id`,
+      [a, b]
+    );
+    await q(`insert into public.chat_messages (conversation_id, sender_id, body) values ($1, $2, 'hello')`, [row.id, agent.id]);
+    await q(
+      `insert into public.chat_reads (conversation_id, employee_id, last_read_at) values ($1, $2, now())`,
+      [row.id, agent.id]
+    );
+    const mine = await q(`select body from public.chat_messages where conversation_id = $1`, [row.id]);
+    return { id: row.id, mine };
+  });
+  expect(convo.mine.length === 1, "a participant could not read their own chat");
+  const forged = await rejects(() =>
+    asUser(agent, () =>
+      q(
+        `insert into public.chat_conversations (participant_a, participant_b) values ($1, $2)`,
+        [hr.id, admin.id].sort()
+      )
+    )
+  );
+  expect(forged, "someone could open a chat between two other people");
+});
+
+await test("F-02 outsiders and HR cannot read a chat they are not in", async () => {
+  const [a, b] = [agent.id, agent2.id].sort();
+  await asServiceCommit(null, () =>
+    q(`insert into public.chat_conversations (participant_a, participant_b) values ($1, $2) on conflict do nothing`, [a, b])
+  );
+  await asServiceCommit(null, () =>
+    q(
+      `insert into public.chat_messages (conversation_id, sender_id, body)
+       select id, $1, 'private' from public.chat_conversations where participant_a = $2 and participant_b = $3`,
+      [agent.id, a, b]
+    )
+  );
+  const hrSees = await asUser(hr, () => q("select 1 from public.chat_messages where body = 'private'"));
+  const leaverSees = await asUser(leaver, () => q("select 1 from public.chat_messages where body = 'private'"));
+  const peerSees = await asUser(agent2, () => q("select 1 from public.chat_messages where body = 'private'"));
+  expect(hrSees.length === 0 && leaverSees.length === 0, "a non-participant could read a private chat");
+  expect(peerSees.length === 1, "the other participant could not read the chat");
+});
+
+await test("F-02 departments, leave balances and role permissions follow role rules", async () => {
+  const hrDept = await asUser(hr, () => q(`insert into public.departments (name) values ('QA Team') returning id`));
+  const staffDept = await rejects(() => asUser(agent, () => q(`insert into public.departments (name) values ('Rogue')`)));
+  const staffBalance = await rejects(() =>
+    asUser(agent, async () => {
+      const rows = await q(`update public.leave_balances set allocated_days = 99 where employee_id = $1 returning id`, [agent.id]);
+      if (rows.length === 0) throw new Error("no row changed");
+    })
+  );
+  const staffPerm = await rejects(() =>
+    asUser(agent, () =>
+      q(
+        `insert into public.role_permissions (role_id, permission_id)
+         select r.id, p.id from public.roles r, public.permissions p
+         where r.role_key = 'AGENT' and p.permission_key = 'tasks.view' on conflict do nothing`
+      )
+    )
+  );
+  const adminPerm = await asUser(admin, async () => {
+    await q(
+      `insert into public.role_permissions (role_id, permission_id)
+       select r.id, p.id from public.roles r, public.permissions p
+       where r.role_key = 'AGENT' and p.permission_key = 'tasks.view' on conflict do nothing`
+    );
+    return true;
+  });
+  const readable = await asUser(agent, () => q("select 1 from public.leave_types limit 1"));
+  expect(hrDept.length === 1, "HR could not add a department");
+  expect(staffDept, "staff could add a department");
+  expect(staffBalance, "staff could change their own leave balance");
+  expect(staffPerm, "staff could change role permissions");
+  expect(adminPerm, "Super Admin could not change role permissions");
+  expect(readable.length === 1, "staff could not read leave types");
+});
+
+await test("app_settings can be read by anyone signed in but changed only by Super Admin", async () => {
+  const staffRead = await asUser(agent, () => q("select 1 from public.app_settings"));
+  const staffWrite = await asUser(agent, () =>
+    q("update public.app_settings set login_minutes = 0 returning id")
+  );
+  const adminWrite = await asUser(admin, () =>
+    q("update public.app_settings set login_minutes = login_minutes returning id")
+  );
+  expect(staffRead.length === 1, "staff could not read settings");
+  expect(staffWrite.length === 0, "staff changed the company shift settings");
+  expect(adminWrite.length === 1, "Super Admin could not change the settings");
+});
+
 // ------------------------------------------------------------ report
 let failed = 0;
 for (const r of results) {

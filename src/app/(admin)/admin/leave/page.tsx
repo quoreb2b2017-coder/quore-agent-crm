@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { createDataClient as createClient } from "@/lib/supabase/data";
 import { PageHeader } from "@/components/dashboard/page-header";
+import { ExcelDownloadButton } from "@/components/activity/excel-download-button";
 import { todayIso } from "@/lib/format";
 import { isUuid } from "@/lib/attendance-period";
 import { listWatchableEmployees } from "@/lib/queries/admin-dashboard";
@@ -60,7 +61,12 @@ export default async function AdminLeavePage({
               : "Team paid leave quota, requests, and approvals."
             : `${quota.available} paid days this year. Weekends stay week off and are not deducted.`
         }
-        actions={seesAll ? undefined : <ApplyLeaveDialog />}
+        actions={
+          <div className="flex flex-wrap gap-2">
+            <ExcelDownloadButton href={`/api/leave/excel?year=${year}${employeeId ? `&employee=${employeeId}` : ""}`} />
+            {seesAll ? null : <ApplyLeaveDialog />}
+          </div>
+        }
       />
 
       <LeaveQuotaPanel

@@ -4,6 +4,7 @@ import { createDataClient as createClient } from "@/lib/supabase/data";
 import { addDaysIso, shiftWindowLabel, todayIso } from "@/lib/format";
 import { ensureWeekendOff } from "@/lib/attendance-weekend";
 import { PageHeader } from "@/components/dashboard/page-header";
+import { ExcelDownloadButton } from "@/components/activity/excel-download-button";
 import { AttendanceSheet } from "@/components/attendance/attendance-sheet";
 import { ClockWidget } from "@/components/attendance/clock-widget";
 import { BREAK_POLICY_LABEL, creditedProductiveSeconds, istLocalToUtc } from "@/lib/shift";
@@ -41,6 +42,7 @@ export default async function MyAttendancePage() {
       <PageHeader
         title="Attendance"
         description={`${shiftWindowLabel()} · ${BREAK_POLICY_LABEL} · marked on login`}
+        actions={<ExcelDownloadButton href={`/api/attendance/excel?view=yearly&year=${today.slice(0, 4)}`} />}
       />
 
       <ClockWidget session={sessionState} />

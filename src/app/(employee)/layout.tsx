@@ -9,6 +9,7 @@ import { AccountSetupNotice } from "@/components/auth/account-setup-notice";
 import { BlockedAccountGate } from "@/components/auth/blocked-account-gate";
 import { DashboardPageSkeleton } from "@/components/layout/page-skeleton";
 import { TodayCelebrations } from "@/components/celebrations/today-celebrations";
+import { PolicyGate } from "@/components/policies/policy-gate";
 import { isEmploymentBlocked } from "@/lib/format";
 import { loadShell } from "@/lib/shell";
 
@@ -48,6 +49,9 @@ export default async function EmployeeLayout({
       <Suspense fallback={<DashboardPageSkeleton />}>{children}</Suspense>
       <Suspense fallback={null}>
         <TodayCelebrations viewerId={ctx.employeeId} />
+      </Suspense>
+      <Suspense fallback={null}>
+        <PolicyGate employeeId={ctx.employeeId} />
       </Suspense>
     </AppShell>
   );

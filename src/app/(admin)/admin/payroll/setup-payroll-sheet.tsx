@@ -66,8 +66,12 @@ export function SetupPayrollSheet({
   const selected = employees.find((employee) => employee.id === defaults?.employeeId);
   const { handleSubmit, isPending, error } = useActionForm(
     (formData) => setupPayroll({}, formData),
-    () => {
-      toast.success("Payroll saved. Salary slips will update automatically.");
+    (result) => {
+      toast.success(
+        result?.pending
+          ? "Sent to Super Admin for approval. The salary changes once it is approved."
+          : "Payroll saved. Salary slips will update automatically."
+      );
       setOpen(false);
     }
   );

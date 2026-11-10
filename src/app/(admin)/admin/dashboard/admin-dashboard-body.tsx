@@ -351,7 +351,7 @@ export async function AdminDashboardBody({
   );
 }
 
-const APPROVAL_TONE = { MEETING: "info", LEAVE: "warning", EVIDENCE: "brand", EXCEPTION: "danger" } as const;
+const APPROVAL_TONE = { MEETING: "info", LEAVE: "warning", SALARY: "danger", EVIDENCE: "brand", EXCEPTION: "danger" } as const;
 
 /** Next US federal holidays plus the 1st-of-month payslip run. */
 function upcomingDates(today: string) {

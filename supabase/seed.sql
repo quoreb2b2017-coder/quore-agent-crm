@@ -144,7 +144,8 @@ with rp (role_key, permission_key) as (
     ('MANAGER', 'attendance.view'),
     ('MANAGER', 'activity.view'),
     ('MANAGER', 'tasks.view'), ('MANAGER', 'tasks.create'), ('MANAGER', 'tasks.update'),
-    ('MANAGER', 'leave.view'), ('MANAGER', 'leave.apply'), ('MANAGER', 'leave.approve'),
+    -- No leave.approve: only Super Admin and HR approve leave (WT-IAM-03, migration 0046).
+    ('MANAGER', 'leave.view'), ('MANAGER', 'leave.apply'),
     ('MANAGER', 'reports.view'),
 
     -- AGENT / DATABASE / EMAIL_MARKETING share the same workspace.

@@ -2,6 +2,8 @@ import { requireViewer } from "@/lib/permissions/server";
 import { getEmployeeProfileDetails } from "@/lib/queries/profile";
 import { ProfileCard } from "@/components/profile/profile-card";
 import { SettingsNav } from "@/components/profile/settings-nav";
+import { EditOwnProfileSheet } from "@/components/profile/edit-own-profile-sheet";
+import { isSuperAdmin } from "@/lib/permissions/roles";
 
 export default async function SettingsPage() {
   const { ctx } = await requireViewer();
@@ -13,6 +15,17 @@ export default async function SettingsPage() {
       role={ctx.roleDisplayName}
       employeeCode={ctx.employeeCode}
       status={details.employmentStatus || ctx.employmentStatus}
+      actions={
+        // Nobody manages a Super Admin from Employees, so they edit their own details here.
+        isSuperAdmin(ctx.roleKey) ? (
+          <EditOwnProfileSheet
+            fullName={ctx.fullName}
+            phone={details.phone}
+            workLocation={details.workLocation}
+            email={ctx.email}
+          />
+        ) : undefined
+      }
       tabs={
         <SettingsNav
           profileHref="/admin/settings"

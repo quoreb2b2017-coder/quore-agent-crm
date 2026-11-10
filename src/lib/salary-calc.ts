@@ -5,7 +5,6 @@ import {
   deductionLines,
   earningLines,
   employedCalendarDays,
-  payslipPayDateIso,
   prorateAmount,
   roundMoney,
   type PayLine,

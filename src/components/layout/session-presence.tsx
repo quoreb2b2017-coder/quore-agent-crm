@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { clockIn } from "@/lib/actions/attendance";
 import { autoLogoutUrl, postPresence } from "@/lib/presence-client";
 import { createClient } from "@/lib/supabase/client";
+import { formatTime } from "@/lib/format";
 
 export const SESSION_STARTED_FLAG = "worktrack-session-started";
 const FLAG = SESSION_STARTED_FLAG;
@@ -43,6 +44,11 @@ export function SessionPresence({ enableClockIn = true }: { enableClockIn?: bool
         }
         if (result.skipped) return;
         sessionStorage.setItem(FLAG, "done");
+        if (result.activated) {
+          toast.success("Your work timer has started", {
+            description: `Attendance marked at ${formatTime(new Date().toISOString())}.`,
+          });
+        }
       });
     }, 1500);
 
@@ -90,6 +96,7 @@ export function SessionPresence({ enableClockIn = true }: { enableClockIn?: bool
     const signOut = async (reason: string, at: number) => {
       loggingOut = true;
       sessionStorage.removeItem(FLAG);
+      sessionStorage.removeItem("worktrack.push.saved");
       const supabase = createClient();
       await supabase.auth.signOut();
       window.location.assign(autoLogoutUrl(reason, at));

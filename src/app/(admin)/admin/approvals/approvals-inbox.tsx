@@ -17,10 +17,12 @@ import { sheetCellClassName, sheetHeadClassName, sheetRowClassName } from "@/lib
 import { cn } from "@/lib/utils";
 import type { ApprovalItem, ApprovalKind } from "@/lib/queries/approvals";
 import { decideException, reviewEvidence } from "./actions";
+import { decideSalaryChange } from "../payroll/actions";
 
 const KIND_META: Record<ApprovalKind, { label: string; tone: string }> = {
   MEETING: { label: "Meeting", tone: "info" },
   LEAVE: { label: "Leave", tone: "warning" },
+  SALARY: { label: "Salary", tone: "danger" },
   EVIDENCE: { label: "Evidence", tone: "brand" },
   EXCEPTION: { label: "Exception", tone: "danger" },
 };
@@ -29,6 +31,7 @@ const TABS: { key: ApprovalKind | "ALL"; label: string }[] = [
   { key: "ALL", label: "All" },
   { key: "MEETING", label: "Meetings" },
   { key: "LEAVE", label: "Leave" },
+  { key: "SALARY", label: "Salary" },
   { key: "EVIDENCE", label: "Evidence" },
   { key: "EXCEPTION", label: "Exceptions" },
 ];
@@ -87,6 +90,8 @@ export function ApprovalsInbox({
           () => reviewLeaveRequest(selected.id, approve ? "APPROVED" : "REJECTED", approve ? chosenLeaveType : undefined),
           approve ? "Leave approved" : "Leave rejected"
         );
+      case "SALARY":
+        return run(() => decideSalaryChange(selected.id, approve, note), approve ? "Salary change approved" : "Salary change rejected");
       case "EVIDENCE":
         return run(() => reviewEvidence(selected.id, approve ? "ACCEPTED" : "REJECTED", note), approve ? "Evidence accepted" : "Evidence rejected");
       case "EXCEPTION":
@@ -100,7 +105,7 @@ export function ApprovalsInbox({
         <CheckCircle2 className="size-8 text-success" aria-hidden />
         <p className="text-base font-semibold">You are all caught up</p>
         <p className="max-w-sm text-sm text-muted-foreground">
-          Meeting requests, leave requests, evidence reviews and security exceptions will appear here when they need you.
+          Meeting requests, leave requests, salary changes, evidence reviews and security exceptions will appear here when they need you.
         </p>
       </div>
     );
@@ -253,10 +258,13 @@ export function ApprovalsInbox({
               </div>
             ) : null}
 
-            {selected.kind === "EVIDENCE" ? (
+            {selected.kind === "EVIDENCE" || selected.kind === "SALARY" ? (
               <div className="flex flex-col gap-1.5">
                 <Label htmlFor="review-note">
-                  Review note <span className="font-normal text-muted-foreground">(required to reject)</span>
+                  {selected.kind === "SALARY" ? "Note for HR" : "Review note"}{" "}
+                  <span className="font-normal text-muted-foreground">
+                    {selected.kind === "SALARY" ? "(optional)" : "(required to reject)"}
+                  </span>
                 </Label>
                 <Textarea
                   id="review-note"

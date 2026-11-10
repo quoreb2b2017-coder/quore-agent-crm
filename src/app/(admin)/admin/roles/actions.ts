@@ -6,6 +6,7 @@ import { createDataClient as createClient } from "@/lib/supabase/data";
 import { getCurrentEmployeeContext } from "@/lib/permissions/server";
 import { isDepartmentKind } from "@/lib/departments";
 import { notifyAdminsOfAction } from "@/lib/realtime/notify";
+import { isManagement, RESTRICTED_STAFF_PERMISSIONS } from "@/lib/permissions/roles";
 
 export type ActionState = { error?: string; success?: boolean };
 
@@ -241,6 +242,17 @@ export async function setRolePermissions(
   if (!role) return { error: "Role not found." };
   if (role.role_key === "SUPER_ADMIN") {
     return { error: "Super Admin permissions are fixed and cannot be changed here." };
+  }
+
+  // Checked before anything is removed, so a refused save never leaves the role with no permissions.
+  if (!isManagement(role.role_key) && permissionIds.length > 0) {
+    const { data: chosen } = await supabase.from("permissions").select("permission_key").in("id", permissionIds);
+    const refused = (chosen ?? []).map((row) => row.permission_key).filter((key) => RESTRICTED_STAFF_PERMISSIONS.has(key));
+    if (refused.length > 0) {
+      return {
+        error: `Only Super Admin and HR can hold ${refused.join(", ")}. Untick ${refused.length === 1 ? "it" : "them"} for this role.`,
+      };
+    }
   }
 
   const { error: deleteError } = await supabase

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import {
   Loader2,
   Clock,
@@ -20,9 +20,28 @@ import { Label } from "@/components/ui/label";
 import { PublicShell } from "@/components/layout/public-shell";
 import { ClientGreeting, DualOfficeClocks, ShiftCountdown } from "@/components/layout/live-time";
 import { formatTime, shiftWindowLabel } from "@/lib/format";
-import { createClient } from "@/lib/supabase/client";
-import { reportLogin } from "@/lib/actions/notifications";
-import { postLoginPath, readWorktrackJwtClaims } from "@/lib/auth/jwt-claims";
+import Link from "next/link";
+import { signInWithPassword } from "@/lib/actions/auth";
+import { postLoginPath } from "@/lib/auth/jwt-claims";
+import { flashToast } from "@/components/layout/flash-toast";
+
+const subscribeNoop = () => () => {};
+
+/** Why the person landed here, from the ?reason= the app adds when it signs someone out. */
+function messageFromLink(search: string): { error?: string; notice?: string } {
+  const params = new URLSearchParams(search);
+  const reason = params.get("reason");
+  const at = Number(params.get("at"));
+  const when = Number.isFinite(at) && at > 0 ? ` at ${formatTime(new Date(at).toISOString())}` : "";
+  if (reason === "blocked") return { error: "This account is blocked. Contact Super Admin." };
+  if (reason === "idle") return { notice: `Signed out${when}. Sign in to resume your timer.` };
+  if (reason === "break") {
+    return { notice: `Your break time ended${when}, so you were signed out. Sign in to resume your timer.` };
+  }
+  if (reason === "admin") return { notice: `Super Admin logged you out${when}. Sign in again to resume your timer.` };
+  if (reason === "timeout") return { notice: "Your session was closed automatically. Sign in to resume your timer." };
+  return {};
+}
 
 const HIGHLIGHTS = [
   { icon: Clock, text: "Sign in and attendance is marked. US hours follow India 6:30 PM – 3:30 AM IST · two 15-min tea breaks · lunch 45 min" },
@@ -36,33 +55,24 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [email, setEmail] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
+  // Read from the address after hydration; the server render shows no message.
+  const search = useSyncExternalStore(subscribeNoop, () => window.location.search, () => "");
+  const fromLink = useMemo(() => messageFromLink(search), [search]);
+  const [linkDismissed, setLinkDismissed] = useState(false);
+  const notice = linkDismissed ? undefined : fromLink.notice;
+  const shownError = error ?? (linkDismissed ? undefined : fromLink.error);
   const [isPending, setIsPending] = useState(false);
   const [spot, setSpot] = useState({ x: 70, y: 20 });
   const emailOk = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
 
   useEffect(() => {
     emailRef.current?.focus();
-    const params = new URLSearchParams(window.location.search);
-    const reason = params.get("reason");
-    const at = Number(params.get("at"));
-    const when = Number.isFinite(at) && at > 0 ? ` at ${formatTime(new Date(at).toISOString())}` : "";
-    if (reason === "blocked") {
-      setError("This account is blocked. Contact Super Admin.");
-    } else if (reason === "idle") {
-      setNotice(`Signed out${when}. Sign in to resume your timer.`);
-    } else if (reason === "break") {
-      setNotice(`Your break time ended${when}, so you were signed out. Sign in to resume your timer.`);
-    } else if (reason === "admin") {
-      setNotice(`Super Admin logged you out${when}. Sign in again to resume your timer.`);
-    } else if (reason === "timeout") {
-      setNotice("Your session was closed automatically. Sign in to resume your timer.");
-    }
   }, []);
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setError(null);
+    setLinkDismissed(true);
     setIsPending(true);
 
     const formData = new FormData(e.currentTarget);
@@ -87,21 +97,13 @@ export default function LoginPage() {
       return;
     }
 
-    const supabase = createClient();
-    const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
-      email: emailValue,
-      password: passwordValue,
-    });
-
-    if (signInError) {
-      const message = signInError.message.toLowerCase();
-      setError(
-        signInError.message === "Invalid login credentials"
-          ? "Invalid email or password."
-          : message.includes("banned") || message.includes("blocked")
-            ? "This account is blocked. Contact Super Admin."
-            : signInError.message
-      );
+    // On the server: it records the attempt, alerts on repeated wrong passwords and sets the session cookie.
+    const result = await signInWithPassword(emailValue, passwordValue).catch(() => ({
+      error: "Could not reach the server. Check your connection and try again.",
+      roleKey: null,
+    }));
+    if (result.error) {
+      setError(result.error);
       setIsPending(false);
       return;
     }
@@ -113,15 +115,9 @@ export default function LoginPage() {
     //   return;
     // }
 
-    // Leaving the page cancels a running request, so wait for it, but never hold the login up for long.
-    await Promise.race([
-      reportLogin().catch(() => undefined),
-      new Promise((resolve) => setTimeout(resolve, 3000)),
-    ]);
-
-    const claims = readWorktrackJwtClaims(signInData.session?.access_token);
     // Hard navigation is faster than soft RSC replace after auth cookie write.
-    window.location.assign(postLoginPath(claims.roleKey));
+    flashToast({ kind: "success", title: "Welcome back", description: "You are signed in to WorkTrack." });
+    window.location.assign(new URL(postLoginPath(result.roleKey), window.location.origin));
   }
 
   return (
@@ -240,7 +236,12 @@ export default function LoginPage() {
                 </div>
               </div>
               <div className="grid gap-2">
-                <Label htmlFor="password">Password</Label>
+                <div className="flex items-center justify-between gap-2">
+                  <Label htmlFor="password">Password</Label>
+                  <Link href="/forgot-password" className="text-xs font-medium text-primary hover:underline">
+                    Forgot password?
+                  </Link>
+                </div>
                 <div className="relative">
                   <Lock className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
                   <Input
@@ -263,9 +264,9 @@ export default function LoginPage() {
                   </button>
                 </div>
               </div>
-              {error ? (
+              {shownError ? (
                 <p className="animate-in fade-in slide-in-from-top-1 text-sm text-destructive duration-200">
-                  {error}
+                  {shownError}
                 </p>
               ) : null}
               <Button type="submit" size="lg" className="group h-11 w-full" disabled={isPending}>

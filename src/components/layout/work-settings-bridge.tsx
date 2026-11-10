@@ -16,7 +16,7 @@ export function WorkSettingsBridge({
   setWorkSettings(settings);
   useEffect(() => {
     setWorkSettings(settings);
-  }, [settings.loginMinutes, settings.logoutMinutes, settings.timeZone, settings.lateMinutes]);
+  }, [settings]);
   useEffect(() => {
     void syncTrustedClock();
     const id = window.setInterval(() => void syncTrustedClock(), 60_000);

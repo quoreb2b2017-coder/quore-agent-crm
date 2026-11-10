@@ -3,7 +3,6 @@ import { createServiceClient } from "@/lib/supabase/service";
 import {
   DEPARTMENT_KIND_OPTIONS,
   inferDepartmentKindFromName,
-  isDepartmentKind,
   matchesDepartmentName,
   normalizeDepartmentKind,
   type DepartmentKind,

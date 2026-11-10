@@ -1,6 +1,7 @@
 import { getCurrentEmployeeContext } from "@/lib/permissions/server";
 import { createDataClient as createClient } from "@/lib/supabase/data";
 import { PageHeader } from "@/components/dashboard/page-header";
+import { ExcelDownloadButton } from "@/components/activity/excel-download-button";
 import { todayIso } from "@/lib/format";
 import { getPaidLeaveQuota, listLeaveHistory } from "@/lib/queries/leave";
 import { LeaveHistorySheet } from "@/components/leave/leave-history-sheet";
@@ -25,7 +26,12 @@ export default async function MyLeavePage() {
       <PageHeader
         title="Leave"
         description={`Used ${quota.used} of ${quota.available} days. ${quota.remaining} left. Only your leave is shown.`}
-        actions={<ApplyLeaveDialog />}
+        actions={
+          <div className="flex flex-wrap gap-2">
+            <ExcelDownloadButton href="/api/leave/excel" />
+            <ApplyLeaveDialog />
+          </div>
+        }
       />
 
       <LeaveQuotaPanel

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Plus, Trash2, UserPlus } from "lucide-react";
@@ -98,19 +98,26 @@ export function TeamsBoard({
     .replace(/^_+|_+$/g, "");
 
   // Keep sidebar in sync when server re-fetches Admin Control / HR after ensure.
-  useEffect(() => {
+  // Both blocks use React's "adjust state while rendering" instead of an effect.
+  const [seenProps, setSeenProps] = useState({ initialDepartments, initialEmployees });
+  if (seenProps.initialDepartments !== initialDepartments || seenProps.initialEmployees !== initialEmployees) {
+    setSeenProps({ initialDepartments, initialEmployees });
     setDepartments(initialDepartments);
     setEmployees(initialEmployees);
     setSelectedId((current) => {
       if (initialDepartments.some((d) => d.id === current)) return current;
       return initialDepartments[0]?.id ?? "";
     });
-  }, [initialDepartments, initialEmployees]);
+  }
 
-  useEffect(() => {
-    const next = departments.find((d) => d.id === selectedId);
-    if (next) setNameDraft(next.name);
-  }, [departments, selectedId]);
+  // A different team, or the same team renamed, resets the name box.
+  const selectedName = departments.find((d) => d.id === selectedId)?.name;
+  const draftSource = `${selectedId}|${selectedName ?? ""}`;
+  const [seenDraftSource, setSeenDraftSource] = useState(draftSource);
+  if (seenDraftSource !== draftSource) {
+    setSeenDraftSource(draftSource);
+    if (selectedName !== undefined) setNameDraft(selectedName);
+  }
 
   const selected = departments.find((d) => d.id === selectedId) ?? null;
   const deptRoles = selected ? rolesForKind(assignableRoles, selected.kind) : [];

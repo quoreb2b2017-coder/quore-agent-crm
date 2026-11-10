@@ -11,13 +11,12 @@ export async function loadShell(ctx: EmployeeContext, brand: "admin" | "employee
     enforceMfa(ctx.roleKey),
     brand === "admin" && isManagement(ctx.roleKey) ? countApprovals(ctx) : Promise.resolve(null),
   ]);
-  const base = brand === "admin" ? "/admin" : "/portal";
-
   const paletteActions: PaletteAction[] = [];
   if (approvals) {
     paletteActions.push({ label: `Review ${approvals} pending approval${approvals === 1 ? "" : "s"}`, hint: "Approvals", href: "/admin/approvals", icon: "inbox" });
   }
   // TEMP: two-factor paused — don't nag in the command palette.
+  // const base = brand === "admin" ? "/admin" : "/portal";
   // if (!mfaEnabled) {
   //   paletteActions.push({ label: "Turn on two-factor sign-in", hint: "Account security", href: `${base}/security`, icon: "fingerprint" });
   // }

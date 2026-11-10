@@ -55,7 +55,7 @@ export async function AccessCard({
           </div>
           <div className="flex items-center justify-between gap-3 px-5 py-2.5">
             <dt className="text-muted-foreground">Sign-in</dt>
-            <dd><Pill tone={blocked ? "danger" : authUserId ? "success" : "warning"}>{status === "TERMINATED" ? "Disabled" : blocked ? "Blocked" : authUserId ? "Active" : "No account"}</Pill></dd>
+            <dd><Pill tone={blocked ? "danger" : authUserId ? "success" : "warning"}>{status === "TERMINATED" ? "Archived" : blocked ? "Blocked" : authUserId ? "Active" : "No account"}</Pill></dd>
           </div>
           <div className="flex items-center justify-between gap-3 px-5 py-2.5">
             <dt className="text-muted-foreground">Two-factor sign-in</dt>

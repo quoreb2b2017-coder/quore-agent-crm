@@ -2,25 +2,27 @@
 
 import { useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Ban, Unlock, Trash2, Loader2, UserCheck, UserX } from "lucide-react";
+import { Archive, ArchiveRestore, Ban, Unlock, Loader2, ShieldPlus } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { deleteEmployee, setEmployeeBlocked, setEmployeeDisabled } from "../actions";
+import { makeSuperAdmin, setEmployeeBlocked, setEmployeeDisabled } from "../actions";
+import { MAKE_SUPER_ADMIN_WARNING } from "../employee-row-actions";
 
+/** No delete: Archive takes the person off the list and keeps every record (attendance, salary, audit). */
 export function EmployeeManageButtons({
   employeeId,
   fullName,
   isBlocked,
   isDisabled,
   isSelf,
-  canDelete,
+  canMakeSuperAdmin,
 }: {
   employeeId: string;
   fullName: string;
   isBlocked: boolean;
   isDisabled: boolean;
   isSelf: boolean;
-  canDelete: boolean;
+  canMakeSuperAdmin: boolean;
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -47,7 +49,7 @@ export function EmployeeManageButtons({
     if (
       disabled &&
       !window.confirm(
-        `Disable ${fullName}? They will leave the employee list and cannot sign in. Their attendance, salary and history are kept, and you can enable them again.`
+        `Archive ${fullName}? They will leave the employee list and cannot sign in. Their attendance, salary and history are kept, and you can restore them any time.`
       )
     ) {
       return;
@@ -58,21 +60,20 @@ export function EmployeeManageButtons({
         toast.error(result.error);
         return;
       }
-      toast.success(disabled ? `${fullName} is disabled` : `${fullName} is enabled`);
+      toast.success(disabled ? `${fullName} is archived` : `${fullName} is restored`);
       router.refresh();
     });
   }
 
-  function runDelete() {
-    if (!window.confirm(`Delete ${fullName}? This cannot be undone.`)) return;
+  function runMakeSuperAdmin() {
+    if (!window.confirm(MAKE_SUPER_ADMIN_WARNING(fullName))) return;
     startTransition(async () => {
-      const result = await deleteEmployee(employeeId);
+      const result = await makeSuperAdmin(employeeId);
       if (result.error) {
         toast.error(result.error);
         return;
       }
-      toast.success(`${fullName} deleted`);
-      router.replace("/admin/employees");
+      toast.success(`${fullName} is now a Super Admin`);
       router.refresh();
     });
   }
@@ -97,23 +98,16 @@ export function EmployeeManageButtons({
         size="sm"
         variant="outline"
         disabled={isPending || isSelf}
-        title={isSelf ? "You cannot disable your own account" : undefined}
+        title={isSelf ? "You cannot archive your own account" : undefined}
         onClick={() => runDisable(!isDisabled)}
       >
-        {isPending ? <Loader2 className="size-4 animate-spin" /> : isDisabled ? <UserCheck className="size-4" /> : <UserX className="size-4" />}
-        {isDisabled ? "Enable" : "Disable"}
+        {isPending ? <Loader2 className="size-4 animate-spin" /> : isDisabled ? <ArchiveRestore className="size-4" /> : <Archive className="size-4" />}
+        {isDisabled ? "Restore" : "Archive"}
       </Button>
-      {canDelete ? (
-        <Button
-          type="button"
-          size="sm"
-          variant="destructive"
-          disabled={isPending || isSelf}
-          title={isSelf ? "You cannot delete your own account" : undefined}
-          onClick={runDelete}
-        >
-          {isPending ? <Loader2 className="size-4 animate-spin" /> : <Trash2 className="size-4" />}
-          Delete
+      {canMakeSuperAdmin ? (
+        <Button type="button" size="sm" variant="outline" disabled={isPending} onClick={runMakeSuperAdmin}>
+          {isPending ? <Loader2 className="size-4 animate-spin" /> : <ShieldPlus className="size-4" />}
+          Make Super Admin
         </Button>
       ) : null}
     </div>

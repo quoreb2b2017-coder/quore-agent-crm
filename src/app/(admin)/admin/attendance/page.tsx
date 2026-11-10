@@ -42,6 +42,7 @@ import { formatLeaveComment } from "@/lib/leave";
 import { leaveNotesByDay } from "@/lib/queries/leave";
 import { EditAttendanceDialog } from "@/components/attendance/edit-attendance-dialog";
 import { AttendanceFilters } from "@/components/attendance/attendance-filters";
+import { ExcelDownloadButton } from "@/components/activity/excel-download-button";
 import { ExcessSheetCell, TargetSheetCell, targetResult } from "@/components/attendance/sheet-cells";
 import { AttendanceLeaveMark } from "@/components/leave/leave-reason-tip";
 import {
@@ -216,6 +217,13 @@ export default async function AdminAttendancePage({
         );
   const visibleIds = new Set(visibleEmployees.map((employee) => employee.id));
 
+  // The download uses the same filters as the page on screen.
+  const exportQuery = new URLSearchParams(
+    Object.entries(params).flatMap(([key, value]) =>
+      (Array.isArray(value) ? value : value ? [value] : []).map((item) => [key, item])
+    )
+  ).toString();
+
   const titlePerson = selectedEmployee?.full_name ?? (seesAll ? "All employees" : ctx.fullName);
   const description = `${shiftWindowLabel()} · ${titlePerson} · ${periodLabel(query)}`;
 
@@ -282,7 +290,11 @@ export default async function AdminAttendancePage({
 
   return (
     <div className="flex flex-col gap-4">
-      <PageHeader title="Attendance" description={description} />
+      <PageHeader
+        title="Attendance"
+        description={description}
+        actions={<ExcelDownloadButton href={`/api/attendance/excel?${exportQuery}`} />}
+      />
 
       <div className="flex flex-col [&>*+*]:-mt-px">
         <AttendanceFilters

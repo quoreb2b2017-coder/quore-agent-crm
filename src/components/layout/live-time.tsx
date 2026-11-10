@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { useHydrated } from "@/lib/use-hydrated";
 import {
   greetingForNow,
   INDIA_TIME_ZONE,
@@ -198,11 +198,7 @@ export function ShiftCountdown({ className }: { className?: string }) {
 }
 
 export function ClientGreeting({ className }: { className?: string }) {
-  const [greeting, setGreeting] = useState("Welcome");
-
-  useEffect(() => {
-    setGreeting(greetingForNow());
-  }, []);
-
-  return <span className={className}>{greeting}</span>;
+  // The server cannot know the viewer's time of day, so it says "Welcome" until hydration.
+  const hydrated = useHydrated();
+  return <span className={className}>{hydrated ? greetingForNow() : "Welcome"}</span>;
 }

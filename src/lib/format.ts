@@ -12,7 +12,7 @@ export function initials(name: string) {
 
 export function formatEmploymentStatus(status: string) {
   if (status === "SUSPENDED") return "blocked";
-  if (status === "TERMINATED") return "disabled";
+  if (status === "TERMINATED") return "archived";
   return status.toLowerCase().replaceAll("_", " ");
 }
 

@@ -10,6 +10,7 @@ import { createClient } from "@/lib/supabase/client";
 import { reportLogin } from "@/lib/actions/notifications";
 import { postLoginPath, readWorktrackJwtClaims } from "@/lib/auth/jwt-claims";
 import { MFA_ENFORCED } from "@/lib/auth/mfa-flags";
+import { flashToast } from "@/components/layout/flash-toast";
 
 /** Second step of sign-in for accounts with two-factor turned on. */
 export default function VerifyPage() {
@@ -25,7 +26,7 @@ export default function VerifyPage() {
     void (async () => {
       const { data: session } = await supabase.auth.getSession();
       if (!session.session) {
-        window.location.assign("/login");
+        window.location.assign(new URL("/login", window.location.origin));
         return;
       }
       // TEMP: two-factor paused — skip verify and continue to the app.
@@ -66,12 +67,13 @@ export default function VerifyPage() {
     ]);
     const { data } = await supabase.auth.getSession();
     const claims = readWorktrackJwtClaims(data.session?.access_token);
+    flashToast({ kind: "success", title: "Welcome back", description: "You are signed in to WorkTrack." });
     window.location.assign(postLoginPath(claims.roleKey));
   }
 
   async function signInAsSomeoneElse() {
     await createClient().auth.signOut();
-    window.location.assign("/login");
+    window.location.assign(new URL("/login", window.location.origin));
   }
 
   return (

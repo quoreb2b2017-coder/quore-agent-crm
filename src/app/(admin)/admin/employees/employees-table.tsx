@@ -38,6 +38,7 @@ export type EmployeeRow = {
   shiftLabel: string;
   /** True when this person has their own schedule instead of the company shift. */
   hasCustomShift: boolean;
+  isSuperAdmin: boolean;
 };
 
 const statusTone: Record<string, string> = {
@@ -155,11 +156,12 @@ function downloadEmployeesCsv(rows: EmployeeRow[]) {
 export function EmployeesTable({
   rows,
   currentEmployeeId,
-  canDelete,
+  viewerIsSuperAdmin,
 }: {
   rows: EmployeeRow[];
   currentEmployeeId: string;
-  canDelete: boolean;
+  /** Only a Super Admin may make someone else Super Admin. */
+  viewerIsSuperAdmin: boolean;
 }) {
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("total");
@@ -175,7 +177,7 @@ export function EmployeesTable({
         row.employeeCode.toLowerCase().includes(q) ||
         row.departmentName.toLowerCase().includes(q) ||
         (row.phone ?? "").toLowerCase().includes(q);
-      // Disabled people appear only under their own filter.
+      // Archived people appear only under their own filter.
       const matchesStatus =
         statusFilter === "disabled"
           ? isDisabled(row.employmentStatus)
@@ -220,7 +222,7 @@ export function EmployeesTable({
     { id: "total", label: "Total", count: totalCount },
     { id: "active", label: "Active", count: activeCount },
     { id: "inactive", label: "Inactive", count: totalCount - activeCount },
-    { id: "disabled", label: "Disabled", count: disabledCount },
+    { id: "disabled", label: "Archived", count: disabledCount },
   ];
 
   return (
@@ -398,7 +400,12 @@ export function EmployeesTable({
                         isBlocked={row.employmentStatus === "SUSPENDED"}
                         isDisabled={isDisabled(row.employmentStatus)}
                         isSelf={row.id === currentEmployeeId}
-                        canDelete={canDelete}
+                        canMakeSuperAdmin={
+                          viewerIsSuperAdmin &&
+                          !row.isSuperAdmin &&
+                          row.id !== currentEmployeeId &&
+                          row.employmentStatus === "ACTIVE"
+                        }
                       />
                     </TableCell>
                   </TableRow>
@@ -416,7 +423,7 @@ export function EmployeesTable({
         <span className="font-semibold text-foreground">
           {statusFilter === "disabled" ? disabledCount : totalCount}
         </span>{" "}
-        {statusFilter === "disabled" ? "disabled employees. Their records are kept." : "employees"}
+        {statusFilter === "disabled" ? "archived employees. Their records are kept." : "employees"}
       </p>
     </div>
   );

@@ -8,13 +8,13 @@ import {
   User,
   Ban,
   Unlock,
-  Trash2,
   Loader2,
   Wallet,
   History,
   ClipboardCheck,
-  UserCheck,
-  UserX,
+  Archive,
+  ArchiveRestore,
+  ShieldPlus,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -25,25 +25,44 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { deleteEmployee, setEmployeeBlocked, setEmployeeDisabled } from "./actions";
+import { makeSuperAdmin, setEmployeeBlocked, setEmployeeDisabled } from "./actions";
 
+export const MAKE_SUPER_ADMIN_WARNING = (name: string) =>
+  `Make ${name} a Super Admin?\n\nThey will be able to see and change everything: salaries, roles, every employee and the audit log. ` +
+  `Their own shift clock and payroll stop, like yours. Every Super Admin gets a security alert.\n\n` +
+  `To undo it, put them back into a team from Teams.`;
+
+/** No delete: Archive takes the person off the list and keeps every record (attendance, salary, audit). */
 export function EmployeeRowActions({
   employeeId,
   fullName,
   isBlocked,
   isDisabled,
   isSelf,
-  canDelete,
+  canMakeSuperAdmin,
 }: {
   employeeId: string;
   fullName: string;
   isBlocked: boolean;
   isDisabled: boolean;
   isSelf: boolean;
-  canDelete: boolean;
+  canMakeSuperAdmin: boolean;
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
+
+  function runMakeSuperAdmin() {
+    if (!window.confirm(MAKE_SUPER_ADMIN_WARNING(fullName))) return;
+    startTransition(async () => {
+      const result = await makeSuperAdmin(employeeId);
+      if (result.error) {
+        toast.error(result.error);
+        return;
+      }
+      toast.success(`${fullName} is now a Super Admin`);
+      router.refresh();
+    });
+  }
 
   function runBlock(blocked: boolean) {
     startTransition(async () => {
@@ -61,7 +80,7 @@ export function EmployeeRowActions({
     if (
       disabled &&
       !window.confirm(
-        `Disable ${fullName}? They will leave the employee list and cannot sign in. Their attendance, salary and history are kept, and you can enable them again.`
+        `Archive ${fullName}? They will leave the employee list and cannot sign in. Their attendance, salary and history are kept, and you can restore them any time.`
       )
     ) {
       return;
@@ -72,20 +91,7 @@ export function EmployeeRowActions({
         toast.error(result.error);
         return;
       }
-      toast.success(disabled ? `${fullName} is disabled` : `${fullName} is enabled`);
-      router.refresh();
-    });
-  }
-
-  function runDelete() {
-    if (!window.confirm(`Delete ${fullName}? This cannot be undone.`)) return;
-    startTransition(async () => {
-      const result = await deleteEmployee(employeeId);
-      if (result.error) {
-        toast.error(result.error);
-        return;
-      }
-      toast.success(`${fullName} deleted`);
+      toast.success(disabled ? `${fullName} is archived` : `${fullName} is restored`);
       router.refresh();
     });
   }
@@ -144,25 +150,20 @@ export function EmployeeRowActions({
         )}
         <DropdownMenuItem
           disabled={isSelf}
-          title={isSelf ? "You cannot disable your own account" : undefined}
+          title={isSelf ? "You cannot archive your own account" : undefined}
           onClick={() => {
             if (!isSelf) runDisable(!isDisabled);
           }}
         >
-          {isDisabled ? <UserCheck className="size-4" /> : <UserX className="size-4" />}
-          {isDisabled ? "Enable" : "Disable"}
+          {isDisabled ? <ArchiveRestore className="size-4" /> : <Archive className="size-4" />}
+          {isDisabled ? "Restore" : "Archive"}
         </DropdownMenuItem>
-        {canDelete ? (
+        {canMakeSuperAdmin ? (
           <>
             <DropdownMenuSeparator />
-            <DropdownMenuItem
-              variant="destructive"
-              disabled={isSelf}
-              title={isSelf ? "You cannot delete your own account" : undefined}
-              onClick={runDelete}
-            >
-              <Trash2 className="size-4" />
-              Delete
+            <DropdownMenuItem onClick={runMakeSuperAdmin}>
+              <ShieldPlus className="size-4" />
+              Make Super Admin
             </DropdownMenuItem>
           </>
         ) : null}

@@ -862,6 +862,64 @@ export interface Database {
           last_read_at?: string;
         }
       >;
+      policy_acknowledgements: Table<
+        {
+          id: string;
+          employee_id: string;
+          document_key: string;
+          version: string;
+          acknowledged_at: string;
+        },
+        {
+          id?: string;
+          employee_id: string;
+          document_key: string;
+          version: string;
+          acknowledged_at?: string;
+        }
+      >;
+      salary_change_requests: Table<
+        {
+          id: string;
+          employee_id: string;
+          record: Json;
+          requested_by: string | null;
+          status: "PENDING" | "APPROVED" | "REJECTED";
+          decided_by: string | null;
+          decided_at: string | null;
+          decision_note: string | null;
+          created_at: string;
+        },
+        {
+          id?: string;
+          employee_id: string;
+          record: Json;
+          requested_by?: string | null;
+          status?: "PENDING" | "APPROVED" | "REJECTED";
+          decided_by?: string | null;
+          decided_at?: string | null;
+          decision_note?: string | null;
+          created_at?: string;
+        }
+      >;
+      auth_sign_in_attempts: Table<
+        {
+          id: string;
+          email: string;
+          ip: string | null;
+          user_agent: string | null;
+          succeeded: boolean;
+          created_at: string;
+        },
+        {
+          id?: string;
+          email: string;
+          ip?: string | null;
+          user_agent?: string | null;
+          succeeded: boolean;
+          created_at?: string;
+        }
+      >;
       employee_presence: Table<
         {
           employee_id: string;

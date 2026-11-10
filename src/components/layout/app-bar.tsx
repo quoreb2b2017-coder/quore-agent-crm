@@ -20,6 +20,7 @@ import { ChatUnreadButton } from "@/components/chat/chat-unread-button";
 import { openCommandPalette } from "@/components/layout/command-palette";
 import { createClient } from "@/lib/supabase/client";
 import { endWorkSession } from "@/lib/actions/attendance";
+import { flashToast } from "@/components/layout/flash-toast";
 import type { EmployeeContext } from "@/lib/permissions/types";
 
 export function initials(name: string) {
@@ -60,12 +61,15 @@ export function AppBar({
     toast.loading("Logging out...", { id: "logout" });
     try {
       sessionStorage.removeItem("worktrack-session-started");
+      // The next person to sign in on this browser saves it for themselves.
+      sessionStorage.removeItem("worktrack.push.saved");
       await Promise.race([
         endWorkSession().catch(() => undefined),
         new Promise((resolve) => setTimeout(resolve, 4000)),
       ]);
       await createClient().auth.signOut();
-      window.location.assign("/login");
+      flashToast({ kind: "info", title: "You are signed out", description: "See you next time." });
+      window.location.assign(new URL("/login", window.location.origin));
     } catch {
       toast.error("Could not log out. Try again.", { id: "logout" });
       setLoggingOut(false);

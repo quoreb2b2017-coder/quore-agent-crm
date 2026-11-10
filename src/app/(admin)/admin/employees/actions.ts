@@ -6,7 +6,6 @@ import { createDataClient as createClient } from "@/lib/supabase/data";
 import { createServiceClient } from "@/lib/supabase/service";
 import { getCurrentEmployeeContext, hasPermission } from "@/lib/permissions/server";
 import {
-  HR_ROLE,
   isHr,
   isManagement,
   isSuperAdmin,
@@ -470,7 +469,8 @@ export async function assignEmployeeToDepartment(
   const blocked = await assertCanManageTarget(ctx, employeeId);
   if (blocked) return { error: blocked };
 
-  // Moving someone sets the role of the new team, which would take Super Admin access away.
+  // Moving someone sets the role of the new team, which takes Super Admin access away.
+  // Only another Super Admin may do that, never to themselves or to the last one.
   const { data: superAdminRole } = await createServiceClient()
     .from("employee_roles")
     .select("id, roles!inner(role_key)")
@@ -478,7 +478,9 @@ export async function assignEmployeeToDepartment(
     .eq("roles.role_key", SUPER_ADMIN_ROLE)
     .limit(1);
   if (superAdminRole?.length) {
-    return { error: "A Super Admin cannot be moved between teams." };
+    if (!isSuperAdmin(ctx.roleKey)) return { error: "Only Super Admin can move a Super Admin into a team." };
+    if (employeeId === ctx.employeeId) return { error: "You cannot remove your own Super Admin role." };
+    if (await employeeIsLastSuperAdmin(employeeId)) return { error: "You cannot remove the last Super Admin." };
   }
 
   const mismatch = await assertRoleMatchesDepartment(departmentId, roleKey);
@@ -1134,19 +1136,151 @@ export async function updateEmployeePersonalDetails(
   return { success: true };
 }
 
+const superAdminSchema = z
+  .object({
+    fullName: z.string().trim().min(2, "Enter the full name"),
+    email: z.email("Enter a valid email"),
+    phone: z.string().trim().min(1, "Phone number is required"),
+    // Longer than for staff: this account can see and change everything.
+    password: z.string().min(8, "Use at least 8 characters for a Super Admin password"),
+    confirmPassword: z.string().min(1, "Confirm password"),
+  })
+  .refine((data) => data.password === data.confirmPassword, {
+    message: "Passwords do not match",
+    path: ["confirmPassword"],
+  });
+
+/**
+ * Creates a brand-new Super Admin account: sign-in, employee record and role, no team.
+ * Only a Super Admin can do it. Every Super Admin gets a security alert (migration 0045).
+ */
+export async function createSuperAdmin(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  const ctx = await getCurrentEmployeeContext();
+  if (!ctx || !isSuperAdmin(ctx.roleKey)) return { error: "Only Super Admin can add a Super Admin." };
+
+  const parsed = superAdminSchema.safeParse({
+    fullName: formData.get("fullName"),
+    email: String(formData.get("email") ?? "").trim(),
+    phone: formData.get("phone"),
+    password: formData.get("password"),
+    confirmPassword: formData.get("confirmPassword"),
+  });
+  if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Check the details" };
+  const data = parsed.data;
+  // Not asked for in the form: Super Admin is not on payroll or the staff list, so the ID only has to be unique.
+  const employeeCode = `SA-${Date.now().toString(36).toUpperCase()}`;
+
+  const supabase = await createClient();
+  const service = createServiceClient();
+  const { data: role } = await service.from("roles").select("id").eq("role_key", SUPER_ADMIN_ROLE).maybeSingle();
+  if (!role) return { error: "The Super Admin role is missing." };
+
+  const { data: authUser, error: authError } = await service.auth.admin.createUser({
+    email: data.email,
+    password: data.password,
+    email_confirm: true,
+    user_metadata: { full_name: data.fullName },
+  });
+  if (authError || !authUser.user) return { error: authError?.message ?? "Could not create the sign-in account" };
+
+  const { data: employee, error: insertError } = await supabase
+    .from("employees")
+    .insert({
+      employee_code: employeeCode,
+      full_name: data.fullName,
+      email: data.email,
+      phone: data.phone,
+      auth_user_id: authUser.user.id,
+      employment_status: "ACTIVE",
+      joining_date: new Date().toISOString().slice(0, 10),
+    })
+    .select("id")
+    .single();
+  if (insertError || !employee) {
+    await service.auth.admin.deleteUser(authUser.user.id);
+    return {
+      error: /duplicate|unique/i.test(insertError?.message ?? "")
+        ? "That email is already used by another account."
+        : (insertError?.message ?? "Could not create the employee record"),
+    };
+  }
+
+  const { error: roleError } = await supabase
+    .from("employee_roles")
+    .insert({ employee_id: employee.id, role_id: role.id, is_primary: true });
+  if (roleError) {
+    // Leave nothing half-made: no role means the account could not do anything anyway.
+    await supabase.from("employees").delete().eq("id", employee.id);
+    await service.auth.admin.deleteUser(authUser.user.id);
+    return { error: `Could not give the Super Admin role: ${roleError.message}` };
+  }
+
+  notifyAdminsOfAction(ctx, "added a new Super Admin:", { targetEmployeeId: employee.id });
+  revalidatePath("/admin/employees");
+  revalidatePath("/admin/teams");
+  revalidatePath("/admin/compliance", "layout");
+  return { success: true, employeeId: employee.id };
+}
+
+/**
+ * Super Admin gives another active person the Super Admin role, so pay, leave and access
+ * decisions can always have a second person (control WT-IAM-04). The database alerts every
+ * other Super Admin when this happens (migration 0045). To take it away again, put the person
+ * into a team from Teams.
+ */
+export async function makeSuperAdmin(employeeId: string): Promise<ActionState> {
+  const ctx = await getCurrentEmployeeContext();
+  if (!ctx || !isSuperAdmin(ctx.roleKey)) return { error: "Only Super Admin can make someone Super Admin." };
+  if (!z.string().uuid().safeParse(employeeId).success) return { error: "Employee not found." };
+  if (employeeId === ctx.employeeId) return { error: "You are already Super Admin." };
+
+  const supabase = await createClient();
+  const service = createServiceClient();
+  const [{ data: employee }, { data: role }] = await Promise.all([
+    supabase.from("employees").select("id, employment_status, auth_user_id").eq("id", employeeId).maybeSingle(),
+    service.from("roles").select("id").eq("role_key", SUPER_ADMIN_ROLE).maybeSingle(),
+  ]);
+  if (!employee) return { error: "Employee not found." };
+  if (employee.employment_status !== "ACTIVE") {
+    return { error: "Only an active employee can be made Super Admin. Restore or unblock them first." };
+  }
+  if (!employee.auth_user_id) return { error: "This employee has no sign-in account yet." };
+  if (!role) return { error: "The Super Admin role is missing." };
+
+  const { data: current } = await supabase
+    .from("employee_roles")
+    .select("id, role_id")
+    .eq("employee_id", employeeId)
+    .eq("is_primary", true)
+    .maybeSingle();
+  if (current?.role_id === role.id) return { error: "This person is already Super Admin." };
+
+  const { error } = current
+    ? await supabase.from("employee_roles").update({ role_id: role.id }).eq("id", current.id)
+    : await supabase.from("employee_roles").insert({ employee_id: employeeId, role_id: role.id, is_primary: true });
+  if (error) return { error: error.message };
+
+  notifyAdminsOfAction(ctx, "made Super Admin:", { targetEmployeeId: employeeId });
+  revalidatePath("/admin/employees");
+  revalidatePath(`/admin/employees/${employeeId}`);
+  revalidatePath("/admin/teams");
+  revalidatePath("/admin/compliance", "layout");
+  return { success: true };
+}
+
 export async function setEmployeeBlocked(employeeId: string, blocked: boolean): Promise<ActionState> {
   return changeEmployeeAccess(employeeId, blocked ? "SUSPENDED" : "ACTIVE", "block");
 }
 
 /** Takes someone off every list and stops sign-in. All their records stay, and it can be undone. */
 export async function setEmployeeDisabled(employeeId: string, disabled: boolean): Promise<ActionState> {
-  return changeEmployeeAccess(employeeId, disabled ? "TERMINATED" : "ACTIVE", "disable");
+  return changeEmployeeAccess(employeeId, disabled ? "TERMINATED" : "ACTIVE", "archive");
 }
 
 async function changeEmployeeAccess(
   employeeId: string,
   status: "ACTIVE" | "SUSPENDED" | "TERMINATED",
-  verb: "block" | "disable"
+  verb: "block" | "archive"
 ): Promise<ActionState> {
   let ctx;
   try {
@@ -1207,52 +1341,8 @@ async function changeEmployeeAccess(
   revalidatePath("/admin/attendance");
   revalidatePath("/admin/teams");
   const accessAction =
-    status === "TERMINATED" ? "disabled" : status === "SUSPENDED" ? "blocked" : verb === "disable" ? "enabled" : "unblocked";
+    status === "TERMINATED" ? "archived" : status === "SUSPENDED" ? "blocked" : verb === "archive" ? "restored" : "unblocked";
   notifyAdminsOfAction(ctx, `${accessAction} the employee`, { targetEmployeeId: employeeId });
   return { success: true };
 }
 
-export async function deleteEmployee(employeeId: string): Promise<ActionState> {
-  let ctx;
-  try {
-    ctx = await assertCanManageEmployees();
-  } catch (e) {
-    return { error: e instanceof Error ? e.message : "Not authorized" };
-  }
-
-  if (!isSuperAdmin(ctx.roleKey)) {
-    return { error: "Only Super Admin can delete employees." };
-  }
-
-  if (ctx.employeeId === employeeId) {
-    return { error: "You cannot delete your own account." };
-  }
-
-  if (await employeeIsLastSuperAdmin(employeeId)) {
-    return { error: "You cannot delete the last Super Admin." };
-  }
-
-  const supabase = await createClient();
-  const { data: employee, error: findError } = await supabase
-    .from("employees")
-    .select("auth_user_id, full_name, employee_code")
-    .eq("id", employeeId)
-    .single();
-
-  if (findError || !employee) {
-    return { error: findError?.message ?? "Employee not found" };
-  }
-
-  const { error: deleteError } = await supabase.from("employees").delete().eq("id", employeeId);
-  if (deleteError) return { error: deleteError.message };
-
-  if (employee.auth_user_id) {
-    const service = createServiceClient();
-    await service.auth.admin.deleteUser(employee.auth_user_id);
-  }
-
-  // The row is gone by the time the alert runs, so the name is passed in directly.
-  notifyAdminsOfAction(ctx, `deleted the employee ${employee.full_name} (${employee.employee_code})`);
-  revalidatePath("/admin/employees");
-  return { success: true };
-}

@@ -157,7 +157,12 @@ export default async function EmployeeDetailPage({
               isBlocked={employee.employment_status === "SUSPENDED"}
               isDisabled={employee.employment_status === "TERMINATED"}
               isSelf={employee.id === ctx.employeeId}
-              canDelete={viewerIsSuperAdmin}
+              canMakeSuperAdmin={
+                viewerIsSuperAdmin &&
+                role?.role_key !== "SUPER_ADMIN" &&
+                employee.id !== ctx.employeeId &&
+                employee.employment_status === "ACTIVE"
+              }
             />
           }
           contact={tab !== "profile" ? undefined : [

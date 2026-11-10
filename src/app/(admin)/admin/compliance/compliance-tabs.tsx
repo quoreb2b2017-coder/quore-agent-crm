@@ -12,6 +12,7 @@ const TABS = [
   { href: "/admin/compliance/soa", label: "Statement of Applicability" },
   { href: "/admin/compliance/actions", label: "Corrective actions" },
   { href: "/admin/compliance/exceptions", label: "Exceptions" },
+  { href: "/admin/compliance/acknowledgements", label: "Acknowledgements" },
 ];
 
 export function ComplianceTabs({ badges }: { badges: Record<string, number> }) {

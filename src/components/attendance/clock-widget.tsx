@@ -39,6 +39,7 @@ import {
 import { formatMinutesLabel, getWorkSettings, setWorkSettings } from "@/lib/work-settings";
 import type { MySessionState } from "@/lib/queries/employee-status";
 import { cn } from "@/lib/utils";
+import { useHydrated } from "@/lib/use-hydrated";
 
 /** Counts up from the click with a monotonic clock, so a Google time sync cannot freeze it. */
 function useElapsed(startedAt: string | null, running: boolean) {
@@ -50,6 +51,8 @@ function useElapsed(startedAt: string | null, running: boolean) {
     if (!running || !startedAt) {
       shownRef.current = 0;
       startedRef.current = null;
+      // Deliberate: clearing here, not during render, keeps a rewritten click time from flashing 0.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setSeconds(null);
       return;
     }
@@ -159,13 +162,17 @@ export function ClockWidget({
     halfDay = false,
   } = session;
   const [isPending, startTransition] = useTransition();
-  const [mounted, setMounted] = useState(false);
+  const mounted = useHydrated();
   const [localBreak, setLocalBreak] = useState<{ slot: BreakSlot; startedAt: string } | null>(null);
   const [breakResume, setBreakResume] = useState<{ extra: number; slot: BreakSlot | null } | null>(null);
   const [washResume, setWashResume] = useState<{ extra: number } | null>(null);
   const router = useRouter();
   const breakCaughtUp = breakResume != null && !isOnBreak;
   const washCaughtUp = washResume != null && !washroomStartedAt;
+  // The server has caught up with a click shown early: drop the local copy (React's "adjust state while rendering").
+  if (localBreak && isOnBreak && openBreakStartedAt) setLocalBreak(null);
+  if (breakCaughtUp) setBreakResume(null);
+  if (washCaughtUp) setWashResume(null);
   const heldBreak = breakCaughtUp ? 0 : (breakResume?.extra ?? 0);
   const heldWash = washCaughtUp ? 0 : (washResume?.extra ?? 0);
   const breakActive = (isOnBreak || localBreak != null) && breakResume == null;
@@ -253,22 +260,6 @@ export function ClockWidget({
   );
 
   useEffect(() => {
-    setMounted(true);
-  }, []);
-
-  useEffect(() => {
-    if (localBreak && isOnBreak && openBreakStartedAt) setLocalBreak(null);
-  }, [localBreak, isOnBreak, openBreakStartedAt]);
-
-  useEffect(() => {
-    if (breakCaughtUp) setBreakResume(null);
-  }, [breakCaughtUp]);
-
-  useEffect(() => {
-    if (washCaughtUp) setWashResume(null);
-  }, [washCaughtUp]);
-
-  useEffect(() => {
     if (readOnly || !meetingPending) return;
     const id = window.setInterval(() => router.refresh(), 8000);
     return () => window.clearInterval(id);
@@ -297,6 +288,8 @@ export function ClockWidget({
   }
 
   function beginBreak(slot: BreakSlot) {
+    // Runs on click, not during render: the click instant is what the break should start from.
+    // eslint-disable-next-line react-hooks/purity
     const clickPerf = performance.now();
     setLocalBreak({ slot, startedAt: trustedNowDate().toISOString() });
     startTransition(async () => {

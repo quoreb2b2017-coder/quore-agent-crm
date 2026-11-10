@@ -15,7 +15,7 @@ export function AccountSetupNotice({ email }: { email: string }) {
     try {
       const supabase = createClient();
       await supabase.auth.signOut();
-      window.location.assign("/login");
+      window.location.assign(new URL("/login", window.location.origin));
     } catch {
       setSigningOut(false);
     }

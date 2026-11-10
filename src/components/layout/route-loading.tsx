@@ -108,9 +108,13 @@ function NavigationLoaderInner() {
   const inFlight = useUserRequestsInFlight();
   const busy = pending || inFlight > 0;
 
-  useEffect(() => {
+  // Arriving at the new page ends the wait (React's "adjust state while rendering").
+  const route = `${pathname}?${searchParams.toString()}`;
+  const [seenRoute, setSeenRoute] = useState(route);
+  if (seenRoute !== route) {
+    setSeenRoute(route);
     setPending(false);
-  }, [pathname, searchParams]);
+  }
 
   useEffect(() => {
     if (!pending) return;

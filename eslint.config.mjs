@@ -12,6 +12,11 @@ const eslintConfig = defineConfig([
     rules: {
       "react-hooks/set-state-in-effect": "warn",
       "react-hooks/purity": "warn",
+      // A leading underscore marks a value dropped on purpose, e.g. a column removed by destructuring.
+      "@typescript-eslint/no-unused-vars": [
+        "warn",
+        { argsIgnorePattern: "^_", varsIgnorePattern: "^_", destructuredArrayIgnorePattern: "^_", ignoreRestSiblings: true },
+      ],
     },
   },
   // Override default ignores of eslint-config-next.

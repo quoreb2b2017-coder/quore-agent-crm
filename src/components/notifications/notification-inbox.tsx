@@ -1,8 +1,8 @@
 "use client";
 
-import { Fragment, useEffect, useMemo, useState, useTransition } from "react";
+import { Fragment, useMemo, useState, useTransition } from "react";
 import Link from "next/link";
-import { Activity, Bell, CheckCheck, Loader2, LogIn, Megaphone, Search, Users } from "lucide-react";
+import { Activity, Bell, CheckCheck, Loader2, LogIn, Megaphone, Search, ShieldAlert, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -26,6 +26,9 @@ type Filter = "all" | "unread" | "action" | "login" | "meeting" | "announcement"
 export function typeMeta(type?: string) {
   if (type === "STAFF_ACTION") {
     return { label: "Action", Icon: Activity, tone: "bg-primary/10 text-primary", group: "action" as const };
+  }
+  if (type === "SECURITY_ALERT") {
+    return { label: "Security", Icon: ShieldAlert, tone: "bg-destructive/10 text-destructive", group: "action" as const };
   }
   if (type === "EMPLOYEE_LOGIN") {
     return { label: "Login", Icon: LogIn, tone: "bg-success/10 text-success", group: "login" as const };
@@ -85,9 +88,12 @@ export function NotificationInbox({
   const [query, setQuery] = useState("");
   const [isPending, startTransition] = useTransition();
 
-  useEffect(() => {
+  // New rows from the server replace the list (React's "adjust state while rendering").
+  const [seenInitial, setSeenInitial] = useState(initialItems);
+  if (seenInitial !== initialItems) {
+    setSeenInitial(initialItems);
     setItems(initialItems);
-  }, [initialItems]);
+  }
 
   const unread = useMemo(() => items.filter((item) => !item.isRead).length, [items]);
   const counts = useMemo(() => {

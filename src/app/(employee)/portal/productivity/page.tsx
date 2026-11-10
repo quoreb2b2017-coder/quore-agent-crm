@@ -1,5 +1,6 @@
 import { getCurrentEmployeeContext } from "@/lib/permissions/server";
 import { PageHeader } from "@/components/dashboard/page-header";
+import { ExcelDownloadButton } from "@/components/activity/excel-download-button";
 import { MonthCalendar } from "@/components/attendance/month-calendar";
 import { EmployeeProductivityOverview } from "@/components/dashboard/employee-productivity-overview";
 import { monthStartEnd } from "@/lib/attendance-period";
@@ -32,6 +33,7 @@ export default async function MyProductivityPage({
       <PageHeader
         title="Productivity"
         description={`${shiftWindowLabel()} · target ${PRODUCTIVE_HOURS_LABEL} productive of 9 hrs`}
+        actions={<ExcelDownloadButton href={`/api/productivity/excel?view=monthly&month=${monthKey}`} />}
       />
       <EmployeeProductivityOverview employeeId={ctx.employeeId} />
       {row ? (

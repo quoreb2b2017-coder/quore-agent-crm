@@ -8,6 +8,7 @@ import "@fontsource/ibm-plex-mono/400.css";
 import "@fontsource/ibm-plex-mono/500.css";
 import "./globals.css";
 import { Toaster } from "@/components/ui/sonner";
+import { FlashToast } from "@/components/layout/flash-toast";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { WorkSettingsBridge } from "@/components/layout/work-settings-bridge";
 import { loadEffectiveWorkSettingsForCurrentUser } from "@/lib/work-settings-server";
@@ -35,6 +36,7 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
         <TooltipProvider>
           <WorkSettingsBridge settings={settings}>{children}</WorkSettingsBridge>
           <Toaster />
+          <FlashToast />
         </TooltipProvider>
       </body>
     </html>

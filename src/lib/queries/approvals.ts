@@ -4,7 +4,7 @@ import { createServiceClient } from "@/lib/supabase/service";
 import { isManagement, isSuperAdmin } from "@/lib/permissions/roles";
 import type { EmployeeContext } from "@/lib/permissions/types";
 
-export type ApprovalKind = "MEETING" | "LEAVE" | "EVIDENCE" | "EXCEPTION";
+export type ApprovalKind = "MEETING" | "LEAVE" | "SALARY" | "EVIDENCE" | "EXCEPTION";
 
 export type ApprovalItem = {
   id: string;
@@ -52,14 +52,14 @@ export const loadApprovals = cache(async (ctx: EmployeeContext): Promise<Approva
   const empty: ApprovalsData = {
     items: [],
     leaveTypes: [],
-    counts: { ALL: 0, MEETING: 0, LEAVE: 0, EVIDENCE: 0, EXCEPTION: 0 },
+    counts: { ALL: 0, MEETING: 0, LEAVE: 0, SALARY: 0, EVIDENCE: 0, EXCEPTION: 0 },
   };
   if (!isManagement(ctx.roleKey) && !canSeeCompliance(ctx)) return empty;
 
   const service = createServiceClient();
   const compliance = canSeeCompliance(ctx);
 
-  const [meetingsRes, leaveRes, typesRes, evidenceRes, exceptionsRes, peopleRes] = await Promise.all([
+  const [meetingsRes, leaveRes, typesRes, evidenceRes, exceptionsRes, peopleRes, salaryRes] = await Promise.all([
     isSuperAdmin(ctx.roleKey)
       ? service
           .from("meetings")
@@ -92,6 +92,14 @@ export const loadApprovals = cache(async (ctx: EmployeeContext): Promise<Approva
           .order("created_at", { ascending: true })
       : Promise.resolve({ data: [] as never[] }),
     service.from("employees").select("id, full_name, employee_code"),
+    // Salary changes are decided by Super Admin only. Fails quietly until migration 0043 is applied.
+    isSuperAdmin(ctx.roleKey)
+      ? service
+          .from("salary_change_requests")
+          .select("id, employee_id, record, requested_by, created_at")
+          .eq("status", "PENDING")
+          .order("created_at", { ascending: true })
+      : Promise.resolve({ data: [] as never[] }),
   ]);
   const { data: controlRows } = compliance
     ? await service.from("compliance_controls").select("id, control_code, title")
@@ -156,6 +164,36 @@ export const loadApprovals = cache(async (ctx: EmployeeContext): Promise<Approva
       rule: "Approving deducts the days from the employee's balance. You cannot approve your own leave.",
       leaveTypeId: l.leave_type_id,
       selfBlocked: l.employee_id === ctx.employeeId,
+    });
+  }
+
+  type SalaryRow = {
+    id: string;
+    employee_id: string;
+    record: { base_salary?: number; effective_from?: string; pay_frequency?: string; currency?: string } | null;
+    requested_by: string | null;
+    created_at: string;
+  };
+  for (const s of (salaryRes.data ?? []) as SalaryRow[]) {
+    const base = Number(s.record?.base_salary ?? 0);
+    const money = `${s.record?.currency ?? "INR"} ${base.toLocaleString("en-IN")}`;
+    items.push({
+      id: s.id,
+      kind: "SALARY",
+      title: `Salary change for ${name(s.employee_id)}`,
+      subtitle: `${money} ${String(s.record?.pay_frequency ?? "MONTHLY").toLowerCase()} · from ${fmtDate(s.record?.effective_from)}`,
+      requestedAt: s.created_at,
+      requesterId: s.requested_by,
+      requesterName: name(s.requested_by),
+      details: [
+        { label: "Employee", value: `${name(s.employee_id)} (${code(s.employee_id)})` },
+        { label: "Base salary", value: money },
+        { label: "Pay frequency", value: String(s.record?.pay_frequency ?? "MONTHLY").toLowerCase() },
+        { label: "Effective from", value: fmtDate(s.record?.effective_from) },
+        { label: "Asked by", value: name(s.requested_by) },
+      ],
+      rule: "Nothing changes until you approve. Approving writes the salary and rebuilds payslips. The person who asked cannot approve it (ISO A.5.3).",
+      selfBlocked: s.requested_by === ctx.employeeId,
     });
   }
 
@@ -237,7 +275,7 @@ export async function countApprovals(ctx: EmployeeContext) {
     const service = createServiceClient();
     const compliance = canSeeCompliance(ctx);
     const zero = Promise.resolve({ count: 0 });
-    const [meetings, leave, evidence, exceptions] = await Promise.all([
+    const [meetings, leave, evidence, exceptions, salary] = await Promise.all([
       isSuperAdmin(ctx.roleKey)
         ? service.from("meetings").select("id", { count: "exact", head: true }).is("ended_at", null).is("started_at", null)
         : zero,
@@ -250,9 +288,18 @@ export async function countApprovals(ctx: EmployeeContext) {
       compliance
         ? service.from("control_exceptions").select("id", { count: "exact", head: true }).eq("status", "REQUESTED")
         : zero,
+      isSuperAdmin(ctx.roleKey)
+        ? service.from("salary_change_requests").select("id", { count: "exact", head: true }).eq("status", "PENDING")
+        : zero,
     ]);
     // loadApprovals lists at most 200 evidence items; keep the badge consistent with it.
-    return (meetings.count ?? 0) + (leave.count ?? 0) + Math.min(evidence.count ?? 0, 200) + (exceptions.count ?? 0);
+    return (
+      (meetings.count ?? 0) +
+      (leave.count ?? 0) +
+      Math.min(evidence.count ?? 0, 200) +
+      (exceptions.count ?? 0) +
+      (salary.count ?? 0)
+    );
   } catch {
     return 0;
   }

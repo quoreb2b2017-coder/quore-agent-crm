@@ -11,6 +11,9 @@ export const ADMIN_LOGOUT_TYPE = "ADMIN_LOGOUT";
 /** Someone did something in the app. The inbox reads the name and ID from the start of the body. */
 export const STAFF_ACTION_TYPE = "STAFF_ACTION";
 
+/** Wrong-password bursts and lockouts. */
+export const SECURITY_ALERT_TYPE = "SECURITY_ALERT";
+
 /**
  * Tells Super Admins what someone just did, never the person who did it.
  * Runs after the response so the button stays quick, and a failed alert cannot undo the action.

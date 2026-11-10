@@ -40,6 +40,7 @@ import { getProductivityReport, type ProductivityRow } from "@/lib/queries/produ
 import { sheetCellClassName, sheetHeadClassName, sheetRowClassName } from "@/lib/sheet-styles";
 import { cn } from "@/lib/utils";
 import { ProductivityFilters } from "./productivity-filters";
+import { ExcelDownloadButton } from "@/components/activity/excel-download-button";
 import {
   BalancePill,
   DayStatusPill,
@@ -81,6 +82,11 @@ export default async function ProductivityPage({
     people = data ? [data] : [];
   }
 
+  const exportQuery = new URLSearchParams(
+    Object.entries(params).flatMap(([key, value]) =>
+      (Array.isArray(value) ? value : value ? [value] : []).map((item) => [key, item])
+    )
+  ).toString();
   const rows = (await getProductivityReport(people, query.start, query.end)).sort(
     (a, b) => b.productiveSeconds - a.productiveSeconds
   );
@@ -129,7 +135,13 @@ export default async function ProductivityPage({
         who={rows.length === 1 ? rows[0].employee.full_name : `${rows.length} employees`}
       />
 
-      <ProductivityFilters basePath={BASE_PATH} employees={watchable} query={query} today={today} />
+      <div className="flex flex-wrap items-start gap-2">
+        <div className="min-w-0 flex-1">
+          <ProductivityFilters basePath={BASE_PATH} employees={watchable} query={query} today={today} />
+        </div>
+        {/* Same filters as the page on screen. */}
+        <ExcelDownloadButton href={`/api/productivity/excel?${exportQuery}`} />
+      </div>
 
       {query.employeeId && people[0] ? (
         <EmployeeProductivityOverview
