@@ -579,6 +579,230 @@ await test("app_settings can be read by anyone signed in but changed only by Sup
   expect(adminWrite.length === 1, "Super Admin could not change the settings");
 });
 
+
+// ------------------------------------------------------------ Campaign Operations (0049)
+const dbUser = await makeEmployee("DB1", "DATABASE");
+const opsUser = await makeEmployee("OPS1", "OPS_MANAGER");
+
+async function seedCampaign(status = "DRAFT") {
+  const [c] = await q(
+    `insert into public.co_campaigns (name, created_by) values ('Test campaign', $1) returning id, code, status`,
+    [opsUser.id]
+  );
+  if (status !== "DRAFT") await q(`update public.co_campaigns set status = $2 where id = $1`, [c.id, status]);
+  return c;
+}
+
+async function seedVersion(campaignId, uploader, { sha = "a".repeat(64) } = {}) {
+  const path = `${campaignId}/raw_database/${randomUUID()}.csv`;
+  const [f] = await q(
+    `insert into public.co_files (campaign_id, category_key, title, original_name, extension, size_bytes, storage_path, status, uploaded_by, sha256)
+     values ($1, 'RAW_DATABASE', 'db', 'db.csv', 'csv', 100, $2, 'CLEAN', $3, $4) returning id`,
+    [campaignId, path, uploader, sha]
+  );
+  const [{ n }] = await q(`select coalesce(max(version), 0) + 1 as n from public.co_database_versions where campaign_id = $1`, [campaignId]);
+  const [v] = await q(
+    `insert into public.co_database_versions (campaign_id, file_id, version, uploaded_by) values ($1, $2, $3, $4) returning id`,
+    [campaignId, f.id, n, uploader]
+  );
+  return { fileId: f.id, versionId: v.id };
+}
+
+await test("Campaign tables are closed to the public API (server only)", async () => {
+  const blocked = [];
+  for (const table of ["co_campaigns", "co_files", "co_database_versions", "co_lead_records", "co_campaign_members"]) {
+    if (await rejects(() => asUser(agent, () => q(`select 1 from public.${table} limit 1`)))) blocked.push(table);
+  }
+  const opsBlocked = await rejects(() => asUser(opsUser, () => q("select 1 from public.co_campaigns limit 1")));
+  expect(blocked.length === 5, `agent could read ${5 - blocked.length} campaign tables directly`);
+  expect(opsBlocked, "even an Operations Manager must go through the server");
+});
+
+await test("A campaign database cannot be approved by the person who uploaded it", async () => {
+  const ownApproval = await rejects(() =>
+    asService(opsUser.id, async () => {
+      const c = await seedCampaign();
+      const v = await seedVersion(c.id, dbUser.id);
+      await q(`update public.co_database_versions set status = 'VALIDATING' where id = $1`, [v.versionId]);
+      await q(`update public.co_database_versions set status = 'AWAITING_APPROVAL' where id = $1`, [v.versionId]);
+      await q(`update public.co_database_versions set status = 'APPROVED', decided_by = $2 where id = $1`, [v.versionId, dbUser.id]);
+    })
+  );
+  const otherApproval = await asService(opsUser.id, async () => {
+    const c = await seedCampaign();
+    const v = await seedVersion(c.id, dbUser.id);
+    await q(`update public.co_database_versions set status = 'VALIDATING' where id = $1`, [v.versionId]);
+    await q(`update public.co_database_versions set status = 'AWAITING_APPROVAL' where id = $1`, [v.versionId]);
+    return q(`update public.co_database_versions set status = 'APPROVED', decided_by = $2 where id = $1 returning status`, [v.versionId, opsUser.id]);
+  });
+  expect(ownApproval, "the uploader approved their own database");
+  expect(otherApproval[0]?.status === "APPROVED", "a second person could not approve");
+});
+
+await test("Database versions only move forward, and a rejection needs a reason", async () => {
+  const skip = await rejects(() =>
+    asService(opsUser.id, async () => {
+      const c = await seedCampaign();
+      const v = await seedVersion(c.id, dbUser.id);
+      await q(`update public.co_database_versions set status = 'PUBLISHED' where id = $1`, [v.versionId]);
+    })
+  );
+  const silentReject = await rejects(() =>
+    asService(opsUser.id, async () => {
+      const c = await seedCampaign();
+      const v = await seedVersion(c.id, dbUser.id);
+      await q(`update public.co_database_versions set status = 'VALIDATING' where id = $1`, [v.versionId]);
+      await q(`update public.co_database_versions set status = 'AWAITING_APPROVAL' where id = $1`, [v.versionId]);
+      await q(`update public.co_database_versions set status = 'REJECTED', decided_by = $2 where id = $1`, [v.versionId, opsUser.id]);
+    })
+  );
+  expect(skip, "a version jumped from waiting-for-scan to published");
+  expect(silentReject, "a version was rejected without a reason");
+});
+
+await test("Campaign status follows the allowed path, and resuming returns to where it was", async () => {
+  const jump = await rejects(() =>
+    asService(opsUser.id, async () => {
+      const c = await seedCampaign();
+      await q(`update public.co_campaigns set status = 'IN_PRODUCTION' where id = $1`, [c.id]);
+    })
+  );
+  const resumed = await asService(opsUser.id, async () => {
+    const c = await seedCampaign("AWAITING_DATABASE");
+    await q(`update public.co_campaigns set status = 'ON_HOLD' where id = $1`, [c.id]);
+    const wrong = await rejects(() => q(`update public.co_campaigns set status = 'READY_FOR_DISTRIBUTION' where id = $1`, [c.id]));
+    return { wrong };
+  });
+  const back = await asService(opsUser.id, async () => {
+    const c = await seedCampaign("AWAITING_DATABASE");
+    await q(`update public.co_campaigns set status = 'ON_HOLD' where id = $1`, [c.id]);
+    return q(`update public.co_campaigns set status = 'AWAITING_DATABASE' where id = $1 returning status, held_from`, [c.id]);
+  });
+  expect(jump, "a draft campaign jumped straight into production");
+  expect(resumed.wrong, "a held campaign resumed to a different status");
+  expect(back[0]?.status === "AWAITING_DATABASE" && back[0]?.held_from === null, "a held campaign could not resume");
+});
+
+await test("Campaigns, files, versions and lead rows are archived, never deleted", async () => {
+  const results = await asService(opsUser.id, async () => {
+    const c = await seedCampaign();
+    const v = await seedVersion(c.id, dbUser.id);
+    const out = [];
+    for (const [table, id] of [["co_database_versions", v.versionId], ["co_files", v.fileId], ["co_campaigns", c.id]]) {
+      out.push(await rejects(() => q(`delete from public.${table} where id = $1`, [id])));
+    }
+    return out;
+  });
+  expect(results.every(Boolean), `a delete went through: ${JSON.stringify(results)}`);
+});
+
+await test("A scanned file's fingerprint cannot change, and an infected file stays blocked", async () => {
+  const hashChange = await rejects(() =>
+    asService(null, async () => {
+      const c = await seedCampaign();
+      const v = await seedVersion(c.id, dbUser.id);
+      await q(`update public.co_files set sha256 = $2 where id = $1`, [v.fileId, "b".repeat(64)]);
+    })
+  );
+  const unblock = await rejects(() =>
+    asService(null, async () => {
+      const c = await seedCampaign();
+      const v = await seedVersion(c.id, dbUser.id);
+      await q(`update public.co_files set status = 'INFECTED' where id = $1`, [v.fileId]);
+      await q(`update public.co_files set status = 'PUBLISHING' where id = $1`, [v.fileId]);
+    })
+  );
+  expect(hashChange, "a stored file's hash was rewritten");
+  expect(unblock, "an infected file was moved towards publication");
+});
+
+await test("Publishing makes only the approved version's clean rows available and retires the old version", async () => {
+  const out = await asService(opsUser.id, async () => {
+    const c = await seedCampaign();
+    const publish = async (keys) => {
+      const v = await seedVersion(c.id, dbUser.id);
+      let row = 2;
+      for (const [key, status] of keys) {
+        await q(
+          `insert into public.co_lead_records (campaign_id, version_id, row_number, record_key, email, status) values ($1, $2, $3, $4, $5, $6)`,
+          [c.id, v.versionId, row, key, `${key}@x.co`, status]
+        );
+        row += 1;
+      }
+      await q(`update public.co_database_versions set status = 'VALIDATING' where id = $1`, [v.versionId]);
+      await q(`update public.co_database_versions set status = 'AWAITING_APPROVAL' where id = $1`, [v.versionId]);
+      await q("savepoint before_early");
+      const early = await rejects(() => q(`select public.co_publish_version($1)`, [v.versionId]));
+      await q("rollback to savepoint before_early");
+      await q(`update public.co_database_versions set status = 'APPROVED', decided_by = $2 where id = $1`, [v.versionId, opsUser.id]);
+      await q(`update public.co_files set status = 'PUBLISHING' where id = $1`, [v.fileId]);
+      await q(`update public.co_files set status = 'PUBLISHED', bucket = 'co-approved' where id = $1`, [v.fileId]);
+      const [{ co_publish_version: count }] = await q(`select public.co_publish_version($1)`, [v.versionId]);
+      return { v, count, early };
+    };
+    const first = await publish([["k1", "STAGED"], ["k2", "STAGED"], ["k3", "INVALID"]]);
+    const [{ status: afterFirst }] = await q(`select status from public.co_campaigns where id = $1`, [c.id]);
+    const second = await publish([["k1", "STAGED"], ["k4", "STAGED"], ["k5", "DUPLICATE"]]);
+    const statuses = await q(
+      `select v.version, l.status, count(*)::int as n from public.co_lead_records l join public.co_database_versions v on v.id = l.version_id
+       where l.campaign_id = $1 group by 1, 2 order by 1, 2`,
+      [c.id]
+    );
+    const versions = await q(`select version, status from public.co_database_versions where campaign_id = $1 order by version`, [c.id]);
+    return { first, second, statuses, versions, afterFirst };
+  });
+  const available = out.statuses.filter((s) => s.status === "AVAILABLE");
+  expect(out.first.early, "a version was published before approval");
+  expect(out.first.count === 2 && out.second.count === 2, `published counts ${out.first.count}/${out.second.count}`);
+  expect(available.length === 1 && available[0].version === 2 && available[0].n === 2, `available rows: ${JSON.stringify(out.statuses)}`);
+  expect(out.versions[0].status === "SUPERSEDED" && out.versions[1].status === "PUBLISHED", `versions: ${JSON.stringify(out.versions)}`);
+  expect(out.afterFirst === "READY_FOR_DISTRIBUTION", `campaign status after first publish: ${out.afterFirst}`);
+});
+
+await test("A second upload while one waits for approval never leaves the campaign stuck", async () => {
+  const status = await asService(opsUser.id, async () => {
+    const c = await seedCampaign("AWAITING_DATABASE");
+    const v1 = await seedVersion(c.id, dbUser.id);
+    await q(`update public.co_database_versions set status = 'VALIDATING' where id = $1`, [v1.versionId]);
+    await q(`update public.co_database_versions set status = 'AWAITING_APPROVAL' where id = $1`, [v1.versionId]);
+    const v2 = await seedVersion(c.id, dbUser.id, { sha: "c".repeat(64) });
+    await q(`update public.co_database_versions set status = 'BLOCKED' where id = $1`, [v2.versionId]);
+    const [{ status: whileWaiting }] = await q(`select status from public.co_campaigns where id = $1`, [c.id]);
+    await q(`update public.co_database_versions set status = 'APPROVED', decided_by = $2 where id = $1`, [v1.versionId, opsUser.id]);
+    await q(`update public.co_files set status = 'PUBLISHING' where id = $1`, [v1.fileId]);
+    await q(`update public.co_files set status = 'PUBLISHED', bucket = 'co-approved' where id = $1`, [v1.fileId]);
+    await q(`select public.co_publish_version($1)`, [v1.versionId]);
+    const [{ status: afterPublish }] = await q(`select status from public.co_campaigns where id = $1`, [c.id]);
+    return { whileWaiting, afterPublish };
+  });
+  expect(status.whileWaiting === "AWAITING_APPROVAL", `while v1 waits and v2 is blocked: ${status.whileWaiting}`);
+  expect(status.afterPublish === "READY_FOR_DISTRIBUTION", `after publishing v1: ${status.afterPublish}`);
+});
+
+await test("Campaign changes are written to the hash-chained audit log with the acting employee", async () => {
+  const rows = await asService(opsUser.id, async () => {
+    const c = await seedCampaign();
+    await q(`update public.co_campaigns set status = 'AWAITING_DATABASE' where id = $1`, [c.id]);
+    return q(`select action, actor_employee_id from public.audit_logs where record_id = $1 order by seq`, [c.id]);
+  });
+  expect(rows.length >= 2, `only ${rows.length} audit rows for a created and updated campaign`);
+  expect(rows.every((r) => r.actor_employee_id === opsUser.id), "audit rows did not name the Operations Manager");
+});
+
+await test("Only Super Admin, Operations Manager and Database roles hold campaign permissions after seed", async () => {
+  const rows = await q(
+    `select r.role_key, array_agg(p.permission_key order by p.permission_key) as perms
+     from public.role_permissions rp join public.roles r on r.id = rp.role_id join public.permissions p on p.id = rp.permission_id
+     where p.permission_key like 'co.%' group by r.role_key order by r.role_key`
+  );
+  const roles = rows.map((r) => r.role_key);
+  expect(JSON.stringify(roles) === JSON.stringify(["DATABASE", "OPS_MANAGER", "SUPER_ADMIN"]), `roles with co.* permissions: ${roles}`);
+  const ops = rows.find((r) => r.role_key === "OPS_MANAGER").perms;
+  expect(!ops.includes("co.database.upload") && !ops.includes("co.database.download"), "Operations Manager can upload or download full databases");
+  const db = rows.find((r) => r.role_key === "DATABASE").perms;
+  expect(!db.includes("co.database.approve"), "Database role can approve databases");
+});
+
 // ------------------------------------------------------------ report
 let failed = 0;
 for (const r of results) {

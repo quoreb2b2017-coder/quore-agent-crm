@@ -24,6 +24,11 @@ const TABLE_LABELS: Record<string, string> = {
   soa_entries: "Statement of Applicability entry",
   corrective_actions: "corrective action",
   security_events: "security event",
+  co_campaigns: "campaign",
+  co_campaign_members: "campaign member",
+  co_files: "campaign file",
+  co_database_versions: "campaign database version",
+  co_file_categories: "campaign file category",
 };
 
 /** Record types grouped the way people think about them, for the filter. */
@@ -46,6 +51,7 @@ export const AUDIT_AREAS: { name: string; tables: string[] }[] = [
       "control_exceptions",
     ],
   },
+  { name: "Campaigns", tables: ["co_campaigns", "co_campaign_members", "co_files", "co_database_versions", "co_file_categories"] },
   { name: "Security", tables: ["security_events"] },
 ];
 
@@ -75,6 +81,15 @@ export function tableLabel(table: string | null) {
 
 const SECURITY_EVENTS: Record<string, string> = {
   SECURITY_MFA_RESET: "Reset two-factor sign-in",
+  SECURITY_CO_FILE_DOWNLOADED: "Downloaded a campaign file",
+  SECURITY_CO_DOWNLOAD_DENIED: "Was refused a campaign file",
+  SECURITY_CO_DOWNLOAD_RATE_LIMITED: "Hit the campaign download limit",
+  SECURITY_CO_INVALID_ROWS_EXPORTED: "Exported a database's invalid rows",
+  SECURITY_CO_FILE_ARCHIVED: "Archived a campaign file",
+  SECURITY_CO_CAMPAIGN_SUBMIT: "Marked a campaign ready for its database",
+  SECURITY_CO_CAMPAIGN_HOLD: "Put a campaign on hold",
+  SECURITY_CO_CAMPAIGN_RESUME: "Resumed a campaign",
+  SECURITY_CO_CAMPAIGN_ARCHIVE: "Archived a campaign",
 };
 
 export function describeAudit(action: string, table: string | null) {

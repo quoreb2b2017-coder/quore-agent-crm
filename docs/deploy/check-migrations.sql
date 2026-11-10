@@ -31,5 +31,9 @@ select migration, applied from (values
                                     'employees.manage', 'audit_logs.view', 'compliance.manage'))),
   ('0047 outside-app role alert', exists (select 1 from pg_trigger where tgname = 'trg_alert_role_permissions_outside_app')),
   ('0048 settings protected', (select relrowsecurity from pg_class where oid = 'public.app_settings'::regclass)),
+  ('0049 campaign operations', to_regclass('public.co_campaigns') is not null
+                              and to_regclass('public.co_lead_records') is not null
+                              and exists (select 1 from pg_proc where proname = 'co_publish_version')
+                              and exists (select 1 from storage.buckets where id in ('co-quarantine', 'co-approved') having count(*) = 2)),
   ('pg_cron enabled',         exists (select 1 from pg_extension where extname = 'pg_cron'))
 ) as checks (migration, applied);

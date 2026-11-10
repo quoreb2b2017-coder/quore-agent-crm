@@ -31,10 +31,13 @@ export type ModuleIconName =
   | "inbox"
   | "fingerprint"
   | "scroll"
-  | "lock";
+  | "lock"
+  | "database"
+  | "folder";
 
 export type ModuleGroup =
   | "workspace"
+  | "campaigns"
   | "people"
   | "payroll"
   | "governance"
@@ -44,6 +47,7 @@ export type ModuleGroup =
 
 export const MODULE_GROUP_LABELS: Record<ModuleGroup, string> = {
   workspace: "Workspace",
+  campaigns: "Campaign Operations",
   people: "People",
   payroll: "Payroll",
   governance: "Governance",
@@ -52,7 +56,7 @@ export const MODULE_GROUP_LABELS: Record<ModuleGroup, string> = {
   time: "Time",
 };
 
-export const ADMIN_GROUP_ORDER: ModuleGroup[] = ["workspace", "people", "payroll", "governance", "account"];
+export const ADMIN_GROUP_ORDER: ModuleGroup[] = ["workspace", "campaigns", "people", "payroll", "governance", "account"];
 export const EMPLOYEE_GROUP_ORDER: ModuleGroup[] = ["workspace", "work", "time", "account"];
 
 export type ModuleDefinition = {
@@ -63,6 +67,10 @@ export type ModuleDefinition = {
   group: ModuleGroup;
   permission?: string | string[];
   rolesOnly?: string[];
+  /** Shown only to holders of at least one of these permissions, whatever the role (Campaign Operations). */
+  requires?: string[];
+  /** Regular expression for the paths that highlight this item, when the default prefix match is wrong. */
+  match?: string;
 };
 
 function hasAny(
@@ -80,6 +88,7 @@ export function filterModules(
 ): ModuleDefinition[] {
   return modules.filter((m) => {
     if (m.rolesOnly && !m.rolesOnly.includes(ctx.roleKey)) return false;
+    if (m.requires && !hasAny(ctx.permissions, m.requires)) return false;
     if (isStaffOrAdmin(ctx.roleKey)) return true;
     return hasAny(ctx.permissions, m.permission);
   });
@@ -87,12 +96,17 @@ export function filterModules(
 
 const MANAGEMENT = ["SUPER_ADMIN", "HR"];
 const SUPER_ADMIN_ONLY = ["SUPER_ADMIN"];
+const CAMPAIGN_VIEW = ["co.campaign.view"];
 
 export const ADMIN_MODULES: ModuleDefinition[] = [
   { key: "dashboard", label: "Command center", href: "/admin/dashboard", icon: "dashboard", group: "workspace" },
   { key: "approvals", label: "Approvals", href: "/admin/approvals", icon: "inbox", group: "workspace", rolesOnly: MANAGEMENT },
   { key: "chat", label: "Chat", href: "/admin/chat", icon: "message", group: "workspace" },
   { key: "notifications", label: "Notifications", href: "/admin/notifications", icon: "bell", group: "workspace" },
+  { key: "co-overview", label: "Overview", href: "/admin/campaigns", icon: "chart", group: "campaigns", requires: CAMPAIGN_VIEW, match: "^/admin/campaigns/?$" },
+  { key: "co-campaigns", label: "All campaigns", href: "/admin/campaigns/all", icon: "megaphone", group: "campaigns", requires: CAMPAIGN_VIEW, match: "^/admin/campaigns/(all|new|[0-9a-f-]{36})(/|$)" },
+  { key: "co-repository", label: "Database repository", href: "/admin/campaigns/repository", icon: "database", group: "campaigns", requires: ["co.database.upload", "co.database.approve", "co.database.download"] },
+  { key: "co-documents", label: "Document repository", href: "/admin/campaigns/documents", icon: "folder", group: "campaigns", requires: CAMPAIGN_VIEW },
   { key: "employees", label: "Employees", href: "/admin/employees", icon: "users", group: "people", rolesOnly: MANAGEMENT },
   { key: "teams", label: "Teams", href: "/admin/teams", icon: "building", group: "people", rolesOnly: MANAGEMENT },
   { key: "onboarding", label: "Onboarding", href: "/admin/onboarding", icon: "clipboard", group: "people", rolesOnly: MANAGEMENT },

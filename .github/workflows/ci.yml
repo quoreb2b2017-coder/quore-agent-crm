@@ -36,6 +36,10 @@ jobs:
       - name: Database security acceptance tests (RLS, audit, compliance)
         run: npm run test:security
 
+      - name: Campaign file worker tests (parsing, validation, scanner protocol)
+        working-directory: workers/campaign-files
+        run: npm ci && npm test
+
       - name: Production build
         run: npm run build
         env:

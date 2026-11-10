@@ -106,7 +106,8 @@ insert into public.roles (role_key, display_name, description, is_system) values
   ('AGENT', 'Agent', 'Agent staff — same workspace as Database and Email Marketing', true),
   ('DATABASE', 'Database', 'Database staff — same workspace as Agent and Email Marketing', true),
   ('EMAIL_MARKETING', 'Email Marketing', 'Email marketing staff — same workspace as Agent and Database', true),
-  ('FIELD_EMPLOYEE', 'Field Employee', 'Field visits and on-site work', false)
+  ('FIELD_EMPLOYEE', 'Field Employee', 'Field visits and on-site work', false),
+  ('OPS_MANAGER', 'Operations Manager', 'Runs campaigns: creates them, approves databases and oversees production', true)
 on conflict (role_key) do nothing;
 
 -- ============================================================
@@ -130,6 +131,9 @@ with rp (role_key, permission_key) as (
     ('SUPER_ADMIN', 'audit_logs.view'),
     ('SUPER_ADMIN', 'policies.manage'),
     ('SUPER_ADMIN', 'compliance.view'), ('SUPER_ADMIN', 'compliance.manage'),
+    ('SUPER_ADMIN', 'co.campaign.view'), ('SUPER_ADMIN', 'co.campaign.manage'),
+    ('SUPER_ADMIN', 'co.database.upload'), ('SUPER_ADMIN', 'co.database.approve'),
+    ('SUPER_ADMIN', 'co.database.download'), ('SUPER_ADMIN', 'co.documents.manage'),
 
     -- HR
     ('HR', 'employees.manage'),
@@ -160,6 +164,15 @@ with rp (role_key, permission_key) as (
     ('DATABASE', 'activity.view'),
     ('DATABASE', 'tasks.view'), ('DATABASE', 'tasks.create'), ('DATABASE', 'tasks.update'),
     ('DATABASE', 'leave.view'), ('DATABASE', 'leave.apply'),
+    -- Campaign Operations (0049): uploads databases for the campaigns they belong to.
+    ('DATABASE', 'co.campaign.view'), ('DATABASE', 'co.database.upload'), ('DATABASE', 'co.database.download'),
+
+    -- OPS_MANAGER: staff workspace plus Campaign Operations (0049). Approves databases it did not upload.
+    ('OPS_MANAGER', 'attendance.view'),
+    ('OPS_MANAGER', 'activity.view'),
+    ('OPS_MANAGER', 'leave.view'), ('OPS_MANAGER', 'leave.apply'),
+    ('OPS_MANAGER', 'co.campaign.view'), ('OPS_MANAGER', 'co.campaign.manage'),
+    ('OPS_MANAGER', 'co.database.approve'), ('OPS_MANAGER', 'co.documents.manage'),
 
     ('EMAIL_MARKETING', 'attendance.view'),
     ('EMAIL_MARKETING', 'activity.view'),

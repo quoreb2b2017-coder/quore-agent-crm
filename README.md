@@ -23,6 +23,7 @@ It is built with Next.js 16 (App Router, TypeScript), Tailwind CSS v4, shadcn/ui
 | Account security | `/admin/security`, `/portal/security` | TOTP two-factor sign-in (set up, remove), sign out of other devices, and changes to your record. |
 | Two-factor at sign-in | `/verify` | Users with a factor must enter a code. The server enforces AAL2, so the browser cannot skip the step. |
 | Security & Compliance | `/admin/compliance/*` | See below. |
+| Campaign Operations | `/admin/campaigns/*` | Campaigns, database repository (quarantine, malware scan, validation, second-person approval) and document repository. Needs the file worker in `workers/campaign-files`. |
 
 **Security & Compliance workspace**
 
@@ -69,7 +70,7 @@ cp .env.local.example .env.local   # or fill in the .env.local shipped in the ZI
 | `COMPANY_NAME`, `COMPANY_LEGAL_NAME`, `COMPANY_ADDRESS`, `COMPANY_TAGLINE` | no | Payslip, offer letter and app bar text |
 
 ### 3. Database
-Apply **every** migration in order (`0001` … `0028`), then `seed.sql`:
+Apply **every** migration in order (`0001` … `0049`), then `seed.sql`:
 ```bash
 npx supabase login
 npx supabase link --project-ref <your-project-ref>
@@ -85,6 +86,8 @@ If you use the SQL Editor instead, paste each file in `supabase/migrations/` in 
 | `0024` | Security hardening: least privilege, no self-administration, hash-chained audit log |
 | `0025`–`0027` | Compliance data model, control register seed (38 controls, 175 mappings, 93 SoA rows, 17 corrective actions) and automated control checks |
 | `0028` | Server-side two-factor check, security event log, onboarding audit with redaction |
+| `0029`–`0048` | Overtime, push notifications, departments, audit chain, sign-in lockout, salary approval, acknowledgements, staff least privilege |
+| `0049` | Campaign Operations: campaigns, members, file and database repository, quarantine and approval (see `docs/campaigns/README.md`) |
 
 ### 4. Supabase dashboard settings (cannot be done in SQL)
 1. **Authentication → Hooks:** enable *Customize Access Token (JWT) Claims* and select `public.custom_access_token_hook`.
@@ -129,7 +132,7 @@ CI (`.github/workflows/ci.yml`) runs all four on every push and pull request.
 ## Project structure
 ```
 supabase/
-  migrations/              0001–0028, applied in order
+  migrations/              0001–0049, applied in order
   seed.sql                 roles, permissions, leave types, compliance grants
   tests/                   PGlite security test suite
 scripts/create-super-admin.ts

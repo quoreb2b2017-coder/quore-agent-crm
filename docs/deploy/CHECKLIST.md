@@ -64,3 +64,13 @@ Work top to bottom. Tick each box when it is done.
 - **A copy of the audit log outside the database** needs a place to send it (for example a storage bucket in another
   account that the database owner cannot delete from).
 - **Staging**: a second Supabase project plus Vercel preview deployments pointed at it, before the IAM work.
+
+## 8. Campaign Operations (migration 0049)
+
+- [ ] Run [0049_campaign_operations_core.sql](../../supabase/migrations/0049_campaign_operations_core.sql) in the SQL Editor, then
+      check-migrations.sql: `0049 campaign operations` must be `true`.
+- [ ] Storage → Settings: global upload limit at least 100 MB (the free plan stops at 50 MB).
+- [ ] Deploy the file worker (`workers/campaign-files`, see its README) as a private background service on Railway or Render,
+      about 2 GB of memory, with `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY`. Uploads wait in quarantine until it runs.
+- [ ] After deploying, upload the EICAR test file to a test campaign: it must show **Blocked: malware**.
+- [ ] Give campaign leads the **Operations Manager** role; add database staff to each campaign as **Database** members.

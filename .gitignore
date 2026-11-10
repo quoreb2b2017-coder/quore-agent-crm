@@ -41,3 +41,9 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Chrome crash logs
+debug.log
+
+# Dependencies of sub-packages (workers, ops tools)
+node_modules/

@@ -32,6 +32,8 @@ import {
   Fingerprint,
   ScrollText,
   LockKeyhole,
+  Database,
+  FolderOpen,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -47,6 +49,10 @@ export function ModuleIcon({
   switch (name) {
     case "users":
       return <Users {...props} />;
+    case "database":
+      return <Database {...props} />;
+    case "folder":
+      return <FolderOpen {...props} />;
     case "building":
       return <Building2 {...props} />;
     case "shield":

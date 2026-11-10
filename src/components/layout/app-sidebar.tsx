@@ -77,7 +77,9 @@ export function AppSidebar({
             <SidebarGroupContent>
               <SidebarMenu className="gap-px">
                 {section.items.map((mod) => {
-                  const isActive = pathname === mod.href || pathname.startsWith(`${mod.href}/`);
+                  const isActive = mod.match
+                    ? new RegExp(mod.match).test(pathname)
+                    : pathname === mod.href || pathname.startsWith(`${mod.href}/`);
                   const badge = badges[mod.key] ?? 0;
                   return (
                     <SidebarMenuItem key={mod.key}>

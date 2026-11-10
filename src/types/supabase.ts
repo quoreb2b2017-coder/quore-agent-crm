@@ -31,6 +31,43 @@ export type ComplianceControlStatus =
   | "RISK_ACCEPTED"
   | "NOT_APPLICABLE";
 
+export type CampaignStatus =
+  | "DRAFT"
+  | "AWAITING_DATABASE"
+  | "DATABASE_VALIDATION"
+  | "AWAITING_APPROVAL"
+  | "READY_FOR_DISTRIBUTION"
+  | "IN_PRODUCTION"
+  | "ON_HOLD"
+  | "QC_IN_PROGRESS"
+  | "COMPLETED"
+  | "ARCHIVED";
+
+export type CampaignMemberRole = "MANAGER" | "DATABASE" | "PRODUCTION" | "CALLER" | "QA";
+
+export type CampaignFileStatus =
+  | "UPLOADING"
+  | "QUARANTINED"
+  | "SCANNING"
+  | "INFECTED"
+  | "SCAN_FAILED"
+  | "CLEAN"
+  | "PUBLISHING"
+  | "PUBLISHED"
+  | "REJECTED"
+  | "ARCHIVED";
+
+export type DatabaseVersionStatus =
+  | "PENDING_SCAN"
+  | "BLOCKED"
+  | "VALIDATING"
+  | "VALIDATION_FAILED"
+  | "AWAITING_APPROVAL"
+  | "APPROVED"
+  | "PUBLISHED"
+  | "REJECTED"
+  | "SUPERSEDED";
+
 export interface Database {
   public: {
     Tables: {
@@ -862,6 +899,223 @@ export interface Database {
           last_read_at?: string;
         }
       >;
+      // Campaign Operations (0049). Server-only tables: no grants to anon or authenticated.
+      co_campaigns: Table<
+        {
+          id: string;
+          code: string;
+          name: string;
+          client_name: string | null;
+          advertiser: string | null;
+          description: string | null;
+          instructions: string | null;
+          geography: string[];
+          industries: string[];
+          job_titles: string[];
+          starts_on: string | null;
+          ends_on: string | null;
+          manager_id: string | null;
+          required_fields: string[];
+          status: CampaignStatus;
+          held_from: string | null;
+          created_by: string | null;
+          created_at: string;
+          updated_at: string;
+          archived_at: string | null;
+        },
+        {
+          id?: string;
+          code?: string;
+          name: string;
+          client_name?: string | null;
+          advertiser?: string | null;
+          description?: string | null;
+          instructions?: string | null;
+          geography?: string[];
+          industries?: string[];
+          job_titles?: string[];
+          starts_on?: string | null;
+          ends_on?: string | null;
+          manager_id?: string | null;
+          required_fields?: string[];
+          status?: CampaignStatus;
+          created_by?: string | null;
+        }
+      >;
+      co_campaign_members: Table<
+        {
+          id: string;
+          campaign_id: string;
+          employee_id: string;
+          member_role: CampaignMemberRole;
+          added_by: string | null;
+          created_at: string;
+          ended_at: string | null;
+          ended_by: string | null;
+        },
+        {
+          id?: string;
+          campaign_id: string;
+          employee_id: string;
+          member_role: CampaignMemberRole;
+          added_by?: string | null;
+          ended_at?: string | null;
+          ended_by?: string | null;
+        }
+      >;
+      co_file_categories: Table<
+        {
+          key: string;
+          label: string;
+          description: string | null;
+          is_database: boolean;
+          member_roles: string[];
+          sort_order: number;
+          retired: boolean;
+        },
+        {
+          key: string;
+          label: string;
+          description?: string | null;
+          is_database?: boolean;
+          member_roles?: string[];
+          sort_order?: number;
+          retired?: boolean;
+        }
+      >;
+      co_files: Table<
+        {
+          id: string;
+          campaign_id: string;
+          category_key: string;
+          title: string;
+          original_name: string;
+          extension: string;
+          size_bytes: number;
+          mime_type: string | null;
+          sha256: string | null;
+          bucket: "co-quarantine" | "co-approved";
+          storage_path: string;
+          version: number;
+          supersedes_id: string | null;
+          status: CampaignFileStatus;
+          scan_result: string | null;
+          scan_attempts: number;
+          scanned_at: string | null;
+          published_at: string | null;
+          uploaded_by: string | null;
+          created_at: string;
+          updated_at: string;
+          archived_at: string | null;
+          archived_by: string | null;
+        },
+        {
+          id?: string;
+          campaign_id: string;
+          category_key: string;
+          title: string;
+          original_name: string;
+          extension: string;
+          size_bytes: number;
+          mime_type?: string | null;
+          sha256?: string | null;
+          bucket?: "co-quarantine" | "co-approved";
+          storage_path: string;
+          version?: number;
+          supersedes_id?: string | null;
+          status?: CampaignFileStatus;
+          scan_result?: string | null;
+          scan_attempts?: number;
+          scanned_at?: string | null;
+          published_at?: string | null;
+          uploaded_by?: string | null;
+          archived_by?: string | null;
+        }
+      >;
+      co_database_versions: Table<
+        {
+          id: string;
+          campaign_id: string;
+          file_id: string;
+          version: number;
+          status: DatabaseVersionStatus;
+          record_count: number;
+          valid_count: number;
+          invalid_count: number;
+          duplicate_count: number;
+          columns: Json;
+          column_map: Json;
+          summary: Json;
+          validated_at: string | null;
+          uploaded_by: string | null;
+          decided_by: string | null;
+          decided_at: string | null;
+          decision_note: string | null;
+          published_at: string | null;
+          created_at: string;
+          updated_at: string;
+        },
+        {
+          id?: string;
+          campaign_id: string;
+          file_id: string;
+          version: number;
+          status?: DatabaseVersionStatus;
+          record_count?: number;
+          valid_count?: number;
+          invalid_count?: number;
+          duplicate_count?: number;
+          columns?: Json;
+          column_map?: Json;
+          summary?: Json;
+          validated_at?: string | null;
+          uploaded_by?: string | null;
+          decided_by?: string | null;
+          decided_at?: string | null;
+          decision_note?: string | null;
+          published_at?: string | null;
+        }
+      >;
+      co_lead_records: Table<
+        {
+          id: string;
+          campaign_id: string;
+          version_id: string;
+          row_number: number;
+          record_key: string;
+          full_name: string | null;
+          first_name: string | null;
+          last_name: string | null;
+          email: string | null;
+          phone: string | null;
+          company: string | null;
+          job_title: string | null;
+          country: string | null;
+          extra: Json;
+          status: "STAGED" | "INVALID" | "DUPLICATE" | "AVAILABLE" | "WITHDRAWN";
+          invalid_reasons: string[];
+          created_at: string;
+          updated_at: string;
+        },
+        {
+          id?: string;
+          campaign_id: string;
+          version_id: string;
+          row_number: number;
+          record_key: string;
+          full_name?: string | null;
+          first_name?: string | null;
+          last_name?: string | null;
+          email?: string | null;
+          phone?: string | null;
+          company?: string | null;
+          job_title?: string | null;
+          country?: string | null;
+          extra?: Json;
+          status?: "STAGED" | "INVALID" | "DUPLICATE" | "AVAILABLE" | "WITHDRAWN";
+          invalid_reasons?: string[];
+        }
+      >;
       policy_acknowledgements: Table<
         {
           id: string;
@@ -1394,6 +1648,10 @@ export interface Database {
       };
       seal_legacy_audit_logs: {
         Args: Record<string, never>;
+        Returns: number;
+      };
+      co_publish_version: {
+        Args: { p_version_id: string };
         Returns: number;
       };
       append_audit_log: {

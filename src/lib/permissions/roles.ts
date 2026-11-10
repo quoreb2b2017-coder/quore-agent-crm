@@ -15,7 +15,7 @@ export function isHiddenRole(roleKey: string) {
 export const MANAGEMENT_ROLE_KEYS = [SUPER_ADMIN_ROLE, HR_ROLE] as const;
 
 /** Staff roles that share the employee app (clock / portal). */
-export const STAFF_ROLE_KEYS = ["AGENT", "DATABASE", "EMAIL_MARKETING", "IT"] as const;
+export const STAFF_ROLE_KEYS = ["AGENT", "DATABASE", "EMAIL_MARKETING", "IT", "OPS_MANAGER"] as const;
 
 export type StaffRoleKey = (typeof STAFF_ROLE_KEYS)[number];
 
@@ -90,6 +90,7 @@ export const STAFF_DEPARTMENTS: { roleKey: StaffRoleKey; label: string }[] = [
   { roleKey: "DATABASE", label: "Database" },
   { roleKey: "EMAIL_MARKETING", label: "Email Marketing" },
   { roleKey: "IT", label: "IT" },
+  { roleKey: "OPS_MANAGER", label: "Operations Manager" },
 ];
 
 export function staffDepartmentLabel(roleKey: string) {
