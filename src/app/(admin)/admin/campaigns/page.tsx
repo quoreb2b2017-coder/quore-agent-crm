@@ -69,7 +69,7 @@ export default async function CampaignOverviewPage() {
         >
           {data.myApprovals.length === 0 ? (
             <p className="px-5 py-8 text-center text-sm text-muted-foreground">
-              {access.approve ? "Nothing is waiting for you." : "Database approvals are made by Operations Managers."}
+              {access.approve ? "Nothing is waiting for you." : "Database approvals are made by people with approval rights."}
             </p>
           ) : (
             <ul className="divide-y">

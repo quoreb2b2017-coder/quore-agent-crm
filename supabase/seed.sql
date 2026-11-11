@@ -164,8 +164,10 @@ with rp (role_key, permission_key) as (
     ('DATABASE', 'activity.view'),
     ('DATABASE', 'tasks.view'), ('DATABASE', 'tasks.create'), ('DATABASE', 'tasks.update'),
     ('DATABASE', 'leave.view'), ('DATABASE', 'leave.apply'),
-    -- Campaign Operations (0049): uploads databases for the campaigns they belong to.
-    ('DATABASE', 'co.campaign.view'), ('DATABASE', 'co.database.upload'), ('DATABASE', 'co.database.download'),
+    -- Campaign Operations (0049, 0050): full access. Still cannot approve a database they uploaded.
+    ('DATABASE', 'co.campaign.view'), ('DATABASE', 'co.campaign.manage'),
+    ('DATABASE', 'co.database.upload'), ('DATABASE', 'co.database.download'),
+    ('DATABASE', 'co.database.approve'), ('DATABASE', 'co.documents.manage'),
 
     -- OPS_MANAGER: staff workspace plus Campaign Operations (0049). Approves databases it did not upload.
     ('OPS_MANAGER', 'attendance.view'),

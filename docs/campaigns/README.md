@@ -8,7 +8,7 @@ This replaces the **`Quore_Database`** share and the document side of **`Quore_P
 |---|---|---|
 | Overview | `/admin/campaigns` | Anyone with `co.campaign.view` |
 | All campaigns | `/admin/campaigns/all` | Managers see all; others see campaigns they are a member of |
-| New campaign | `/admin/campaigns/new` | `co.campaign.manage` (Super Admin, Operations Manager) |
+| New campaign | `/admin/campaigns/new` | `co.campaign.manage` (Super Admin, Operations Manager, Database) |
 | Campaign detail | `/admin/campaigns/[id]`, with tabs Overview, Database, Documents, Team and Activity | Members and managers |
 | Database repository | `/admin/campaigns/repository` | Uploaders, approvers, downloaders |
 | Document repository | `/admin/campaigns/documents` | Everyone in the module, filtered by campaign role |
@@ -18,22 +18,24 @@ This replaces the **`Quore_Database`** share and the document side of **`Quore_P
 1. **Upload.** The browser sends the file straight to the private `co-quarantine` bucket with a one-time signed URL, so it never passes through Vercel. The limit is 100 MB; only `.csv` and `.xlsx` are accepted, never `.xlsm`.
 2. **Scan.** The file worker (`workers/campaign-files`) records the SHA-256 and scans the file with ClamAV. An infected file is blocked permanently and managers are alerted.
 3. **Validate.** The worker maps the columns, then checks each row's required fields and email and phone format, and flags duplicates within the file. Every row is stored with its result, and the rejected rows can be downloaded as a CSV with the reasons.
-4. **Approve.** An Operations Manager or Super Admin who did **not** upload it reviews the counts, the matched columns and a 10-row preview, then approves or rejects. A rejection needs a reason.
+4. **Approve.** A Super Admin, Operations Manager or Database user who did **not** upload it reviews the counts, the matched columns and a 10-row preview, then approves or rejects. A rejection needs a reason.
 5. **Publish.** The worker copies the file to `co-approved` and re-checks the hash. The version's valid rows become *Available*, and the previous version is superseded. The campaign moves to **Ready for distribution**.
 
 Documents (scripts, SOPs, reports) follow steps 1, 2 and 5 without approval. A campaign member can open a document only if their campaign role is allowed for that file type.
 
 ## Who can do what
 
-| | Super Admin | Operations Manager | Database | Everyone else |
+| | Super Admin | Operations Manager | Database (full access, 0050) | Everyone else |
 |---|---|---|---|---|
-| See campaigns | All | All | Their own | No |
-| Create, edit, hold, archive | Yes | Yes | No | No |
-| Add or remove members | Yes | Yes | No | No |
-| Upload a database | Yes | No | To campaigns they are a database member of | No |
-| Approve a database | Yes, never their own upload | Yes, never their own upload | No | No |
-| Download a full database file | Yes | No | Their campaigns | No |
-| Upload documents | Yes | Yes | No | No |
+| See campaigns | All | All | All | No |
+| Create, edit, hold, archive | Yes | Yes | Yes | No |
+| Add or remove members | Yes | Yes | Yes | No |
+| Upload a database | Yes | No | Yes, any campaign | No |
+| Approve a database | Yes, never their own upload | Yes, never their own upload | Yes, never their own upload | No |
+| Download a full database file | Yes | No | Yes | No |
+| Upload documents | Yes | Yes | Yes | No |
+
+Because Database users can now approve, an upload by one Database user needs a **different** person (another Database user, an Operations Manager or Super Admin) to approve it. Each grant can be removed again on the Roles page.
 
 The new role **Operations Manager** (`OPS_MANAGER`) appears under Sales in Teams and in the Add employee form. It uses the staff workspace, with the same clock and attendance as other staff.
 
@@ -51,7 +53,8 @@ The new role **Operations Manager** (`OPS_MANAGER`) appears under Sales in Teams
 1. **Database.** Run `supabase/migrations/0049_campaign_operations_core.sql` in the SQL editor; it is safe to run twice. Then run `docs/deploy/check-migrations.sql`: the `0049` line must be `true`.
 2. **Upload limit.** Supabase → Storage → Settings: set the global upload limit to at least **100 MB**. The free plan caps it at 50 MB, so on that plan files above 50 MB are refused.
 3. **File worker.** Deploy `workers/campaign-files` (see its README) as a private background service with `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY`. Until it runs, uploads wait safely in quarantine.
-4. **People.** Give Operations Managers the *Operations Manager* role, then add database staff to each campaign as **Database** members from the campaign's Team tab.
+4. **Database access.** Run `0050_campaign_database_full_access.sql` too: it gives the Database role full Campaign Operations access (still never approving its own upload).
+5. **People.** Give campaign leads the *Operations Manager* role. Database users see every campaign; add them as **Database** members only to show who owns each campaign's data.
 
 ## How it was tested
 

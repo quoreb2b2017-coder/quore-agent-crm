@@ -35,5 +35,10 @@ select migration, applied from (values
                               and to_regclass('public.co_lead_records') is not null
                               and exists (select 1 from pg_proc where proname = 'co_publish_version')
                               and exists (select 1 from storage.buckets where id in ('co-quarantine', 'co-approved') having count(*) = 2)),
+  ('0050 database full campaign access', exists (
+                                select 1 from public.role_permissions rp
+                                join public.roles r on r.id = rp.role_id
+                                join public.permissions p on p.id = rp.permission_id
+                                where r.role_key = 'DATABASE' and p.permission_key = 'co.campaign.manage')),
   ('pg_cron enabled',         exists (select 1 from pg_extension where extname = 'pg_cron'))
 ) as checks (migration, applied);

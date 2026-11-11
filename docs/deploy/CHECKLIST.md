@@ -67,8 +67,9 @@ Work top to bottom. Tick each box when it is done.
 
 ## 8. Campaign Operations (migration 0049)
 
-- [ ] Run [0049_campaign_operations_core.sql](../../supabase/migrations/0049_campaign_operations_core.sql) in the SQL Editor, then
-      check-migrations.sql: `0049 campaign operations` must be `true`.
+- [ ] Run [0049_campaign_operations_core.sql](../../supabase/migrations/0049_campaign_operations_core.sql), then
+      [0050_campaign_database_full_access.sql](../../supabase/migrations/0050_campaign_database_full_access.sql) in the SQL Editor,
+      then check-migrations.sql: the `0049` and `0050` lines must be `true`.
 - [ ] Storage → Settings: global upload limit at least 100 MB (the free plan stops at 50 MB).
 - [ ] Deploy the file worker (`workers/campaign-files`, see its README) as a private background service on Railway or Render,
       about 2 GB of memory, with `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY`. Uploads wait in quarantine until it runs.

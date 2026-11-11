@@ -789,7 +789,7 @@ await test("Campaign changes are written to the hash-chained audit log with the 
   expect(rows.every((r) => r.actor_employee_id === opsUser.id), "audit rows did not name the Operations Manager");
 });
 
-await test("Only Super Admin, Operations Manager and Database roles hold campaign permissions after seed", async () => {
+await test("Only Super Admin, Operations Manager and Database roles hold campaign permissions; Database has full access", async () => {
   const rows = await q(
     `select r.role_key, array_agg(p.permission_key order by p.permission_key) as perms
      from public.role_permissions rp join public.roles r on r.id = rp.role_id join public.permissions p on p.id = rp.permission_id
@@ -800,7 +800,8 @@ await test("Only Super Admin, Operations Manager and Database roles hold campaig
   const ops = rows.find((r) => r.role_key === "OPS_MANAGER").perms;
   expect(!ops.includes("co.database.upload") && !ops.includes("co.database.download"), "Operations Manager can upload or download full databases");
   const db = rows.find((r) => r.role_key === "DATABASE").perms;
-  expect(!db.includes("co.database.approve"), "Database role can approve databases");
+  const full = ["co.campaign.manage", "co.campaign.view", "co.database.approve", "co.database.download", "co.database.upload", "co.documents.manage"];
+  expect(JSON.stringify(db) === JSON.stringify(full), `Database role should have full campaign access (0050), has: ${db}`);
 });
 
 // ------------------------------------------------------------ report
