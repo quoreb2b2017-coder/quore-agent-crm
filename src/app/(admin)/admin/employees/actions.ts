@@ -58,6 +58,11 @@ const createSchema = z
     fullName: z.string().min(1, "Full name is required"),
     email: z.email("Enter a valid email"),
     phone: z.string().min(1, "Phone number is required"),
+    workLocation: z
+      .string()
+      .trim()
+      .max(120, "Keep the work location under 120 characters")
+      .transform((value) => value || null),
     employeeCode: z.string().min(1, "Employee ID is required"),
     password: z.string().min(4, "Password must be at least 4 characters"),
     confirmPassword: z.string().min(1, "Confirm password"),
@@ -620,6 +625,7 @@ export async function createEmployee(
     fullName: formData.get("fullName"),
     email: formData.get("email"),
     phone: formData.get("phone"),
+    workLocation: String(formData.get("workLocation") ?? ""),
     employeeCode: String(formData.get("employeeCode") ?? "").trim(),
     password: formData.get("password"),
     confirmPassword: formData.get("confirmPassword"),
@@ -677,6 +683,7 @@ export async function createEmployee(
       full_name: data.fullName,
       email: data.email,
       phone: data.phone,
+      work_location: data.workLocation,
       auth_user_id: authUser.user.id,
       employment_status: "ACTIVE",
       joining_date: data.joiningDate,
@@ -1141,6 +1148,11 @@ const superAdminSchema = z
     fullName: z.string().trim().min(2, "Enter the full name"),
     email: z.email("Enter a valid email"),
     phone: z.string().trim().min(1, "Phone number is required"),
+    workLocation: z
+      .string()
+      .trim()
+      .max(120, "Keep the work location under 120 characters")
+      .transform((value) => value || null),
     // Longer than for staff: this account can see and change everything.
     password: z.string().min(8, "Use at least 8 characters for a Super Admin password"),
     confirmPassword: z.string().min(1, "Confirm password"),
@@ -1162,6 +1174,7 @@ export async function createSuperAdmin(_prev: ActionState, formData: FormData): 
     fullName: formData.get("fullName"),
     email: String(formData.get("email") ?? "").trim(),
     phone: formData.get("phone"),
+    workLocation: String(formData.get("workLocation") ?? ""),
     password: formData.get("password"),
     confirmPassword: formData.get("confirmPassword"),
   });
@@ -1190,6 +1203,7 @@ export async function createSuperAdmin(_prev: ActionState, formData: FormData): 
       full_name: data.fullName,
       email: data.email,
       phone: data.phone,
+      work_location: data.workLocation,
       auth_user_id: authUser.user.id,
       employment_status: "ACTIVE",
       joining_date: new Date().toISOString().slice(0, 10),

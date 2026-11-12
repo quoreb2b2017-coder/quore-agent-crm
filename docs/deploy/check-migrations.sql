@@ -40,5 +40,6 @@ select migration, applied from (values
                                 join public.roles r on r.id = rp.role_id
                                 join public.permissions p on p.id = rp.permission_id
                                 where r.role_key = 'DATABASE' and p.permission_key = 'co.campaign.manage')),
+  ('0051 campaign members and empty delete', exists (select 1 from pg_proc where proname = 'co_delete_empty_campaign')),
   ('pg_cron enabled',         exists (select 1 from pg_extension where extname = 'pg_cron'))
 ) as checks (migration, applied);

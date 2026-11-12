@@ -159,6 +159,8 @@ with rp (role_key, permission_key) as (
     ('AGENT', 'activity.view'),
     ('AGENT', 'tasks.view'), ('AGENT', 'tasks.create'), ('AGENT', 'tasks.update'),
     ('AGENT', 'leave.view'), ('AGENT', 'leave.apply'),
+    -- Sees only the campaigns they are a member of (0051).
+    ('AGENT', 'co.campaign.view'),
 
     ('DATABASE', 'attendance.view'),
     ('DATABASE', 'activity.view'),
@@ -180,6 +182,7 @@ with rp (role_key, permission_key) as (
     ('EMAIL_MARKETING', 'activity.view'),
     ('EMAIL_MARKETING', 'tasks.view'), ('EMAIL_MARKETING', 'tasks.create'), ('EMAIL_MARKETING', 'tasks.update'),
     ('EMAIL_MARKETING', 'leave.view'), ('EMAIL_MARKETING', 'leave.apply'),
+    ('EMAIL_MARKETING', 'co.campaign.view'),
 
     -- FIELD_EMPLOYEE
     ('FIELD_EMPLOYEE', 'field_visits.view'), ('FIELD_EMPLOYEE', 'field_visits.manage'),

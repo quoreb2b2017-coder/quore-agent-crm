@@ -25,12 +25,12 @@ Documents (scripts, SOPs, reports) follow steps 1, 2 and 5 without approval. A c
 
 ## Who can do what
 
-| | Super Admin | Operations Manager | Database (full access, 0050) | Everyone else |
+| | Super Admin | Operations Manager | Database (full access, 0050) | Agent, Email Marketing, IT (0051) |
 |---|---|---|---|---|
-| See campaigns | All | All | All | No |
+| See campaigns | All | All | All | Only those they are a member of |
 | Create, edit, hold, archive | Yes | Yes | Yes | No |
 | Add or remove members | Yes | Yes | Yes | No |
-| Upload a database | Yes | No | Yes, any campaign | No |
+| Upload a database | Yes | No | Yes, any campaign | Only where they are a **Database** member |
 | Approve a database | Yes, never their own upload | Yes, never their own upload | Yes, never their own upload | No |
 | Download a full database file | Yes | No | Yes | No |
 | Upload documents | Yes | Yes | Yes | No |
@@ -44,7 +44,7 @@ The new role **Operations Manager** (`OPS_MANAGER`) appears under Sales in Teams
 - None of the `co_` tables can be reached through the public API. RLS is on and signed-in users have no grants; the server checks every request and logs each download.
 - A version cannot be approved by its uploader, cannot skip a step, and cannot be rejected without a reason.
 - Campaign status follows a fixed path. *On hold* returns to where it came from.
-- Campaigns, members, files, versions and lead rows are never deleted; they are archived instead.
+- Campaigns, members, files, versions and lead rows are never deleted; they are archived instead. One exception (0051): a campaign made by mistake can be deleted while it is still Draft or Awaiting database and has no file, database version or lead row. The deletion and its reason are in the audit log.
 - A stored file's hash, name and size never change, and an infected file can never be published.
 - Every change to campaigns, members, files and versions goes into the hash-chained audit log, along with downloads, refusals and archive actions.
 

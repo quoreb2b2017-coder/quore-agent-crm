@@ -41,6 +41,7 @@ const EMPTY_FORM = {
   fullName: "",
   email: "",
   phone: "",
+  workLocation: "",
   employeeCode: "",
   joiningDate: new Date().toLocaleDateString("en-CA"),
   dateOfBirth: "",
@@ -107,6 +108,8 @@ export function CreateEmployeeDialog({
       fullName: next.fullName,
       email: next.email,
       phone: next.phone,
+      // Existing people change their work location on their profile, not here.
+      workLocation: "",
       employeeCode: next.employeeCode,
       joiningDate: next.joiningDate || new Date().toLocaleDateString("en-CA"),
       dateOfBirth: next.dateOfBirth,
@@ -311,6 +314,21 @@ export function CreateEmployeeDialog({
           onChange={(event) => patchField("phone", event.target.value)}
         />
       </div>
+      {isExisting ? null : (
+        <div className="grid gap-2">
+          <Label htmlFor="workLocation">
+            Work location <span className="font-normal text-muted-foreground">(optional)</span>
+          </Label>
+          <Input
+            id="workLocation"
+            name="workLocation"
+            placeholder="e.g. Pune office"
+            maxLength={120}
+            value={fields.workLocation}
+            onChange={(event) => patchField("workLocation", event.target.value)}
+          />
+        </div>
+      )}
       <div className="grid gap-2">
         <Label htmlFor="employeeCode">Employee ID</Label>
         <Input

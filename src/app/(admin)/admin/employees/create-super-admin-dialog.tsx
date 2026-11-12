@@ -61,6 +61,12 @@ export function CreateSuperAdminDialog() {
         <Label htmlFor="sa-phone">Phone</Label>
         <Input id="sa-phone" name="phone" type="tel" required autoComplete="off" />
       </div>
+      <div className="grid gap-2 sm:col-span-2">
+        <Label htmlFor="sa-location">
+          Work location <span className="font-normal text-muted-foreground">(optional)</span>
+        </Label>
+        <Input id="sa-location" name="workLocation" placeholder="e.g. Pune office" maxLength={120} autoComplete="off" />
+      </div>
       <div className="grid content-start gap-2">
         <Label htmlFor="sa-password">Password</Label>
         <PasswordInput

@@ -183,7 +183,15 @@ export default async function CampaignDetailPage({
                 required_fields: campaign.required_fields,
               }}
             />
-            <CampaignStatusActions campaignId={campaign.id} status={campaign.status} />
+            <CampaignStatusActions
+              campaignId={campaign.id}
+              status={campaign.status}
+              canDelete={
+                ["DRAFT", "AWAITING_DATABASE"].includes(campaign.status) &&
+                (files ?? []).length === 0 &&
+                (versions ?? []).length === 0
+              }
+            />
           </div>
         ) : null}
       </div>

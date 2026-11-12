@@ -3,7 +3,7 @@
 import { useRef, useState, useTransition, type FormEvent, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Archive, Check, Loader2, Pause, Pencil, Play, Send, Upload, UserPlus, X } from "lucide-react";
+import { Archive, Check, Loader2, Pause, Pencil, Play, Send, Trash2, Upload, UserPlus, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -27,6 +27,7 @@ import {
   addCampaignMember,
   archiveCampaignFile,
   changeCampaignStatus,
+  deleteEmptyCampaign,
   completeUpload,
   createCampaign,
   decideDatabaseVersion,
@@ -178,6 +179,7 @@ function ReasonDialog({
   destructive,
   run,
   success,
+  redirectTo,
 }: {
   trigger: ReactNode;
   title: string;
@@ -187,6 +189,8 @@ function ReasonDialog({
   destructive?: boolean;
   run: (reason: string) => Promise<{ error?: string }>;
   success: string;
+  /** Go here afterwards instead of refreshing, e.g. when the page's record no longer exists. */
+  redirectTo?: string;
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -203,7 +207,8 @@ function ReasonDialog({
         setOpen(false);
         setReason("");
         setError(undefined);
-        router.refresh();
+        if (redirectTo) router.replace(redirectTo);
+        else router.refresh();
       }
     });
   };
@@ -235,7 +240,16 @@ function ReasonDialog({
   );
 }
 
-export function CampaignStatusActions({ campaignId, status }: { campaignId: string; status: string }) {
+export function CampaignStatusActions({
+  campaignId,
+  status,
+  canDelete = false,
+}: {
+  campaignId: string;
+  status: string;
+  /** Still empty (no file, version or lead row) and not started: made by mistake, so it may be deleted. */
+  canDelete?: boolean;
+}) {
   const preProduction = ["DRAFT", "AWAITING_DATABASE", "DATABASE_VALIDATION", "AWAITING_APPROVAL", "READY_FOR_DISTRIBUTION"];
   return (
     <>
@@ -281,6 +295,26 @@ export function CampaignStatusActions({ campaignId, status }: { campaignId: stri
           destructive
           run={(reason) => changeCampaignStatus(campaignId, "archive", reason)}
           success="Campaign archived"
+        />
+      ) : null}
+      {canDelete ? (
+        <ReasonDialog
+          trigger={
+            <Button
+              variant="outline"
+              className="border-destructive/30 text-destructive hover:bg-destructive/10 hover:text-destructive"
+            >
+              <Trash2 className="size-4" /> Delete
+            </Button>
+          }
+          title="Delete this campaign?"
+          description="Only for a campaign made by mistake. It has no files or data yet, so it is removed with its member list. This cannot be undone; the deletion and your reason stay in the audit log."
+          confirmLabel="Delete campaign"
+          needsReason
+          destructive
+          run={(reason) => deleteEmptyCampaign(campaignId, reason)}
+          success="Campaign deleted"
+          redirectTo="/admin/campaigns/all"
         />
       ) : null}
     </>

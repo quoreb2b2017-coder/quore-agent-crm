@@ -789,19 +789,69 @@ await test("Campaign changes are written to the hash-chained audit log with the 
   expect(rows.every((r) => r.actor_employee_id === opsUser.id), "audit rows did not name the Operations Manager");
 });
 
-await test("Only Super Admin, Operations Manager and Database roles hold campaign permissions; Database has full access", async () => {
+await test("Campaign managers hold campaign permissions; other staff only see campaigns they are members of", async () => {
   const rows = await q(
     `select r.role_key, array_agg(p.permission_key order by p.permission_key) as perms
      from public.role_permissions rp join public.roles r on r.id = rp.role_id join public.permissions p on p.id = rp.permission_id
      where p.permission_key like 'co.%' group by r.role_key order by r.role_key`
   );
   const roles = rows.map((r) => r.role_key);
-  expect(JSON.stringify(roles) === JSON.stringify(["DATABASE", "OPS_MANAGER", "SUPER_ADMIN"]), `roles with co.* permissions: ${roles}`);
+  expect(
+    JSON.stringify(roles) === JSON.stringify(["AGENT", "DATABASE", "EMAIL_MARKETING", "IT", "OPS_MANAGER", "SUPER_ADMIN"]),
+    `roles with co.* permissions: ${roles}`
+  );
+  // 0051: Agent, Email Marketing and IT may only see campaigns they are added to, nothing more.
+  for (const key of ["AGENT", "EMAIL_MARKETING", "IT"]) {
+    const perms = rows.find((r) => r.role_key === key).perms;
+    expect(JSON.stringify(perms) === JSON.stringify(["co.campaign.view"]), `${key} holds more than view: ${perms}`);
+  }
   const ops = rows.find((r) => r.role_key === "OPS_MANAGER").perms;
   expect(!ops.includes("co.database.upload") && !ops.includes("co.database.download"), "Operations Manager can upload or download full databases");
   const db = rows.find((r) => r.role_key === "DATABASE").perms;
   const full = ["co.campaign.manage", "co.campaign.view", "co.database.approve", "co.database.download", "co.database.upload", "co.documents.manage"];
   expect(JSON.stringify(db) === JSON.stringify(full), `Database role should have full campaign access (0050), has: ${db}`);
+});
+
+await test("0051 an empty campaign made by mistake can be deleted; one with data cannot", async () => {
+  const result = await asService(opsUser.id, async () => {
+    const empty = await seedCampaign();
+    await q(
+      `insert into public.co_campaign_members (campaign_id, employee_id, member_role, added_by) values ($1, $2, 'CALLER', $3)`,
+      [empty.id, agent.id, opsUser.id]
+    );
+    await q(`select public.co_delete_empty_campaign($1)`, [empty.id]);
+    const gone = await q(`select 1 from public.co_campaigns where id = $1`, [empty.id]);
+    const audited = await q(
+      `select 1 from public.audit_logs where table_name = 'co_campaigns' and record_id = $1 and action like 'DELETE%'`,
+      [empty.id]
+    );
+
+    const withData = await seedCampaign();
+    await seedVersion(withData.id, dbUser.id);
+    let refused = false;
+    try {
+      await q(`select public.co_delete_empty_campaign($1)`, [withData.id]);
+    } catch {
+      refused = true;
+    }
+    return { gone: gone.length === 0, audited: audited.length === 1, refused };
+  });
+  const directDelete = await rejects(() =>
+    asService(opsUser.id, async () => {
+      const c = await seedCampaign();
+      await q(`delete from public.co_campaigns where id = $1`, [c.id]);
+    })
+  );
+  const userCall = await rejects(() =>
+    asUser(opsUser, async () => {
+      await q(`select public.co_delete_empty_campaign(gen_random_uuid())`);
+    })
+  );
+  expect(result.gone, "the empty campaign was not deleted");
+  expect(result.audited, "the deletion is not in the audit log");
+  expect(result.refused, "a campaign with a database version was deleted");
+  expect(directDelete, "a plain DELETE on co_campaigns got past the no-delete rule");
+  expect(userCall, "a signed-in user could call the delete function directly");
 });
 
 // ------------------------------------------------------------ report

@@ -92,7 +92,11 @@ export function canOpenCategory(
   return roles.some((role) => category.member_roles.includes(role));
 }
 
-/** May this person upload a database to this campaign? */
+/**
+ * May this person upload a database to this campaign? Managers with the upload permission may,
+ * and so may anyone added to this campaign as a Database member: the assignment is the permission.
+ * Approving and downloading full databases still need their own role permissions.
+ */
 export function canUploadDatabase(access: CampaignAccess, roles: CampaignMemberRole[]) {
-  return access.upload && (access.manage || roles.includes("DATABASE"));
+  return (access.upload && access.manage) || roles.includes("DATABASE");
 }

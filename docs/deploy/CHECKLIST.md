@@ -71,6 +71,7 @@ Work top to bottom. Tick each box when it is done.
       [0050_campaign_database_full_access.sql](../../supabase/migrations/0050_campaign_database_full_access.sql) in the SQL Editor,
       then check-migrations.sql: the `0049` and `0050` lines must be `true`.
 - [ ] Storage → Settings: global upload limit at least 100 MB (the free plan stops at 50 MB).
+- [ ] Run [0051_campaign_members_and_empty_delete.sql](../../supabase/migrations/0051_campaign_members_and_empty_delete.sql): people added to a campaign can see it, Database members can upload to it, and an empty campaign made by mistake can be deleted.
 - [ ] Deploy the file worker (`workers/campaign-files`, see its README) as a private background service on Railway or Render,
       about 2 GB of memory, with `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY`. Uploads wait in quarantine until it runs.
 - [ ] After deploying, upload the EICAR test file to a test campaign: it must show **Blocked: malware**.

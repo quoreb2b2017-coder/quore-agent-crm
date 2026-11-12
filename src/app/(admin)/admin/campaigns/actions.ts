@@ -218,6 +218,42 @@ export async function changeCampaignStatus(
   return { success: true };
 }
 
+/**
+ * Deletes a campaign made by mistake. The database allows it only while the campaign is Draft or
+ * Awaiting database and has no file, database version or lead row (0051); anything else is archived.
+ */
+export async function deleteEmptyCampaign(campaignId: string, reason: string): Promise<ActionResult> {
+  const me = await actor();
+  if (!me?.access.manage) return { error: "You don't have permission to delete campaigns." };
+  if (reason.trim().length < 3) return { error: "Give a short reason; it goes into the audit log." };
+
+  const supabase = await createDataClient();
+  const { data: campaign } = await supabase
+    .from("co_campaigns")
+    .select("id, code, name, status")
+    .eq("id", campaignId)
+    .maybeSingle();
+  if (!campaign) return { error: "Campaign not found." };
+
+  const { error } = await supabase.rpc("co_delete_empty_campaign", { p_campaign_id: campaignId });
+  if (error) {
+    return {
+      error: /function .*co_delete_empty_campaign/i.test(error.message)
+        ? "Deleting campaigns is not set up yet. Run supabase/migrations/0051_campaign_members_and_empty_delete.sql."
+        : dbError(error.message),
+    };
+  }
+
+  await createServiceClient().rpc("log_security_event", {
+    p_employee_id: me.ctx.employeeId,
+    p_action: "CO_CAMPAIGN_DELETE",
+    p_details: { campaign_id: campaignId, code: campaign.code, name: campaign.name, reason: reason.slice(0, 500) },
+  });
+  notifyAdminsOfAction(me.ctx, `deleted the empty campaign ${campaign.code} (${campaign.name})`);
+  refresh();
+  return { success: true };
+}
+
 // ------------------------------------------------------------ members
 
 export async function addCampaignMember(formData: FormData): Promise<ActionResult> {

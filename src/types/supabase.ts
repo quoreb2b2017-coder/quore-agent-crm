@@ -1634,6 +1634,10 @@ export interface Database {
         Args: Record<string, never>;
         Returns: { control_code: string; result: string; exceptions_count: number }[];
       };
+      co_delete_empty_campaign: {
+        Args: { p_campaign_id: string };
+        Returns: undefined;
+      };
       log_security_event: {
         Args: { p_employee_id: string; p_action: string; p_details?: Json };
         Returns: undefined;
